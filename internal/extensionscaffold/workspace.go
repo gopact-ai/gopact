@@ -18,10 +18,11 @@ type RepositoryScaffold struct {
 
 // BootstrapWorkspace is a local workspace that binds external scaffolds to the SDK module.
 type BootstrapWorkspace struct {
-	Scaffolds  []RepositoryScaffold
-	GoWork     File
-	SyncPlan   File
-	SyncScript File
+	Scaffolds    []RepositoryScaffold
+	GoWork       File
+	SyncPlan     File
+	SyncScript   File
+	SecretScript File
 }
 
 // VerificationReport summarizes local conformance verification for a bootstrap workspace.
@@ -142,11 +143,17 @@ func WriteBootstrapWorkspace(ctx context.Context, root, dir string) (BootstrapWo
 	if err := os.WriteFile(path, []byte(syncScript.Body), 0o755); err != nil {
 		return BootstrapWorkspace{}, fmt.Errorf("extensionscaffold: write %q: %w", syncScript.Path, err)
 	}
+	secretScript := renderSecretScriptFile(plan)
+	path = filepath.Join(dir, filepath.FromSlash(secretScript.Path))
+	if err := os.WriteFile(path, []byte(secretScript.Body), 0o755); err != nil {
+		return BootstrapWorkspace{}, fmt.Errorf("extensionscaffold: write %q: %w", secretScript.Path, err)
+	}
 	return BootstrapWorkspace{
-		Scaffolds:  scaffolds,
-		GoWork:     goWork,
-		SyncPlan:   syncPlan,
-		SyncScript: syncScript,
+		Scaffolds:    scaffolds,
+		GoWork:       goWork,
+		SyncPlan:     syncPlan,
+		SyncScript:   syncScript,
+		SecretScript: secretScript,
 	}, nil
 }
 

@@ -102,6 +102,29 @@ func TestRunPrintsSyncPlanShellScript(t *testing.T) {
 	}
 }
 
+func TestRunPrintsSecretSyncShellScript(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"-root", "../..", "-plan-secrets-sh"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	for _, want := range []string{
+		"#!/usr/bin/env bash",
+		"GOPACT_GITHUB_TOKEN must contain a GitHub token",
+		"gh secret set GOPACT_GITHUB_TOKEN",
+		"set_secret 'gopact-ai/gopact-adapters-model'",
+		"set_secret 'gopact-ai/gopact-templates-agenttool'",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunPrintsRemoteStatusJSON(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	restore := installFakeGH(t, `#!/usr/bin/env bash
@@ -114,6 +137,10 @@ if [[ "$1" == "repo" && "$2" == "view" ]]; then
 fi
 if [[ "$1" == "api" ]]; then
   printf '{"path":".github/workflows/ci.yml"}'
+  exit 0
+fi
+if [[ "$1" == "secret" && "$2" == "list" ]]; then
+  printf '[{"name":"GOPACT_GITHUB_TOKEN"}]'
   exit 0
 fi
 if [[ "$1" == "run" && "$2" == "list" ]]; then
@@ -135,12 +162,13 @@ exit 2
 		Organization string `json:"organization"`
 		ReadyCount   int    `json:"ready_count"`
 		Repositories []struct {
-			Name              string `json:"name"`
-			Exists            bool   `json:"exists"`
-			Private           bool   `json:"private"`
-			CIWorkflowPresent bool   `json:"ci_workflow_present"`
-			CIRunPassed       bool   `json:"ci_run_passed"`
-			Ready             bool   `json:"ready"`
+			Name                    string `json:"name"`
+			Exists                  bool   `json:"exists"`
+			Private                 bool   `json:"private"`
+			CIWorkflowPresent       bool   `json:"ci_workflow_present"`
+			CIRunPassed             bool   `json:"ci_run_passed"`
+			PrivateSDKSecretPresent bool   `json:"private_sdk_token_secret_present"`
+			Ready                   bool   `json:"ready"`
 		} `json:"repositories"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
@@ -155,7 +183,7 @@ exit 2
 	if len(report.Repositories) != expectedScaffoldRepositoryCount {
 		t.Fatalf("repositories = %d, want %d", len(report.Repositories), expectedScaffoldRepositoryCount)
 	}
-	if !report.Repositories[0].Exists || !report.Repositories[0].Private || !report.Repositories[0].CIWorkflowPresent || !report.Repositories[0].CIRunPassed || !report.Repositories[0].Ready {
+	if !report.Repositories[0].Exists || !report.Repositories[0].Private || !report.Repositories[0].CIWorkflowPresent || !report.Repositories[0].CIRunPassed || !report.Repositories[0].PrivateSDKSecretPresent || !report.Repositories[0].Ready {
 		t.Fatalf("first repository status = %+v, want ready", report.Repositories[0])
 	}
 }
@@ -183,11 +211,15 @@ func TestRunWritesScaffoldWorkspace(t *testing.T) {
 	if !strings.Contains(stdout.String(), "sync-repos.sh") {
 		t.Fatalf("stdout = %q, want sync-repos.sh summary", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "sync-secrets.sh") {
+		t.Fatalf("stdout = %q, want sync-secrets.sh summary", stdout.String())
+	}
 
 	for _, path := range []string{
 		"go.work",
 		"sync-plan.json",
 		"sync-repos.sh",
+		"sync-secrets.sh",
 		"gopact-adapters-model/go.mod",
 		"gopact-adapters-model/README.md",
 		"gopact-adapters-model/CONFORMANCE.md",
@@ -327,6 +359,8 @@ func TestRunRejectsConflictingPlanModes(t *testing.T) {
 	tests := [][]string{
 		{"-root", "../..", "-dry-run", "-plan-sh"},
 		{"-root", "../..", "-plan-json", "-plan-sh"},
+		{"-root", "../..", "-plan-json", "-plan-secrets-sh"},
+		{"-root", "../..", "-remote-status-json", "-plan-secrets-sh"},
 	}
 	for _, args := range tests {
 		var stdout, stderr bytes.Buffer
@@ -338,7 +372,7 @@ func TestRunRejectsConflictingPlanModes(t *testing.T) {
 		if stdout.Len() != 0 {
 			t.Fatalf("run(%v) stdout = %q, want empty", args, stdout.String())
 		}
-		if !strings.Contains(stderr.String(), "cannot be used together") {
+		if !strings.Contains(stderr.String(), "cannot be used") {
 			t.Fatalf("run(%v) stderr = %q, want conflict error", args, stderr.String())
 		}
 	}
