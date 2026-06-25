@@ -247,7 +247,7 @@ type RunExport struct {
 - failure attribution 的跨组件证据深化；
 - 更完整 entropy audit 采集器、git diff scanner 策略和 Dev Agent gate；
 - 更广 template / Dev Agent 真实 workflow process record 覆盖；
-- 更多具体 verification evidence 采集来源，以及 model review 真实评测治理深化、CI 系统真实接入深化、Lark 真实 client/plugin、生产级 callback 治理和更完整 review gate event integration。
+- 更多具体 verification evidence 采集来源，以及 model review 真实评测治理深化、CI provider 拉取/重跑/secret 治理、Lark 真实 client/plugin、生产级 callback 治理和更完整 review gate event integration。
 
 用途：
 

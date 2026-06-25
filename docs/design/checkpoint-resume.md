@@ -23,11 +23,11 @@ Checkpoint 是恢复语义，不只是状态持久化。它必须能解释一个
 
 checkpoint codec 现在也具备 migration/config drift 第一片：`checkpoint.Record` 和 `graph.Checkpoint` 会携带 `ConfigVersion`；`checkpoint.WithConfigVersion` 可用于 store 写入和读取；`graph.WithConfigVersion` 可用于任意自定义 checkpointer；`DecodeCheckpoint` 支持按旧 record schema 注册 `RecordMigrator`；当 stored/current config version 不一致时默认返回 `ErrConfigDrift`，显式 `ConfigDriftAllow` 时会在 metadata 写入 `checkpoint_config_drift`，并由 `EventCheckpointLoaded` 透传。
 
-artifact payload integrity 也已有第一片：`artifact.Memory` 写入时生成 `ArtifactRef.Size` 和 `ArtifactRef.SHA256`，`artifact.VerifyRef` / `artifact.VerifyRefs` 可以按 ref 重新读取 payload 并校验 size/hash。`graph.WithArtifactVerifier` 和 `react.WithArtifactVerifier` 已把这类 verifier 接入 `StepExport` import 和 checkpoint load 边界：继续执行前会收集 `StepSnapshot.Artifacts` 和 `EffectRecord.Artifacts`，校验失败会产生 `EventRunFailed` 并阻止后续 node 执行。replay handler 侧也已有 `artifact.NewReplayHandler` 第一片；`artifact.RecordVerifyRefs` 会把 artifact refs 校验结果记录为标准 `VerificationCheck`，失败时也会先记录 failed evidence 再返回错误。ReAct template verification node、Dev Agent channel reviewer prompt/bridge adapter、CI reviewer adapter、model reviewer adapter prompt/eval metadata governance 和 Lark callback source 已有第一片；更多证据来源、model review 真实评测治理深化、CI 系统真实接入深化、Lark 真实 client/plugin 和生产级策略后续继续补齐。
+artifact payload integrity 也已有第一片：`artifact.Memory` 写入时生成 `ArtifactRef.Size` 和 `ArtifactRef.SHA256`，`artifact.VerifyRef` / `artifact.VerifyRefs` 可以按 ref 重新读取 payload 并校验 size/hash。`graph.WithArtifactVerifier` 和 `react.WithArtifactVerifier` 已把这类 verifier 接入 `StepExport` import 和 checkpoint load 边界：继续执行前会收集 `StepSnapshot.Artifacts` 和 `EffectRecord.Artifacts`，校验失败会产生 `EventRunFailed` 并阻止后续 node 执行。replay handler 侧也已有 `artifact.NewReplayHandler` 第一片；`artifact.RecordVerifyRefs` 会把 artifact refs 校验结果记录为标准 `VerificationCheck`，失败时也会先记录 failed evidence 再返回错误。ReAct template verification node、Dev Agent channel reviewer prompt/bridge adapter、CI reviewer adapter、远端 CI run -> `ci_gate` evidence 桥接、model reviewer adapter prompt/eval metadata governance 和 Lark callback source 已有第一片；更多证据来源、model review 真实评测治理深化、CI provider 拉取/重跑/secret 治理、Lark 真实 client/plugin 和生产级策略后续继续补齐。
 
 尚未实现：
 
-- 更完整的生产级 migration 策略，以及 template verification 节点中的更多证据采集来源、model review 真实评测治理深化、CI 系统真实接入深化、Lark 真实 client/plugin 和生产 release gate 策略；
+- 更完整的生产级 migration 策略，以及 template verification 节点中的更多证据采集来源、model review 真实评测治理深化、CI provider 拉取/重跑/secret 治理、Lark 真实 client/plugin 和生产 release gate 策略；
 - 生产级 tool 幂等提交 ledger / exactly-once adapter，以及跨 step 的完整 tool-call graph。
 
 ## 状态边界

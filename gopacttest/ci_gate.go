@@ -162,7 +162,7 @@ func ciGateSuiteEvidence(results []CIGateResult) []gopact.VerificationEvidence {
 }
 
 func ciGateEvidenceSummary(gate string, status gopact.VerificationStatus) string {
-	return fmt.Sprintf("%s gate %s", gate, status)
+	return fmt.Sprintf("%s gate %s", ciGateName(gate), status)
 }
 
 func ciGateSuiteMetadata(suite CIGateSuite, passed, failed, skipped int) map[string]any {
@@ -181,7 +181,7 @@ func ciGateSuiteMetadata(suite CIGateSuite, passed, failed, skipped int) map[str
 
 func ciGateEvidenceMetadata(result CIGateResult, status gopact.VerificationStatus) map[string]any {
 	metadata := commandEvidenceMetadata(result.Result)
-	metadata["gate"] = result.Gate
+	metadata["gate"] = ciGateName(result.Gate)
 	metadata["status"] = string(status)
 	mergeSupplementalMetadata(metadata, result.Metadata, ciGateEvidenceReservedMetadataKey)
 	return metadata
@@ -210,5 +210,9 @@ func ciGateEvidenceReservedMetadataKey(key string) bool {
 }
 
 func ciGateRef(gate string) string {
-	return "ci-gate:" + gate
+	return "ci-gate:" + ciGateName(gate)
+}
+
+func ciGateName(gate string) string {
+	return strings.TrimSpace(gate)
 }
