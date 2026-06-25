@@ -148,6 +148,7 @@ func TestLocalAgentToolReturnsChildEventsOnFailure(t *testing.T) {
 	if len(result.Events) != 2 || result.Events[1].Type != gopact.EventRunFailed {
 		t.Fatalf("result events = %+v, want child failure events", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/local_child_failure.golden.json", result.Events)
 }
 
 func TestRemoteA2AToolSendsTaskWithRuntimeIDsAndReturnsArtifacts(t *testing.T) {
@@ -485,6 +486,7 @@ func TestRemoteA2AToolTimeoutCancelsSendAndReturnsFailureEvent(t *testing.T) {
 		result.Events[1].Type != gopact.EventA2ATaskFailed {
 		t.Fatalf("result events = %+v, want sent/failed", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_timeout.golden.json", result.Events)
 	if result.Events[1].Error() == "" {
 		t.Fatal("failure event error is empty, want timeout error")
 	}
@@ -622,6 +624,7 @@ func TestRemoteA2AToolStreamPolicyDenySkipsStreamAndReturnsPolicyEvents(t *testi
 		events[1].Type != gopact.EventPolicyDecided {
 		t.Fatalf("Stream() events = %+v, want policy requested/decided", events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_stream_policy_deny.golden.json", events)
 }
 
 func TestRemoteA2AToolCancelTaskReturnsCanceledEvent(t *testing.T) {
@@ -649,6 +652,7 @@ func TestRemoteA2AToolCancelTaskReturnsCanceledEvent(t *testing.T) {
 	if len(result.Events) != 1 || result.Events[0].Type != gopact.EventA2ATaskCanceled {
 		t.Fatalf("result events = %+v, want canceled event", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_cancel.golden.json", result.Events)
 	if result.Metadata["agent_name"] != "planner" ||
 		result.Metadata["a2a_task_id"] != "task-1" ||
 		result.Metadata["parent_call_id"] != "parent-call" {
@@ -699,6 +703,7 @@ func TestRemoteA2AToolCancelPolicyDenySkipsCancelAndReturnsPolicyEvents(t *testi
 		result.Events[1].Type != gopact.EventPolicyDecided {
 		t.Fatalf("result events = %+v, want policy requested/decided", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_cancel_policy_deny.golden.json", result.Events)
 }
 
 func TestNewA2ARejectsInvalidAgent(t *testing.T) {
