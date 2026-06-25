@@ -19,6 +19,12 @@ const (
 
 	// EffectReplayMetadataToolResult stores the ToolResult produced by a replayed tool call.
 	EffectReplayMetadataToolResult = "tool_result"
+
+	// EffectReplayMetadataCommitHit marks that replay returned a previously committed tool result.
+	EffectReplayMetadataCommitHit = "commit_hit"
+
+	// EffectReplayMetadataCommitStored marks that replay stored the tool result for future idempotent calls.
+	EffectReplayMetadataCommitStored = "commit_stored"
 )
 
 var (
@@ -31,8 +37,9 @@ type ReplayOption func(*ReplayHandler)
 
 // ReplayHandler replays idempotent tool_call effects through a Registry.
 type ReplayHandler struct {
-	registry *Registry
-	scope    Scope
+	registry    *Registry
+	scope       Scope
+	commitStore CommitStore
 }
 
 // NewReplayHandler creates an EffectReplayExecutor for tool_call effects.
@@ -50,6 +57,13 @@ func NewReplayHandler(registry *Registry, opts ...ReplayOption) *ReplayHandler {
 func WithReplayScope(scope Scope) ReplayOption {
 	return func(handler *ReplayHandler) {
 		handler.scope = scope
+	}
+}
+
+// WithReplayCommitStore sets the store used to avoid duplicate idempotent tool replay.
+func WithReplayCommitStore(store CommitStore) ReplayOption {
+	return func(handler *ReplayHandler) {
+		handler.commitStore = store
 	}
 }
 
@@ -74,6 +88,21 @@ func (h *ReplayHandler) ReplayEffect(ctx context.Context, decision gopact.Effect
 		return gopact.EffectReplayResult{}, errors.New("tools: replay target is required")
 	}
 
+	if h.commitStore != nil && decision.Effect.IdempotencyKey != "" {
+		record, ok, err := h.commitStore.Load(ctx, decision.Effect.IdempotencyKey)
+		if err != nil {
+			return gopact.EffectReplayResult{}, fmt.Errorf("tools: load replay commit: %w", err)
+		}
+		if ok {
+			return gopact.EffectReplayResult{
+				Metadata: map[string]any{
+					EffectReplayMetadataToolResult: record.Result,
+					EffectReplayMetadataCommitHit:  true,
+				},
+			}, nil
+		}
+	}
+
 	args, err := replayArgs(decision.Effect)
 	if err != nil {
 		return gopact.EffectReplayResult{}, err
@@ -86,10 +115,23 @@ func (h *ReplayHandler) ReplayEffect(ctx context.Context, decision gopact.Effect
 	if err != nil {
 		return gopact.EffectReplayResult{}, fmt.Errorf("tools: replay tool %q: %w", decision.Effect.Target, err)
 	}
+	metadata := map[string]any{
+		EffectReplayMetadataToolResult: result,
+	}
+	if h.commitStore != nil && decision.Effect.IdempotencyKey != "" {
+		err := h.commitStore.Store(ctx, CommitRecord{
+			IdempotencyKey: decision.Effect.IdempotencyKey,
+			EffectID:       decision.Effect.ID,
+			ToolName:       decision.Effect.Target,
+			Result:         result,
+		})
+		if err != nil {
+			return gopact.EffectReplayResult{}, fmt.Errorf("tools: store replay commit: %w", err)
+		}
+		metadata[EffectReplayMetadataCommitStored] = true
+	}
 	return gopact.EffectReplayResult{
-		Metadata: map[string]any{
-			EffectReplayMetadataToolResult: result,
-		},
+		Metadata: metadata,
 	}, nil
 }
 
