@@ -38,6 +38,16 @@ func TestRenderRepositoryProducesConformantScaffoldFiles(t *testing.T) {
 	if !strings.Contains(byPath["README.md"], "host-owned config") {
 		t.Fatalf("README.md = %q, want host-owned config boundary", byPath["README.md"])
 	}
+	workflow := byPath[".github/workflows/ci.yml"]
+	for _, want := range []string{
+		"Configure private SDK access",
+		"GOPACT_GITHUB_TOKEN: ${{ secrets.GOPACT_GITHUB_TOKEN || github.token }}",
+		"go env -w GOPRIVATE='github.com/gopact-ai/*'",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf(".github/workflows/ci.yml missing %q:\n%s", want, workflow)
+		}
+	}
 	conformance := byPath["CONFORMANCE.md"]
 	for _, want := range []string{
 		"gopacttest/providerconformance.RequireProviderConformance",
