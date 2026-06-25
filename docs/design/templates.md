@@ -165,6 +165,8 @@ Level 1 自举只读分析和计划；Level 2 可以受控写 docs/examples/test
 
 `BuildWorkflowProcessRecords` 的 workflow 父 task output 会保留 child action summary 中的 `action_status`；当 child action rejected/failed 时，父 task 会标记为 failed，并保留 `failed_action_count` 与 sanitized child summary。patch input 仍只保存 id、summary、file_count、has_diff 和 file path/intent，不泄露 raw diff。
 
+`CheckReleaseBundleConformance` / `RequireReleaseBundleConformance` 可复用同一组 release bundle contract case，校验 bundle 自身结构、required check ids、required evidence types、required CI gates，以及 `RecordReleaseBundleCheck` 产出的 `release_bundle` evidence 是否保留这些 required metadata；它不执行 CI、不读取 evidence ref、不替代宿主 release gate，只固定已观察 release evidence 的可移植证明形态。
+
 release gate 只消费已经产生的 `VerificationReport`、`EntropyAudit` 和 reviewer decision，不执行命令、不扫描工作区、不 apply patch；调用方可以通过 `RequireCheckIDs` 要求指定 verification checks 存在且 passed，通过 `RequireEvidenceTypes` 要求 run_export、model_call、tool_call、channel_event、effect_replay、run_effect_replay、memory_replay、memory_work_schedule、policy_decision、ci_gate、diff、file_snapshot、checkpoint、checkpoint_objectstore_index、trajectory、failure_attribution、entropy_audit 等已观察 evidence type，通过 `RequireCIGates` 要求 `ci_gate` evidence 中指定 gate 已 passed，从而把生产级 harness 策略留在宿主侧。`RecordReleaseGateCheck` 可把已评估的 `GateResult` 转成标准 release gate verification evidence，调用方 metadata 不能覆盖 gate status/mode/report/review/entropy/reasons 等 canonical release gate 字段；rejected gate 会先记录 failed evidence 再返回 `ErrReleaseGateRejected`。write mode 默认要求 verification report 通过、没有超过阈值的 entropy finding、review approved；analyze/plan mode 只返回 skipped。
 
 ## 测试要求
