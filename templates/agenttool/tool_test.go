@@ -104,6 +104,17 @@ func TestLocalAgentToolRunsChildAgentAndReturnsEventsWithCallChain(t *testing.T)
 	if len(result.Events) != 4 {
 		t.Fatalf("result events = %d, want 4 child events", len(result.Events))
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/local_child_run.golden.json", result.Events)
+	gopacttest.RequireTemplateTrajectoryConformance(t, gopacttest.TemplateTrajectoryConformanceHarness{
+		Name:   "agenttool local child run",
+		Events: result.Events,
+		RequiredEventTypes: []gopact.EventType{
+			gopact.EventRunStarted,
+			gopact.EventModelMessage,
+			gopact.EventToolResult,
+			gopact.EventRunCompleted,
+		},
+	})
 	for _, event := range result.Events {
 		ids := event.RuntimeIDs()
 		if ids.ParentCallID != "parent-call" || ids.CallID != childIDs.CallID {

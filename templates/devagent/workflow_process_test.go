@@ -203,6 +203,90 @@ func TestBuildWorkflowProcessRecordsPreservesActionMetadataOnChildBoundaries(t *
 	}
 }
 
+func TestBuildWorkflowProcessRecordsSummarizesRejectedChildAction(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Name: "self-bootstrap workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionRejected,
+					Mode:   ModeWrite,
+					Action: ActionApplyPatch,
+					Reasons: []string{
+						"write mode requires observed diff",
+					},
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "attempt core edit",
+					Diff:    "diff --git a/secret b/secret\n+raw diff must not be copied\n",
+					Files: []PatchFile{
+						{Path: "templates/devagent/workflow_process_test.go", Intent: "cover rejected workflow process"},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	if records.Task.Status != gopact.TaskFailed ||
+		records.Task.Metadata["failed_action_count"] != 1 {
+		t.Fatalf("workflow task = %+v, want failed parent with one failed action", records.Task)
+	}
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	if output["failed_action_count"] != 1 || output["action_count"] != 2 {
+		t.Fatalf("workflow output = %+v, want action and failed counts", output)
+	}
+	actionSummaries, ok := output["actions"].([]map[string]any)
+	if !ok {
+		t.Fatalf("workflow output actions = %T, want []map[string]any", output["actions"])
+	}
+	if len(actionSummaries) != 2 {
+		t.Fatalf("workflow output actions = %+v, want 2 child summaries", actionSummaries)
+	}
+	rejected := actionSummaries[1]
+	if rejected["index"] != 2 ||
+		rejected["status"] != string(gopact.TaskFailed) ||
+		rejected["mode"] != string(ModeWrite) ||
+		rejected["action"] != string(ActionApplyPatch) ||
+		rejected["action_status"] != string(ActionRejected) ||
+		rejected["input_count"] != 1 ||
+		rejected["intervention_count"] != 0 {
+		t.Fatalf("rejected action summary = %+v, want failed write/apply_patch summary", rejected)
+	}
+	if len(records.Tasks) != 2 ||
+		records.Tasks[1].Status != gopact.TaskFailed ||
+		records.Tasks[1].Metadata["workflow_action_index"] != 2 ||
+		records.Tasks[1].Metadata["action_status"] != string(ActionRejected) {
+		t.Fatalf("child tasks = %+v, want rejected second action task", records.Tasks)
+	}
+	if len(records.Inputs) != 1 || records.Inputs[0].Source != "devagent.patch" {
+		t.Fatalf("inputs = %+v, want one sanitized patch input", records.Inputs)
+	}
+	patchValue, ok := records.Inputs[0].Value.(map[string]any)
+	if !ok {
+		t.Fatalf("patch input value = %T, want map", records.Inputs[0].Value)
+	}
+	if strings.Contains(toString(patchValue["diff"]), "raw diff") ||
+		patchValue["file_count"] != 1 ||
+		patchValue["has_diff"] != true {
+		t.Fatalf("patch input value = %+v, want sanitized patch summary", patchValue)
+	}
+}
+
 func TestRecordWorkflowProcessRecordsAppendsParentAndChildren(t *testing.T) {
 	recorder := gopact.NewRunRecorder()
 

@@ -1,0 +1,14 @@
+[
+  {
+    "type": "run_started"
+  },
+  {
+    "type": "model_message"
+  },
+  {
+    "type": "tool_result"
+  },
+  {
+    "type": "run_completed"
+  }
+]

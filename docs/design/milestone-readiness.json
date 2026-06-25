@@ -80,7 +80,7 @@
         "docs/research/harness-loop-engineering.md"
       ],
       "open_items": [
-        "self-bootstrap workflow release evidence 真实场景、release bundle/conformance 级具体 CI gate requirement、workflow parent child-action summary、action governance metadata 贯穿 process/workflow 边界、ReAct 普通 multi-tool-then-final 与 multi-tool-error golden trajectory 已覆盖；更多 template-specific golden trajectory tests 和更广 Dev Agent workflow process record 场景仍需扩展",
+        "self-bootstrap workflow release evidence 真实场景、release bundle/conformance 级具体 CI gate requirement 仍需扩展；workflow parent child-action summary、action governance metadata 贯穿 process/workflow 边界、ReAct 普通 multi-tool-then-final 与 multi-tool-error golden trajectory、Agent-as-Tool local child run / remote A2A stream golden trajectory、Dev Agent rejected workflow child summary 场景已覆盖；更多 template-specific golden trajectory tests 和更广 Dev Agent workflow process record 场景仍需扩展",
         "ReAct memory worker 单次 pass、本地内存 DeferredMemoryWorkQueue、默认有界 retry/backoff decider、worker 默认 decider 接线、worker executor、RunOnce lease gate / pass-local lease renewal、有界 drain loop 和 retry/stop/dead-letter 调度决策 evidence 已具备；durable 生产队列 adapter、queue-level visibility timeout、distributed queue leasing、并发调度、生产级调度策略、真实 retry/DLQ storage 和更高级 memory 压缩/合并策略仍需 template adapter 或宿主 harness 实现",
         "远端 CI run/job/step 已观察结果 -> ci_gate evidence 桥接已具备第一片；model review 真实评测治理、CI provider 拉取/重跑/secret 治理和人工 release gate 仍需生产化"
       ]
