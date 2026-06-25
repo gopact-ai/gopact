@@ -99,9 +99,41 @@
         "docs/design/extension-scaffold-spec.json",
         "docs/design/development-plan.md"
       ],
+      "evidence_records": [
+        {
+          "type": "github_actions_run",
+          "scope": "core-ci",
+          "repository": "gopact-ai/gopact",
+          "workflow": "ci",
+          "run_id": 28199128163,
+          "head_branch": "main",
+          "head_sha": "a54e4becf8f8f63311d57a0b245a38d8064c1180",
+          "conclusion": "success",
+          "observed_at": "2026-06-26T04:44:30+08:00",
+          "required_gates": [
+            "whitespace",
+            "unit",
+            "race",
+            "vet",
+            "lint",
+            "coverage",
+            "examples",
+            "security"
+          ],
+          "notes": "GitHub Actions run 28199128163 completed successfully on main; run steps Check whitespace, Test, Race, Vet, Lint, Coverage, Examples, and Security were all success."
+        },
+        {
+          "type": "remote_extension_ci_blocker",
+          "scope": "external-repositories",
+          "repository": "gopact-ai/*",
+          "workflow": "ci",
+          "conclusion": "blocked",
+          "observed_at": "2026-06-26T04:25:20+08:00",
+          "notes": "Remote audit shows all 11 private external scaffold repositories exist and have CI workflows, but all lack GOPACT_GITHUB_TOKEN and their latest Actions runs fail because github.token cannot read the private core SDK repository."
+        }
+      ],
       "open_items": [
         "外部仓库 scaffold、sync-plan、sync-repos 脚本、sync-secrets 脚本、本地 -verify 和 -remote-status-json 远端审计已统一绑定 manifest required CI commands；2026-06-26 已真实创建并推送 11 个 gopact-ai 私有外部 scaffold 仓库，主仓已推送 v0.0.0 tag，外部仓库均已补充 go.sum 和私有 SDK 读取 workflow，remote audit 显示仓库存在、私有且 CI workflow 文件存在，并能直接审计 GOPACT_GITHUB_TOKEN secret；最新 remote audit 显示 11 个外部仓库均缺少 GOPACT_GITHUB_TOKEN，最新 GitHub Actions run 仍全部失败，当前共性原因是默认 github.token 不能读取私有主仓 github.com/gopact-ai/gopact，需要配置具备主仓 read 权限的 GOPACT_GITHUB_TOKEN repo/org secret 后重跑 CI，secret 未配置前 M6 不能视为完成",
-        "本地 core gate 已通过；M6 release 前仍必须在 GitHub CI 中稳定通过 race/lint/coverage/examples/security gate",
         "v1 前仍需继续外迁或删除主仓中过渡性生产 adapter/template"
       ]
     }

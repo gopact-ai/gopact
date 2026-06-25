@@ -362,14 +362,14 @@
 交付：
 
 - 兼容性策略：[versioning-policy.md](versioning-policy.md)、semver、public API review、deprecation policy。
-- CI：`docs/design/core-ci-gates.json`、`.github/workflows/ci.yml`、`.golangci.yml` 和 `Makefile` 已定义 whitespace、test、race、vet、lint、coverage、examples 和 security checks 第一片，并把 lint config 与 coverage profile 纳入受测契约；2026-06-25 已在本地用 Go 1.25.11 fresh 验证全部 core gate；`gopacttest.RecordCIGateSuiteCheck` 可把这些已观察 gate results 聚合成 `ci_gate` evidence，`gopacttest.RequireVerificationEvidenceConformance` 可在 adapter/testkit 层要求具体 gate 已 passed，`templates/devagent.RequireCIGates` 和 `ReleaseBundle.RequiredCIGates` 可要求具体 gate 名称已通过，供 release gate 或 Dev Agent release bundle 引用。
+- CI：`docs/design/core-ci-gates.json`、`.github/workflows/ci.yml`、`.golangci.yml` 和 `Makefile` 已定义 whitespace、test、race、vet、lint、coverage、examples 和 security checks 第一片，并把 lint config 与 coverage profile 纳入受测契约；2026-06-25 已在本地用 Go 1.25.11 fresh 验证全部 core gate；2026-06-26 已核实 GitHub Actions `gopact-ai/gopact` `ci` run `28199128163` 在 `main` / `a54e4becf8f8f63311d57a0b245a38d8064c1180` 上成功通过 Check whitespace、Test、Race、Vet、Lint、Coverage、Examples 和 Security；`gopacttest.RecordCIGateSuiteCheck` 可把这些已观察 gate results 聚合成 `ci_gate` evidence，`gopacttest.RequireVerificationEvidenceConformance` 可在 adapter/testkit 层要求具体 gate 已 passed，`templates/devagent.RequireCIGates` 和 `ReleaseBundle.RequiredCIGates` 可要求具体 gate 名称已通过，供 release gate 或 Dev Agent release bundle 引用。
 - 仓库拆分：主仓只保留 core contract、轻量内置实现、reference adapter 和 conformance/testkit；OpenAI、Anthropic、Gemini、OpenRouter、Redis、SQL、S3/GCS/R2/OSS、MCP/A2A transport、A2UI、AG-UI、Lark、LangSmith、LangGraph 等生产 adapter/plugin 迁移到独立仓库。
 - 安全：sandbox policy、secret provider、redaction rule、prompt-injection defense。
 - 文档：README、godoc、examples、[migration-guide.md](migration-guide.md)、[template-guide.md](template-guide.md)。
 
 验收：
 
-- `docs/design/core-ci-gates.json` 中定义的 whitespace、test、race、vet、lint、coverage、examples、security gate 已在本地通过；release 前仍必须在 GitHub CI 上稳定通过，并使用受测的 `.golangci.yml` 与 `coverage.out`。
+- `docs/design/core-ci-gates.json` 中定义的 whitespace、test、race、vet、lint、coverage、examples、security gate 已在本地和 GitHub CI 通过；后续 release 必须继续使用受测的 `.golangci.yml` 与 `coverage.out` 并保持同一组 gate 通过。
 - public examples 可复制运行。
 - migration guide 和 template guide 已被 README、设计入口和本计划索引。
 - 核心 package 不依赖具体 SaaS provider。
@@ -407,4 +407,4 @@
 - checkpoint/export 不丢失恢复所需状态；
 - 没有把新的生产级 adapter/plugin/template 沉入主仓，外部扩展通过 contract/conformance 接入；
 - README 和设计文档状态同步；
-- `go test ./... -count=1`、`go test -race ./... -count=1`、`go vet ./...`、`golangci-lint run ./...`、`go test -coverprofile=coverage.out ./...`、`go test -run '^Example' ./...`、`govulncheck ./...`、`git diff --check` 本地通过；M6 release 前还必须让这些 gate 在 GitHub CI 通过。
+- `go test ./... -count=1`、`go test -race ./... -count=1`、`go vet ./...`、`golangci-lint run ./...`、`go test -coverprofile=coverage.out ./...`、`go test -run '^Example' ./...`、`govulncheck ./...`、`git diff --check` 本地和 GitHub CI 通过；后续 release 仍必须持续保留这些 gate。

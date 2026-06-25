@@ -55,4 +55,4 @@
 - conformance suite 是否覆盖；
 - golden trajectory 或 run export 是否更新；
 - `go test -count=1 ./...`、`go vet ./...` 和 `git diff --check` 是否通过；
-- M6 release 前，`core-ci-gates.json` 定义的 race/lint/coverage/examples/security gate 是否在 CI 通过。
+- M6 release 前，`core-ci-gates.json` 定义的 race/lint/coverage/examples/security gate 是否仍在 CI 通过。

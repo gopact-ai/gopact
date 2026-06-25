@@ -121,6 +121,53 @@ func TestMilestoneReadinessManifestIsIndexed(t *testing.T) {
 	}
 }
 
+func TestMilestoneReadinessRecordsM6RemoteCIEvidence(t *testing.T) {
+	manifest := loadMilestoneReadinessManifest(t)
+	coreGates := loadCoreCIGatesManifest(t)
+	m6, ok := findMilestoneReadiness(manifest, "M6")
+	if !ok {
+		t.Fatal("milestone readiness missing M6")
+	}
+
+	var coreCI milestoneEvidenceRecord
+	var externalBlocker milestoneEvidenceRecord
+	for _, record := range m6.EvidenceRecords {
+		switch {
+		case record.Type == "github_actions_run" && record.Scope == "core-ci":
+			coreCI = record
+		case record.Type == "remote_extension_ci_blocker" && record.Scope == "external-repositories":
+			externalBlocker = record
+		}
+	}
+	if coreCI.Type == "" {
+		t.Fatal("M6 missing core GitHub Actions evidence record")
+	}
+	if coreCI.Repository != "gopact-ai/gopact" ||
+		coreCI.Workflow != "ci" ||
+		coreCI.RunID <= 0 ||
+		coreCI.HeadBranch != "main" ||
+		strings.TrimSpace(coreCI.HeadSHA) == "" ||
+		coreCI.Conclusion != "success" ||
+		strings.TrimSpace(coreCI.ObservedAt) == "" {
+		t.Fatalf("M6 core CI evidence = %+v, want successful gopact-ai/gopact ci run", coreCI)
+	}
+	if !slices.Equal(coreCI.RequiredGates, coreGates.RequiredGates) {
+		t.Fatalf("M6 core CI required_gates = %v, want core-ci-gates required_gates %v", coreCI.RequiredGates, coreGates.RequiredGates)
+	}
+	if externalBlocker.Type == "" {
+		t.Fatal("M6 missing external repository CI blocker evidence record")
+	}
+	if externalBlocker.Conclusion != "blocked" ||
+		!strings.Contains(externalBlocker.Notes, "GOPACT_GITHUB_TOKEN") {
+		t.Fatalf("M6 external blocker evidence = %+v, want GOPACT_GITHUB_TOKEN blocker", externalBlocker)
+	}
+	for _, item := range m6.OpenItems {
+		if strings.Contains(item, "M6 release 前仍必须在 GitHub CI") {
+			t.Fatalf("M6 open item still contains stale core GitHub CI blocker: %q", item)
+		}
+	}
+}
+
 type milestoneReadinessManifest struct {
 	Version               int                  `json:"version"`
 	OverallStatus         string               `json:"overall_status"`
@@ -130,12 +177,27 @@ type milestoneReadinessManifest struct {
 }
 
 type milestoneReadiness struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Status       string   `json:"status"`
-	Objective    string   `json:"objective"`
-	EvidenceDocs []string `json:"evidence_docs"`
-	OpenItems    []string `json:"open_items"`
+	ID              string                    `json:"id"`
+	Name            string                    `json:"name"`
+	Status          string                    `json:"status"`
+	Objective       string                    `json:"objective"`
+	EvidenceDocs    []string                  `json:"evidence_docs"`
+	EvidenceRecords []milestoneEvidenceRecord `json:"evidence_records"`
+	OpenItems       []string                  `json:"open_items"`
+}
+
+type milestoneEvidenceRecord struct {
+	Type          string   `json:"type"`
+	Scope         string   `json:"scope"`
+	Repository    string   `json:"repository"`
+	Workflow      string   `json:"workflow"`
+	RunID         int64    `json:"run_id"`
+	HeadBranch    string   `json:"head_branch"`
+	HeadSHA       string   `json:"head_sha"`
+	Conclusion    string   `json:"conclusion"`
+	ObservedAt    string   `json:"observed_at"`
+	RequiredGates []string `json:"required_gates"`
+	Notes         string   `json:"notes"`
 }
 
 type bootstrapLevel struct {
@@ -169,4 +231,13 @@ func isMilestoneReadinessStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func findMilestoneReadiness(manifest milestoneReadinessManifest, id string) (milestoneReadiness, bool) {
+	for _, milestone := range manifest.Milestones {
+		if milestone.ID == id {
+			return milestone, true
+		}
+	}
+	return milestoneReadiness{}, false
 }
