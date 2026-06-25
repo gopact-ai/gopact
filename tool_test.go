@@ -47,3 +47,26 @@ func TestToolFuncInvokesAndExposesSpec(t *testing.T) {
 		t.Fatalf("Invoke().Content = %q, want hello", result.Content)
 	}
 }
+
+func TestToolResultCarriesArtifacts(t *testing.T) {
+	result := ToolResult{
+		Content: "created",
+		Artifacts: []ArtifactRef{
+			{ID: "artifact-1", Scope: ArtifactScopeRun},
+		},
+	}
+
+	if len(result.Artifacts) != 1 || result.Artifacts[0].ID != "artifact-1" {
+		t.Fatalf("Artifacts = %+v", result.Artifacts)
+	}
+}
+
+func TestToolResultOmitsEmptyCommit(t *testing.T) {
+	data, err := json.Marshal(ToolResult{Content: "ok"})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if string(data) != `{"content":"ok"}` {
+		t.Fatalf("Marshal(ToolResult) = %s, want no empty commit object", data)
+	}
+}

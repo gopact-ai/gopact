@@ -1,0 +1,2921 @@
+{
+  "version": 1,
+  "scope": "root-top-level",
+  "allowed_categories": [
+    "core-contract",
+    "runtime-facade",
+    "typed-option",
+    "middleware-plugin",
+    "export-import-resume",
+    "verification",
+    "reference-implementation",
+    "transitional"
+  ],
+  "method_policy": {
+    "scope": "exported-root-receiver-methods",
+    "coverage": "inherited-from-receiver-type",
+    "rationale": "Exported methods on exported root receiver types are public API. They inherit the receiver type category, stability, source file, and deprecation policy from this manifest; tests reject methods whose receiver type is not covered."
+  },
+  "groups": [
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "artifact.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "Artifact",
+          "kind": "type"
+        },
+        {
+          "name": "ArtifactRef",
+          "kind": "type"
+        },
+        {
+          "name": "ArtifactScope",
+          "kind": "type"
+        },
+        {
+          "name": "ArtifactScopeRun",
+          "kind": "const"
+        },
+        {
+          "name": "ArtifactScopeSession",
+          "kind": "const"
+        },
+        {
+          "name": "ArtifactScopeThread",
+          "kind": "const"
+        },
+        {
+          "name": "ArtifactScopeUser",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "async_event_sink.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "AsyncEventSink",
+          "kind": "type"
+        },
+        {
+          "name": "AsyncEventSinkOption",
+          "kind": "type"
+        },
+        {
+          "name": "AsyncEventSinkOverflowBlock",
+          "kind": "const"
+        },
+        {
+          "name": "AsyncEventSinkOverflowDropNewest",
+          "kind": "const"
+        },
+        {
+          "name": "AsyncEventSinkOverflowPolicy",
+          "kind": "type"
+        },
+        {
+          "name": "EventMetadataAsyncEventSinkDropped",
+          "kind": "const"
+        },
+        {
+          "name": "NewAsyncEventSink",
+          "kind": "func"
+        },
+        {
+          "name": "WithAsyncEventSinkBlock",
+          "kind": "func"
+        },
+        {
+          "name": "WithAsyncEventSinkBuffer",
+          "kind": "func"
+        },
+        {
+          "name": "WithAsyncEventSinkDropNewest",
+          "kind": "func"
+        },
+        {
+          "name": "WithAsyncEventSinkOverflowPolicy",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "channel_policy.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ChannelPolicyInput",
+          "kind": "type"
+        },
+        {
+          "name": "ChannelPolicyOption",
+          "kind": "type"
+        },
+        {
+          "name": "ErrChannelPolicyRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrChannelRequired",
+          "kind": "var"
+        },
+        {
+          "name": "NewPolicyChannel",
+          "kind": "func"
+        },
+        {
+          "name": "PolicyChannel",
+          "kind": "type"
+        },
+        {
+          "name": "WithChannelPolicyEventSink",
+          "kind": "func"
+        },
+        {
+          "name": "WithChannelPolicyIDs",
+          "kind": "func"
+        },
+        {
+          "name": "WithChannelPolicyMetadata",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "channel_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "ChannelEventSnapshot",
+          "kind": "type"
+        },
+        {
+          "name": "ErrChannelEventFailed",
+          "kind": "var"
+        },
+        {
+          "name": "ErrChannelEventRequired",
+          "kind": "var"
+        },
+        {
+          "name": "RecordChannelEventCheck",
+          "kind": "func"
+        },
+        {
+          "name": "VerificationCheckChannelEvent",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeChannelEvent",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "content.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "AudioPart",
+          "kind": "func"
+        },
+        {
+          "name": "ContentPart",
+          "kind": "type"
+        },
+        {
+          "name": "ContentPartAudio",
+          "kind": "const"
+        },
+        {
+          "name": "ContentPartFile",
+          "kind": "const"
+        },
+        {
+          "name": "ContentPartImage",
+          "kind": "const"
+        },
+        {
+          "name": "ContentPartReasoning",
+          "kind": "const"
+        },
+        {
+          "name": "ContentPartText",
+          "kind": "const"
+        },
+        {
+          "name": "ContentPartType",
+          "kind": "type"
+        },
+        {
+          "name": "FilePart",
+          "kind": "func"
+        },
+        {
+          "name": "ImagePart",
+          "kind": "func"
+        },
+        {
+          "name": "ReasoningPart",
+          "kind": "func"
+        },
+        {
+          "name": "TextPart",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "entropy.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "EntropyAudit",
+          "kind": "type"
+        },
+        {
+          "name": "EntropyCategory",
+          "kind": "type"
+        },
+        {
+          "name": "EntropyDependency",
+          "kind": "const"
+        },
+        {
+          "name": "EntropyDiff",
+          "kind": "const"
+        },
+        {
+          "name": "EntropyFinding",
+          "kind": "type"
+        },
+        {
+          "name": "EntropyProcess",
+          "kind": "const"
+        },
+        {
+          "name": "EntropyResidue",
+          "kind": "const"
+        },
+        {
+          "name": "EntropySecurity",
+          "kind": "const"
+        },
+        {
+          "name": "EntropySeverity",
+          "kind": "type"
+        },
+        {
+          "name": "EntropySeverityCritical",
+          "kind": "const"
+        },
+        {
+          "name": "EntropySeverityHigh",
+          "kind": "const"
+        },
+        {
+          "name": "EntropySeverityLow",
+          "kind": "const"
+        },
+        {
+          "name": "EntropySeverityMedium",
+          "kind": "const"
+        },
+        {
+          "name": "EntropyStaleDocs",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "entropy_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "ErrEntropyAuditFailed",
+          "kind": "var"
+        },
+        {
+          "name": "RecordEntropyAuditCheck",
+          "kind": "func"
+        },
+        {
+          "name": "VerificationCheckEntropyAudit",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeEntropyAudit",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "event.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "Event",
+          "kind": "type"
+        },
+        {
+          "name": "EventA2AAgentCardFetched",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2AAgentRegistered",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2AArtifactUpdated",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2AMessageReceived",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2ATaskCanceled",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2ATaskCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2ATaskFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2ATaskSent",
+          "kind": "const"
+        },
+        {
+          "name": "EventA2ATaskStatusUpdated",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelActionReceived",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelActionRejected",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelSendCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelSendFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelSendStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelTransferCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelTransferFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventChannelTransferStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventCheckpoint",
+          "kind": "const"
+        },
+        {
+          "name": "EventCheckpointLoaded",
+          "kind": "const"
+        },
+        {
+          "name": "EventInterrupted",
+          "kind": "const"
+        },
+        {
+          "name": "EventMCPPromptsListed",
+          "kind": "const"
+        },
+        {
+          "name": "EventMCPResourcesListed",
+          "kind": "const"
+        },
+        {
+          "name": "EventMCPServerConnected",
+          "kind": "const"
+        },
+        {
+          "name": "EventMCPToolsListed",
+          "kind": "const"
+        },
+        {
+          "name": "EventMemoryDeleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventMemoryPut",
+          "kind": "const"
+        },
+        {
+          "name": "EventMemorySearched",
+          "kind": "const"
+        },
+        {
+          "name": "EventModelMessage",
+          "kind": "const"
+        },
+        {
+          "name": "EventModelProviderAttemptCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventModelProviderAttemptFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventModelProviderAttemptStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventModelProviderFallbackStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventModelRoutePlanned",
+          "kind": "const"
+        },
+        {
+          "name": "EventNodeCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventNodeFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventNodeResumed",
+          "kind": "const"
+        },
+        {
+          "name": "EventNodeStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventPolicyDecided",
+          "kind": "const"
+        },
+        {
+          "name": "EventPolicyRequested",
+          "kind": "const"
+        },
+        {
+          "name": "EventResumeReceived",
+          "kind": "const"
+        },
+        {
+          "name": "EventRunCanceled",
+          "kind": "const"
+        },
+        {
+          "name": "EventRunCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventRunFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventRunInterrupted",
+          "kind": "const"
+        },
+        {
+          "name": "EventRunStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventSandboxClosed",
+          "kind": "const"
+        },
+        {
+          "name": "EventSandboxCreated",
+          "kind": "const"
+        },
+        {
+          "name": "EventSandboxExecCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventSandboxExecFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventSandboxExecStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventSandboxFileRead",
+          "kind": "const"
+        },
+        {
+          "name": "EventSandboxFileWritten",
+          "kind": "const"
+        },
+        {
+          "name": "EventSkillActivated",
+          "kind": "const"
+        },
+        {
+          "name": "EventSkillRegistered",
+          "kind": "const"
+        },
+        {
+          "name": "EventStepImported",
+          "kind": "const"
+        },
+        {
+          "name": "EventSurfaceMessageProjected",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolCall",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolDeferredListed",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolPromoted",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolRegistered",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolResult",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolSearched",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolVisibilityChanged",
+          "kind": "const"
+        },
+        {
+          "name": "EventToolVisibleListed",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnCanceled",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnFailed",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnInputMerged",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnInputReceived",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnInterrupted",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnPreempted",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnResumed",
+          "kind": "const"
+        },
+        {
+          "name": "EventTurnStarted",
+          "kind": "const"
+        },
+        {
+          "name": "EventType",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "event_middleware.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ComposeEventHandler",
+          "kind": "func"
+        },
+        {
+          "name": "EventContext",
+          "kind": "type"
+        },
+        {
+          "name": "EventHandler",
+          "kind": "type"
+        },
+        {
+          "name": "EventMetadataEventSinkError",
+          "kind": "const"
+        },
+        {
+          "name": "EventSinkFailureFallback",
+          "kind": "const"
+        },
+        {
+          "name": "EventSinkFailurePolicy",
+          "kind": "type"
+        },
+        {
+          "name": "EventSinkFailureStrict",
+          "kind": "const"
+        },
+        {
+          "name": "EventSinkMiddleware",
+          "kind": "func"
+        },
+        {
+          "name": "EventSinkOption",
+          "kind": "type"
+        },
+        {
+          "name": "NewEventContext",
+          "kind": "func"
+        },
+        {
+          "name": "WithEventSinkFailurePolicy",
+          "kind": "func"
+        },
+        {
+          "name": "WithEventSinkFallback",
+          "kind": "func"
+        },
+        {
+          "name": "WithEventSinkStrict",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "export-import-resume",
+      "stability": "experimental",
+      "source_file": "export.go",
+      "rationale": "Run, step, resume, replay, or schema contract required for process export/import and recovery.",
+      "symbols": [
+        {
+          "name": "NewRunRecorder",
+          "kind": "func"
+        },
+        {
+          "name": "ReplayRunExport",
+          "kind": "func"
+        },
+        {
+          "name": "RunCanceled",
+          "kind": "const"
+        },
+        {
+          "name": "RunCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "RunExport",
+          "kind": "type"
+        },
+        {
+          "name": "RunExportVersion",
+          "kind": "const"
+        },
+        {
+          "name": "RunFailed",
+          "kind": "const"
+        },
+        {
+          "name": "RunInterrupted",
+          "kind": "const"
+        },
+        {
+          "name": "RunOutcome",
+          "kind": "type"
+        },
+        {
+          "name": "RunRecorder",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "export_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "ErrRunExportFailed",
+          "kind": "var"
+        },
+        {
+          "name": "ErrRunExportIncomplete",
+          "kind": "var"
+        },
+        {
+          "name": "RecordRunExportCheck",
+          "kind": "func"
+        },
+        {
+          "name": "VerificationCheckRunExport",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeRunExport",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "failure.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "EventMetadataFailureKind",
+          "kind": "const"
+        },
+        {
+          "name": "FailureAttribution",
+          "kind": "type"
+        },
+        {
+          "name": "FailureContext",
+          "kind": "const"
+        },
+        {
+          "name": "FailureEntropy",
+          "kind": "const"
+        },
+        {
+          "name": "FailureExternal",
+          "kind": "const"
+        },
+        {
+          "name": "FailureFeedback",
+          "kind": "const"
+        },
+        {
+          "name": "FailureKind",
+          "kind": "type"
+        },
+        {
+          "name": "FailureModel",
+          "kind": "const"
+        },
+        {
+          "name": "FailurePolicy",
+          "kind": "const"
+        },
+        {
+          "name": "FailureRecovery",
+          "kind": "const"
+        },
+        {
+          "name": "FailureRuntime",
+          "kind": "const"
+        },
+        {
+          "name": "FailureSandbox",
+          "kind": "const"
+        },
+        {
+          "name": "FailureTool",
+          "kind": "const"
+        },
+        {
+          "name": "FailureUnknown",
+          "kind": "const"
+        },
+        {
+          "name": "FailureVerification",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "failure_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "ErrFailureAttributionFailed",
+          "kind": "var"
+        },
+        {
+          "name": "RecordFailureAttributionCheck",
+          "kind": "func"
+        },
+        {
+          "name": "VerificationCheckFailureAttribution",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeFailureAttribution",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "ids.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "RuntimeIDs",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "export-import-resume",
+      "stability": "experimental",
+      "source_file": "interrupt.go",
+      "rationale": "Run, step, resume, replay, or schema contract required for process export/import and recovery.",
+      "symbols": [
+        {
+          "name": "ErrInterrupted",
+          "kind": "var"
+        },
+        {
+          "name": "Interrupt",
+          "kind": "func"
+        },
+        {
+          "name": "InterruptApproval",
+          "kind": "const"
+        },
+        {
+          "name": "InterruptError",
+          "kind": "type"
+        },
+        {
+          "name": "InterruptExternalWait",
+          "kind": "const"
+        },
+        {
+          "name": "InterruptInput",
+          "kind": "const"
+        },
+        {
+          "name": "InterruptRecord",
+          "kind": "type"
+        },
+        {
+          "name": "InterruptSelection",
+          "kind": "const"
+        },
+        {
+          "name": "InterruptType",
+          "kind": "type"
+        },
+        {
+          "name": "MetadataResumePayload",
+          "kind": "const"
+        },
+        {
+          "name": "MetadataResumeRequest",
+          "kind": "const"
+        },
+        {
+          "name": "ResumeRequest",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "stability": "transitional",
+      "source_file": "lease.go",
+      "rationale": "No-external-dependency reference implementation or backend port kept as a lightweight SDK default while production adapters move out.",
+      "symbols": [
+        {
+          "name": "ErrLeaseConflict",
+          "kind": "var"
+        },
+        {
+          "name": "ErrLeaseKeyRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrLeaseNotHeld",
+          "kind": "var"
+        },
+        {
+          "name": "ErrLeaseOwnerRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrLeaseTokenRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrLeaseTTLRequired",
+          "kind": "var"
+        },
+        {
+          "name": "LeaseBackend",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseRecord",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseReleaseRequest",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseRenewRequest",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseRequest",
+          "kind": "type"
+        },
+        {
+          "name": "MemoryLeaseBackend",
+          "kind": "type"
+        },
+        {
+          "name": "MemoryLeaseOption",
+          "kind": "type"
+        },
+        {
+          "name": "NewMemoryLeaseBackend",
+          "kind": "func"
+        },
+        {
+          "name": "WithMemoryLeaseClock",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "runtime-facade",
+      "stability": "experimental",
+      "source_file": "logger.go",
+      "rationale": "Root facade or typed option used to configure and operate the SDK without exposing internal packages.",
+      "symbols": [
+        {
+          "name": "Any",
+          "kind": "func"
+        },
+        {
+          "name": "Attr",
+          "kind": "type"
+        },
+        {
+          "name": "LevelDebug",
+          "kind": "const"
+        },
+        {
+          "name": "LevelError",
+          "kind": "const"
+        },
+        {
+          "name": "LevelInfo",
+          "kind": "const"
+        },
+        {
+          "name": "LevelUnknown",
+          "kind": "const"
+        },
+        {
+          "name": "LevelWarn",
+          "kind": "const"
+        },
+        {
+          "name": "Logger",
+          "kind": "type"
+        },
+        {
+          "name": "LogLevel",
+          "kind": "type"
+        },
+        {
+          "name": "NewTextLogger",
+          "kind": "func"
+        },
+        {
+          "name": "String",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "message.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "Message",
+          "kind": "type"
+        },
+        {
+          "name": "Role",
+          "kind": "type"
+        },
+        {
+          "name": "RoleAssistant",
+          "kind": "const"
+        },
+        {
+          "name": "RoleSystem",
+          "kind": "const"
+        },
+        {
+          "name": "RoleTool",
+          "kind": "const"
+        },
+        {
+          "name": "RoleUser",
+          "kind": "const"
+        },
+        {
+          "name": "ToolCall",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "middleware.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ComposeNodeHandler",
+          "kind": "func"
+        },
+        {
+          "name": "NewNodeContext",
+          "kind": "func"
+        },
+        {
+          "name": "NodeContext",
+          "kind": "type"
+        },
+        {
+          "name": "NodeContextOptions",
+          "kind": "type"
+        },
+        {
+          "name": "NodeHandler",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "model.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "AdaptResponseModel",
+          "kind": "func"
+        },
+        {
+          "name": "AdaptStreamingModel",
+          "kind": "func"
+        },
+        {
+          "name": "Budget",
+          "kind": "type"
+        },
+        {
+          "name": "Capability",
+          "kind": "type"
+        },
+        {
+          "name": "CapabilityJSONSchema",
+          "kind": "const"
+        },
+        {
+          "name": "CapabilityReasoning",
+          "kind": "const"
+        },
+        {
+          "name": "CapabilityStreaming",
+          "kind": "const"
+        },
+        {
+          "name": "CapabilityStructuredOutput",
+          "kind": "const"
+        },
+        {
+          "name": "CapabilityToolCalling",
+          "kind": "const"
+        },
+        {
+          "name": "CapabilityVision",
+          "kind": "const"
+        },
+        {
+          "name": "ChatModel",
+          "kind": "type"
+        },
+        {
+          "name": "ModelRequest",
+          "kind": "type"
+        },
+        {
+          "name": "ModelResponse",
+          "kind": "type"
+        },
+        {
+          "name": "ModelRoute",
+          "kind": "type"
+        },
+        {
+          "name": "ResponseModel",
+          "kind": "type"
+        },
+        {
+          "name": "StreamingModel",
+          "kind": "type"
+        },
+        {
+          "name": "StreamingResponseModel",
+          "kind": "type"
+        },
+        {
+          "name": "Usage",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "model_middleware.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ComposeModelHandler",
+          "kind": "func"
+        },
+        {
+          "name": "ModelContext",
+          "kind": "type"
+        },
+        {
+          "name": "ModelContextOptions",
+          "kind": "type"
+        },
+        {
+          "name": "ModelHandler",
+          "kind": "type"
+        },
+        {
+          "name": "NewModelContext",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "model_rate_limit.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ErrModelRateLimiterRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ModelRateLimiter",
+          "kind": "type"
+        },
+        {
+          "name": "ModelRateLimiterFunc",
+          "kind": "type"
+        },
+        {
+          "name": "ModelRateLimitMiddleware",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "model_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "ErrModelCallFailed",
+          "kind": "var"
+        },
+        {
+          "name": "ErrModelCallRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ModelCallSnapshot",
+          "kind": "type"
+        },
+        {
+          "name": "RecordModelCallCheck",
+          "kind": "func"
+        },
+        {
+          "name": "VerificationCheckModelCall",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeModelCall",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "plugin.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ErrInvalidPluginDescriptor",
+          "kind": "var"
+        },
+        {
+          "name": "ErrPluginExists",
+          "kind": "var"
+        },
+        {
+          "name": "ErrPluginHostClosed",
+          "kind": "var"
+        },
+        {
+          "name": "EventMetadataPluginSubscriberErrors",
+          "kind": "const"
+        },
+        {
+          "name": "EventSubscriber",
+          "kind": "type"
+        },
+        {
+          "name": "NewPluginHost",
+          "kind": "func"
+        },
+        {
+          "name": "Plugin",
+          "kind": "type"
+        },
+        {
+          "name": "PluginCapability",
+          "kind": "type"
+        },
+        {
+          "name": "PluginCapabilityApproval",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityChannel",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityEvaluation",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityEventMiddleware",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityEventSubscriber",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityModelMiddleware",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityNodeMiddleware",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityPolicy",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityReplay",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityTelemetry",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityToolMiddleware",
+          "kind": "const"
+        },
+        {
+          "name": "PluginCapabilityTransfer",
+          "kind": "const"
+        },
+        {
+          "name": "PluginDescriber",
+          "kind": "type"
+        },
+        {
+          "name": "PluginDescriptor",
+          "kind": "type"
+        },
+        {
+          "name": "PluginFailureFallback",
+          "kind": "const"
+        },
+        {
+          "name": "PluginFailurePolicy",
+          "kind": "type"
+        },
+        {
+          "name": "PluginFailureStrict",
+          "kind": "const"
+        },
+        {
+          "name": "PluginHost",
+          "kind": "type"
+        },
+        {
+          "name": "PluginHostOption",
+          "kind": "type"
+        },
+        {
+          "name": "WithPluginFailureFallback",
+          "kind": "func"
+        },
+        {
+          "name": "WithPluginFailurePolicy",
+          "kind": "func"
+        },
+        {
+          "name": "WithPluginFailureStrict",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "policy.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "ErrPolicyDenied",
+          "kind": "var"
+        },
+        {
+          "name": "ModelPolicyMiddleware",
+          "kind": "func"
+        },
+        {
+          "name": "NewPolicyDecidedEvent",
+          "kind": "func"
+        },
+        {
+          "name": "NewPolicyRequestedEvent",
+          "kind": "func"
+        },
+        {
+          "name": "NewPolicyReviewInterrupt",
+          "kind": "func"
+        },
+        {
+          "name": "Policy",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyAction",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyActionActivate",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionCancel",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionConnect",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionCreate",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionDelete",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionEmit",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionExec",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionExport",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionGenerate",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionGet",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionInvoke",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionList",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionPut",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionRead",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionReceive",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionResume",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionRun",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionSearch",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionSend",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyActionWrite",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyAllow",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundary",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyBoundaryA2A",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryArtifact",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryChannel",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryEvent",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryExporter",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryMCP",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryMemory",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryModel",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryNode",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundarySandbox",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundarySkill",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryTool",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundaryTurn",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyDecision",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyDeniedError",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyDeny",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyFunc",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyRequest",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyRequestAction",
+          "kind": "type"
+        },
+        {
+          "name": "PolicyReview",
+          "kind": "const"
+        },
+        {
+          "name": "ToolPolicyInput",
+          "kind": "type"
+        },
+        {
+          "name": "ToolPolicyMiddleware",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "policy_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "ErrPolicyDecisionNotAllowed",
+          "kind": "var"
+        },
+        {
+          "name": "RecordPolicyDecisionCheck",
+          "kind": "func"
+        },
+        {
+          "name": "VerificationCheckPolicyDecision",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypePolicyDecision",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "process_record.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "InputExternal",
+          "kind": "const"
+        },
+        {
+          "name": "InputKind",
+          "kind": "type"
+        },
+        {
+          "name": "InputRecord",
+          "kind": "type"
+        },
+        {
+          "name": "InputResume",
+          "kind": "const"
+        },
+        {
+          "name": "InputSystem",
+          "kind": "const"
+        },
+        {
+          "name": "InputUser",
+          "kind": "const"
+        },
+        {
+          "name": "InterventionCanceled",
+          "kind": "const"
+        },
+        {
+          "name": "InterventionRecord",
+          "kind": "type"
+        },
+        {
+          "name": "InterventionRejected",
+          "kind": "const"
+        },
+        {
+          "name": "InterventionRequested",
+          "kind": "const"
+        },
+        {
+          "name": "InterventionResolved",
+          "kind": "const"
+        },
+        {
+          "name": "InterventionStatus",
+          "kind": "type"
+        },
+        {
+          "name": "TaskCanceled",
+          "kind": "const"
+        },
+        {
+          "name": "TaskCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "TaskFailed",
+          "kind": "const"
+        },
+        {
+          "name": "TaskInterrupted",
+          "kind": "const"
+        },
+        {
+          "name": "TaskPending",
+          "kind": "const"
+        },
+        {
+          "name": "TaskRecord",
+          "kind": "type"
+        },
+        {
+          "name": "TaskRunning",
+          "kind": "const"
+        },
+        {
+          "name": "TaskStatus",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "redaction.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "EventRedactionMiddleware",
+          "kind": "func"
+        },
+        {
+          "name": "ModelIORedactionMiddleware",
+          "kind": "func"
+        },
+        {
+          "name": "RedactionState",
+          "kind": "type"
+        },
+        {
+          "name": "RedactModelRequest",
+          "kind": "func"
+        },
+        {
+          "name": "RedactModelResponse",
+          "kind": "func"
+        },
+        {
+          "name": "RedactToolResult",
+          "kind": "func"
+        },
+        {
+          "name": "TextRedactor",
+          "kind": "type"
+        },
+        {
+          "name": "TextRedactorFunc",
+          "kind": "type"
+        },
+        {
+          "name": "ToolResultRedactionMiddleware",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "export-import-resume",
+      "stability": "experimental",
+      "source_file": "replay.go",
+      "rationale": "Run, step, resume, replay, or schema contract required for process export/import and recovery.",
+      "symbols": [
+        {
+          "name": "BuildRunEffectGraph",
+          "kind": "func"
+        },
+        {
+          "name": "EffectReplayAction",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplayActionRecordOnly",
+          "kind": "const"
+        },
+        {
+          "name": "EffectReplayActionReplay",
+          "kind": "const"
+        },
+        {
+          "name": "EffectReplayActionSkip",
+          "kind": "const"
+        },
+        {
+          "name": "EffectReplayDecision",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplayExecutor",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplayFunc",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplayPlan",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplayResult",
+          "kind": "type"
+        },
+        {
+          "name": "EventMetadataEffectReplayPlan",
+          "kind": "const"
+        },
+        {
+          "name": "ExecuteEffectReplay",
+          "kind": "func"
+        },
+        {
+          "name": "ExecuteRunEffectReplay",
+          "kind": "func"
+        },
+        {
+          "name": "PlanEffectReplay",
+          "kind": "func"
+        },
+        {
+          "name": "PlanRunEffectReplay",
+          "kind": "func"
+        },
+        {
+          "name": "RunEffectEdge",
+          "kind": "type"
+        },
+        {
+          "name": "RunEffectGraph",
+          "kind": "type"
+        },
+        {
+          "name": "RunEffectNode",
+          "kind": "type"
+        },
+        {
+          "name": "RunEffectReplayDecision",
+          "kind": "type"
+        },
+        {
+          "name": "RunEffectReplayPlan",
+          "kind": "type"
+        },
+        {
+          "name": "RunEffectReplayResult",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "export-import-resume",
+      "stability": "experimental",
+      "source_file": "replay_registry.go",
+      "rationale": "Run, step, resume, replay, or schema contract required for process export/import and recovery.",
+      "symbols": [
+        {
+          "name": "EffectReplayRegistry",
+          "kind": "type"
+        },
+        {
+          "name": "ErrEffectReplayHandlerExists",
+          "kind": "var"
+        },
+        {
+          "name": "ErrEffectReplayHandlerNotFound",
+          "kind": "var"
+        },
+        {
+          "name": "NewEffectReplayRegistry",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "replay_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "EffectReplaySnapshot",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplaySnapshotFromEvent",
+          "kind": "func"
+        },
+        {
+          "name": "ErrEffectReplayVerificationFailed",
+          "kind": "var"
+        },
+        {
+          "name": "EventEffectReplayPlan",
+          "kind": "func"
+        },
+        {
+          "name": "RecordEffectReplayCheck",
+          "kind": "func"
+        },
+        {
+          "name": "RecordRunEffectReplayCheck",
+          "kind": "func"
+        },
+        {
+          "name": "RunEffectReplaySnapshot",
+          "kind": "type"
+        },
+        {
+          "name": "VerificationCheckEffectReplay",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationCheckRunEffectReplay",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeEffectReplay",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeRunEffectReplay",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "export-import-resume",
+      "stability": "experimental",
+      "source_file": "resume_schema.go",
+      "rationale": "Run, step, resume, replay, or schema contract required for process export/import and recovery.",
+      "symbols": [
+        {
+          "name": "ErrJSONSchemaValidationFailed",
+          "kind": "var"
+        },
+        {
+          "name": "ErrResumePayloadInvalid",
+          "kind": "var"
+        },
+        {
+          "name": "JSONSchemaValidator",
+          "kind": "type"
+        },
+        {
+          "name": "JSONSchemaValidatorFunc",
+          "kind": "type"
+        },
+        {
+          "name": "ValidateJSONSchemaValue",
+          "kind": "func"
+        },
+        {
+          "name": "ValidateJSONSchemaValueWith",
+          "kind": "func"
+        },
+        {
+          "name": "ValidateResumePayload",
+          "kind": "func"
+        },
+        {
+          "name": "ValidateResumePayloadWithValidator",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "runtime-facade",
+      "stability": "experimental",
+      "source_file": "runner.go",
+      "rationale": "Root facade or typed option used to configure and operate the SDK without exposing internal packages.",
+      "symbols": [
+        {
+          "name": "NewRunner",
+          "kind": "func"
+        },
+        {
+          "name": "ResolveRunOptions",
+          "kind": "func"
+        },
+        {
+          "name": "RunConfig",
+          "kind": "type"
+        },
+        {
+          "name": "Runnable",
+          "kind": "type"
+        },
+        {
+          "name": "Runner",
+          "kind": "type"
+        },
+        {
+          "name": "RunnerOption",
+          "kind": "type"
+        },
+        {
+          "name": "RunOption",
+          "kind": "type"
+        },
+        {
+          "name": "WithJSONSchemaValidator",
+          "kind": "func"
+        },
+        {
+          "name": "WithPluginHost",
+          "kind": "func"
+        },
+        {
+          "name": "WithResumeRequest",
+          "kind": "func"
+        },
+        {
+          "name": "WithRunnerEventMiddleware",
+          "kind": "func"
+        },
+        {
+          "name": "WithRunnerRuntimeIDs",
+          "kind": "func"
+        },
+        {
+          "name": "WithRuntimeIDs",
+          "kind": "func"
+        },
+        {
+          "name": "WithStepExport",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "runtime_context.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "ContextWithRuntimeIDs",
+          "kind": "func"
+        },
+        {
+          "name": "RuntimeIDsFromContext",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "export-import-resume",
+      "stability": "experimental",
+      "source_file": "schema.go",
+      "rationale": "Run, step, resume, replay, or schema contract required for process export/import and recovery.",
+      "symbols": [
+        {
+          "name": "RunExportJSONSchema",
+          "kind": "func"
+        },
+        {
+          "name": "RunExportJSONSchemaID",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "runtime-facade",
+      "stability": "experimental",
+      "source_file": "setup.go",
+      "rationale": "Root facade or typed option used to configure and operate the SDK without exposing internal packages.",
+      "symbols": [
+        {
+          "name": "Defaults",
+          "kind": "func"
+        },
+        {
+          "name": "DefaultsSnapshot",
+          "kind": "type"
+        },
+        {
+          "name": "Setup",
+          "kind": "func"
+        },
+        {
+          "name": "SetupOption",
+          "kind": "type"
+        },
+        {
+          "name": "WithDefaultRuntimeIDs",
+          "kind": "func"
+        },
+        {
+          "name": "WithLogger",
+          "kind": "func"
+        },
+        {
+          "name": "WithLogLevel",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "export-import-resume",
+      "stability": "experimental",
+      "source_file": "step.go",
+      "rationale": "Run, step, resume, replay, or schema contract required for process export/import and recovery.",
+      "symbols": [
+        {
+          "name": "EffectRecord",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplayIdempotent",
+          "kind": "const"
+        },
+        {
+          "name": "EffectReplayPolicy",
+          "kind": "type"
+        },
+        {
+          "name": "EffectReplayRecordOnly",
+          "kind": "const"
+        },
+        {
+          "name": "EffectReplaySkip",
+          "kind": "const"
+        },
+        {
+          "name": "EffectReplayUnspecified",
+          "kind": "const"
+        },
+        {
+          "name": "SandboxEffect",
+          "kind": "type"
+        },
+        {
+          "name": "StepCanceled",
+          "kind": "const"
+        },
+        {
+          "name": "StepCompleted",
+          "kind": "const"
+        },
+        {
+          "name": "StepExport",
+          "kind": "type"
+        },
+        {
+          "name": "StepFailed",
+          "kind": "const"
+        },
+        {
+          "name": "StepInterrupted",
+          "kind": "const"
+        },
+        {
+          "name": "StepPending",
+          "kind": "const"
+        },
+        {
+          "name": "StepPhase",
+          "kind": "type"
+        },
+        {
+          "name": "StepRunning",
+          "kind": "const"
+        },
+        {
+          "name": "StepSnapshot",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "surface.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "Channel",
+          "kind": "type"
+        },
+        {
+          "name": "ChannelEvent",
+          "kind": "type"
+        },
+        {
+          "name": "ChannelEventAction",
+          "kind": "const"
+        },
+        {
+          "name": "ChannelEventCancel",
+          "kind": "const"
+        },
+        {
+          "name": "ChannelEventMessage",
+          "kind": "const"
+        },
+        {
+          "name": "ChannelEventType",
+          "kind": "type"
+        },
+        {
+          "name": "ChannelFunc",
+          "kind": "type"
+        },
+        {
+          "name": "ChannelPayload",
+          "kind": "type"
+        },
+        {
+          "name": "ChannelTarget",
+          "kind": "type"
+        },
+        {
+          "name": "ErrChannelSendRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrTransferConvertRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ProjectSurfaceMessages",
+          "kind": "func"
+        },
+        {
+          "name": "SurfaceAction",
+          "kind": "type"
+        },
+        {
+          "name": "SurfaceActionCancel",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceActionOpen",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceActionResume",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceActionSelect",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceActionSubmit",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceActionType",
+          "kind": "type"
+        },
+        {
+          "name": "SurfaceMessage",
+          "kind": "type"
+        },
+        {
+          "name": "SurfaceMessageApproval",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageArtifact",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageError",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageMessage",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageSelection",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageStatus",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageTextDelta",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageToolCall",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageToolResult",
+          "kind": "const"
+        },
+        {
+          "name": "SurfaceMessageType",
+          "kind": "type"
+        },
+        {
+          "name": "SurfacePart",
+          "kind": "type"
+        },
+        {
+          "name": "SurfacePartMedia",
+          "kind": "const"
+        },
+        {
+          "name": "SurfacePartStatus",
+          "kind": "const"
+        },
+        {
+          "name": "SurfacePartText",
+          "kind": "const"
+        },
+        {
+          "name": "SurfacePartType",
+          "kind": "type"
+        },
+        {
+          "name": "SurfaceTarget",
+          "kind": "type"
+        },
+        {
+          "name": "Transfer",
+          "kind": "type"
+        },
+        {
+          "name": "TransferFunc",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "tool.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "JSONSchema",
+          "kind": "type"
+        },
+        {
+          "name": "Tool",
+          "kind": "type"
+        },
+        {
+          "name": "ToolCommit",
+          "kind": "type"
+        },
+        {
+          "name": "ToolFunc",
+          "kind": "type"
+        },
+        {
+          "name": "ToolResult",
+          "kind": "type"
+        },
+        {
+          "name": "ToolSpec",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "tool_middleware.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ComposeToolHandler",
+          "kind": "func"
+        },
+        {
+          "name": "NewToolContext",
+          "kind": "func"
+        },
+        {
+          "name": "ToolContext",
+          "kind": "type"
+        },
+        {
+          "name": "ToolContextOptions",
+          "kind": "type"
+        },
+        {
+          "name": "ToolHandler",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "tool_retry.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "DecideToolRetry",
+          "kind": "func"
+        },
+        {
+          "name": "ErrToolRetryAttemptRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrToolRetryDeciderRequired",
+          "kind": "var"
+        },
+        {
+          "name": "FixedToolRetryBackoff",
+          "kind": "func"
+        },
+        {
+          "name": "ToolRetryAction",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryBackoff",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryDecider",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryDeciderFunc",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryDecision",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryErrorPredicate",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryMiddleware",
+          "kind": "func"
+        },
+        {
+          "name": "ToolRetryPolicy",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryRequest",
+          "kind": "type"
+        },
+        {
+          "name": "ToolRetryRetry",
+          "kind": "const"
+        },
+        {
+          "name": "ToolRetryStop",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "tool_verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "ErrToolCallFailed",
+          "kind": "var"
+        },
+        {
+          "name": "ErrToolCallRequired",
+          "kind": "var"
+        },
+        {
+          "name": "RecordToolCallCheck",
+          "kind": "func"
+        },
+        {
+          "name": "ToolCallSnapshot",
+          "kind": "type"
+        },
+        {
+          "name": "VerificationCheckToolCall",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationEvidenceTypeToolCall",
+          "kind": "const"
+        }
+      ]
+    },
+    {
+      "category": "runtime-facade",
+      "stability": "experimental",
+      "source_file": "turnloop.go",
+      "rationale": "Root facade or typed option used to configure and operate the SDK without exposing internal packages.",
+      "symbols": [
+        {
+          "name": "DefaultTurnInputMerge",
+          "kind": "func"
+        },
+        {
+          "name": "ErrTurnLoopClosed",
+          "kind": "var"
+        },
+        {
+          "name": "NewTurnLoop",
+          "kind": "func"
+        },
+        {
+          "name": "TurnInputBatch",
+          "kind": "type"
+        },
+        {
+          "name": "TurnInputKind",
+          "kind": "type"
+        },
+        {
+          "name": "TurnInputMergeFunc",
+          "kind": "type"
+        },
+        {
+          "name": "TurnInputMergeRequest",
+          "kind": "type"
+        },
+        {
+          "name": "TurnInputMergeResult",
+          "kind": "type"
+        },
+        {
+          "name": "TurnInputRecord",
+          "kind": "type"
+        },
+        {
+          "name": "TurnInputResume",
+          "kind": "const"
+        },
+        {
+          "name": "TurnInputUser",
+          "kind": "const"
+        },
+        {
+          "name": "TurnLoop",
+          "kind": "type"
+        },
+        {
+          "name": "TurnLoopOption",
+          "kind": "type"
+        },
+        {
+          "name": "TurnLoopPolicyInput",
+          "kind": "type"
+        },
+        {
+          "name": "TurnOption",
+          "kind": "type"
+        },
+        {
+          "name": "WithPreempt",
+          "kind": "func"
+        },
+        {
+          "name": "WithResume",
+          "kind": "func"
+        },
+        {
+          "name": "WithTurnInputMerge",
+          "kind": "func"
+        },
+        {
+          "name": "WithTurnJSONSchemaValidator",
+          "kind": "func"
+        },
+        {
+          "name": "WithTurnPolicy",
+          "kind": "func"
+        },
+        {
+          "name": "WithTurnPolicyMetadata",
+          "kind": "func"
+        },
+        {
+          "name": "WithTurnRuntimeIDs",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "runtime-facade",
+      "stability": "experimental",
+      "source_file": "turnloop_store.go",
+      "rationale": "Root facade or typed option used to configure and operate the SDK without exposing internal packages.",
+      "symbols": [
+        {
+          "name": "MemoryTurnLoopStore",
+          "kind": "type"
+        },
+        {
+          "name": "NewMemoryTurnLoopStore",
+          "kind": "func"
+        },
+        {
+          "name": "TurnLoopState",
+          "kind": "type"
+        },
+        {
+          "name": "TurnLoopStore",
+          "kind": "type"
+        },
+        {
+          "name": "WithTurnLoopStore",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "stability": "transitional",
+      "source_file": "turnloop_store_blob.go",
+      "rationale": "No-external-dependency reference implementation or backend port kept as a lightweight SDK default while production adapters move out.",
+      "symbols": [
+        {
+          "name": "BlobTurnLoopStore",
+          "kind": "type"
+        },
+        {
+          "name": "ErrTurnLoopBlobBackendRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrTurnLoopBlobNotFound",
+          "kind": "var"
+        },
+        {
+          "name": "MemoryTurnLoopBlobBackend",
+          "kind": "type"
+        },
+        {
+          "name": "NewBlobTurnLoopStore",
+          "kind": "func"
+        },
+        {
+          "name": "NewMemoryTurnLoopBlobBackend",
+          "kind": "func"
+        },
+        {
+          "name": "TurnLoopBlobBackend",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "stability": "transitional",
+      "source_file": "turnloop_store_file.go",
+      "rationale": "No-external-dependency reference implementation or backend port kept as a lightweight SDK default while production adapters move out.",
+      "symbols": [
+        {
+          "name": "ErrTurnLoopStoreSchemaMismatch",
+          "kind": "var"
+        },
+        {
+          "name": "FileTurnLoopStore",
+          "kind": "type"
+        },
+        {
+          "name": "NewFileTurnLoopStore",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "stability": "transitional",
+      "source_file": "turnloop_store_leased.go",
+      "rationale": "No-external-dependency reference implementation or backend port kept as a lightweight SDK default while production adapters move out.",
+      "symbols": [
+        {
+          "name": "ErrLeasedTurnLoopStoreClosed",
+          "kind": "var"
+        },
+        {
+          "name": "ErrLeaseRenewalIntervalRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrTurnLoopLeaseBackendRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrTurnLoopStoreRequired",
+          "kind": "var"
+        },
+        {
+          "name": "LeasedTurnLoopStore",
+          "kind": "type"
+        },
+        {
+          "name": "LeasedTurnLoopStoreOption",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseEvent",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseEventAcquired",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventConflict",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventReleased",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventReleaseFailed",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventRenewalStarted",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventRenewalStopped",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventRenewed",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventRenewFailed",
+          "kind": "const"
+        },
+        {
+          "name": "LeaseEventType",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseObserver",
+          "kind": "type"
+        },
+        {
+          "name": "LeaseObserverFunc",
+          "kind": "type"
+        },
+        {
+          "name": "NewLeasedTurnLoopStore",
+          "kind": "func"
+        },
+        {
+          "name": "WithLeasedTurnLoopObserver",
+          "kind": "func"
+        },
+        {
+          "name": "WithLeasedTurnLoopRenewalInterval",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "stability": "transitional",
+      "source_file": "turnloop_store_row.go",
+      "rationale": "No-external-dependency reference implementation or backend port kept as a lightweight SDK default while production adapters move out.",
+      "symbols": [
+        {
+          "name": "ErrTurnLoopRowBackendRequired",
+          "kind": "var"
+        },
+        {
+          "name": "MemoryTurnLoopRowBackend",
+          "kind": "type"
+        },
+        {
+          "name": "NewMemoryTurnLoopRowBackend",
+          "kind": "func"
+        },
+        {
+          "name": "NewRowTurnLoopStore",
+          "kind": "func"
+        },
+        {
+          "name": "RowTurnLoopStore",
+          "kind": "type"
+        },
+        {
+          "name": "TurnLoopRowBackend",
+          "kind": "type"
+        },
+        {
+          "name": "TurnLoopRowRecord",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "stability": "transitional",
+      "source_file": "turnloop_store_versioned.go",
+      "rationale": "No-external-dependency reference implementation or backend port kept as a lightweight SDK default while production adapters move out.",
+      "symbols": [
+        {
+          "name": "ErrTurnLoopStoreConflict",
+          "kind": "var"
+        },
+        {
+          "name": "ErrTurnLoopVersionedBackendRequired",
+          "kind": "var"
+        },
+        {
+          "name": "MemoryTurnLoopVersionedBackend",
+          "kind": "type"
+        },
+        {
+          "name": "NewMemoryTurnLoopVersionedBackend",
+          "kind": "func"
+        },
+        {
+          "name": "NewVersionedTurnLoopStore",
+          "kind": "func"
+        },
+        {
+          "name": "TurnLoopVersionedBackend",
+          "kind": "type"
+        },
+        {
+          "name": "TurnLoopVersionedRecord",
+          "kind": "type"
+        },
+        {
+          "name": "VersionedTurnLoopStore",
+          "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "verification",
+      "stability": "experimental",
+      "source_file": "verification.go",
+      "rationale": "Observed evidence, verification, failure attribution, or release-gate contract.",
+      "symbols": [
+        {
+          "name": "BuildVerificationReport",
+          "kind": "func"
+        },
+        {
+          "name": "EventMetadataVerificationReport",
+          "kind": "const"
+        },
+        {
+          "name": "NewVerificationRecorder",
+          "kind": "func"
+        },
+        {
+          "name": "VerificationCheck",
+          "kind": "type"
+        },
+        {
+          "name": "VerificationEvidence",
+          "kind": "type"
+        },
+        {
+          "name": "VerificationRecorder",
+          "kind": "type"
+        },
+        {
+          "name": "VerificationReport",
+          "kind": "type"
+        },
+        {
+          "name": "VerificationReportVersion",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationStatus",
+          "kind": "type"
+        },
+        {
+          "name": "VerificationStatusFailed",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationStatusPartial",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationStatusPassed",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationStatusSkipped",
+          "kind": "const"
+        },
+        {
+          "name": "VerificationStatusUnknown",
+          "kind": "const"
+        }
+      ]
+    }
+  ]
+}

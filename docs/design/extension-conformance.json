@@ -1,0 +1,501 @@
+{
+  "version": 1,
+  "sdk_compatibility": {
+    "module": "github.com/gopact-ai/gopact",
+    "go_versions": [
+      "1.25"
+    ]
+  },
+  "readme_template_path": "docs/design/extension-repository-template.md",
+  "scaffold": {
+    "repository_owner": "gopact-ai",
+    "module_path_prefix": "github.com/gopact-ai/",
+    "ci_workflow_template_path": "docs/design/extension-ci-workflow.yml",
+    "conformance_template_path": "docs/design/extension-conformance-template.md",
+    "required_files": [
+      "go.mod",
+      "README.md",
+      "CONFORMANCE.md",
+      "examples/minimal_test.go",
+      ".github/workflows/ci.yml"
+    ],
+    "checklist": [
+      "host-owned config",
+      "offline conformance",
+      "extension scaffold conformance",
+      "integration build tags",
+      "no production adapter in core repo"
+    ]
+  },
+  "required_ci_commands": [
+    "git diff --check",
+    "go test -count=1 ./...",
+    "go vet ./..."
+  ],
+  "targets": [
+    {
+      "name": "gopact-adapters-channel-a2ui",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/channel/a2ui"
+      ],
+      "conformance_suites": [
+        "channel-transfer",
+        "gopacttest-channel-conformance",
+        "channel-action-resume",
+        "json-schema-validator"
+      ],
+      "required_examples": [
+        "minimal transfer/channel setup",
+        "renderer action to ChannelEvent/ResumeRequest",
+        "custom JSONSchemaValidator injection"
+      ]
+    },
+    {
+      "name": "gopact-adapters-channel-agui",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/channel/agui"
+      ],
+      "conformance_suites": [
+        "channel-transfer",
+        "gopacttest-channel-conformance",
+        "channel-action-resume",
+        "http-sse-channel"
+      ],
+      "required_examples": [
+        "minimal transfer/channel setup",
+        "HTTP SSE stream",
+        "action POST to ChannelEvent"
+      ]
+    },
+    {
+      "name": "gopact-adapters-channel-lark",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/channel/lark"
+      ],
+      "conformance_suites": [
+        "channel-transfer",
+        "gopacttest-channel-conformance",
+        "channel-action-resume",
+        "callback-verification"
+      ],
+      "required_examples": [
+        "host-injected sender",
+        "callback verification",
+        "card action to ChannelEvent/ResumeRequest"
+      ]
+    },
+    {
+      "name": "gopact-adapters-checkpoint-gcs",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/checkpoint/gcsstore"
+      ],
+      "conformance_suites": [
+        "checkpoint-store",
+        "gopacttest-checkpoint-store-conformance",
+        "conditional-object-store",
+        "checkpoint-integrity"
+      ],
+      "required_examples": [
+        "host-injected GCS client",
+        "checkpoint save/load",
+        "generation-based CAS"
+      ]
+    },
+    {
+      "name": "gopact-adapters-checkpoint-oss",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/checkpoint/ossstore"
+      ],
+      "conformance_suites": [
+        "checkpoint-store",
+        "gopacttest-checkpoint-store-conformance",
+        "conditional-object-store",
+        "checkpoint-integrity"
+      ],
+      "required_examples": [
+        "host-injected OSS client",
+        "checkpoint save/load",
+        "conditional write"
+      ]
+    },
+    {
+      "name": "gopact-adapters-checkpoint-r2",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/checkpoint/r2store"
+      ],
+      "conformance_suites": [
+        "checkpoint-store",
+        "gopacttest-checkpoint-store-conformance",
+        "conditional-object-store",
+        "checkpoint-integrity"
+      ],
+      "required_examples": [
+        "host-injected R2-compatible S3 client",
+        "checkpoint save/load",
+        "ETag CAS"
+      ]
+    },
+    {
+      "name": "gopact-adapters-checkpoint-redis",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/checkpoint/redisstore"
+      ],
+      "conformance_suites": [
+        "checkpoint-store",
+        "gopacttest-checkpoint-store-conformance",
+        "checkpoint-row-store",
+        "checkpoint-integrity"
+      ],
+      "required_examples": [
+        "host-injected Redis command interface",
+        "checkpoint save/load",
+        "atomic index update"
+      ]
+    },
+    {
+      "name": "gopact-adapters-checkpoint-s3",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/checkpoint/s3store"
+      ],
+      "conformance_suites": [
+        "checkpoint-store",
+        "gopacttest-checkpoint-store-conformance",
+        "conditional-object-store",
+        "checkpoint-integrity"
+      ],
+      "required_examples": [
+        "host-injected S3 client",
+        "checkpoint save/load",
+        "ETag CAS"
+      ]
+    },
+    {
+      "name": "gopact-adapters-checkpoint-sql",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/checkpoint/sqlstore"
+      ],
+      "conformance_suites": [
+        "checkpoint-store",
+        "gopacttest-checkpoint-store-conformance",
+        "checkpoint-row-store",
+        "checkpoint-integrity"
+      ],
+      "required_examples": [
+        "host-injected database handle",
+        "checkpoint save/load",
+        "custom SQL query injection"
+      ]
+    },
+    {
+      "name": "gopact-adapters-lease-http",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/lease/httpstore"
+      ],
+      "conformance_suites": [
+        "lease-backend",
+        "http-control-plane"
+      ],
+      "required_examples": [
+        "host-injected HTTP client",
+        "acquire/renew/release",
+        "conflict handling"
+      ]
+    },
+    {
+      "name": "gopact-adapters-lease-redis",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/lease/redisstore"
+      ],
+      "conformance_suites": [
+        "lease-backend",
+        "redis-atomic-lease"
+      ],
+      "required_examples": [
+        "host-injected Redis command interface",
+        "acquire/renew/release",
+        "token mismatch handling"
+      ]
+    },
+    {
+      "name": "gopact-adapters-lease-sql",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/lease/sqlstore"
+      ],
+      "conformance_suites": [
+        "lease-backend",
+        "sql-lease"
+      ],
+      "required_examples": [
+        "host-injected database handle",
+        "acquire/renew/release",
+        "custom SQL query injection"
+      ]
+    },
+    {
+      "name": "gopact-adapters-model-openaicompatible",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/model/openaicompatible"
+      ],
+      "conformance_suites": [
+        "chat-model",
+        "gopacttest-provider-conformance",
+        "streaming-model",
+        "provider-routing"
+      ],
+      "required_examples": [
+        "host-injected HTTP client",
+        "chat completion",
+        "streaming completion"
+      ]
+    },
+    {
+      "name": "gopact-adapters-observability-trace",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/observability/trace"
+      ],
+      "conformance_suites": [
+        "plugin-lifecycle",
+        "trace-exporter",
+        "trace-exporter-conformance",
+        "export-policy"
+      ],
+      "required_examples": [
+        "plugin installation",
+        "span export",
+        "export policy wrapper"
+      ]
+    },
+    {
+      "name": "gopact-adapters-transport-a2a",
+      "kind": "adapter",
+      "source_paths": [
+        "a2a"
+      ],
+      "conformance_suites": [
+        "a2a-client",
+        "a2a-streaming",
+        "agent-card-discovery",
+        "transport-policy",
+        "artifact-transfer"
+      ],
+      "required_examples": [
+        "host-injected HTTP client or transport",
+        "task send/cancel/stream",
+        "auth context and artifact transfer"
+      ]
+    },
+    {
+      "name": "gopact-adapters-transport-mcp",
+      "kind": "adapter",
+      "source_paths": [
+        "mcp"
+      ],
+      "conformance_suites": [
+        "mcp-client",
+        "mcp-server",
+        "streamable-http",
+        "transport-policy",
+        "session-resume"
+      ],
+      "required_examples": [
+        "host-injected HTTP or JSON-RPC transport",
+        "tool/resource/prompt round trip",
+        "session resume and termination"
+      ]
+    },
+    {
+      "name": "gopact-adapters-storage-gcs",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/storage/gcsblob"
+      ],
+      "conformance_suites": [
+        "blob-backend",
+        "object-backend"
+      ],
+      "required_examples": [
+        "host-injected GCS client",
+        "blob put/get/list",
+        "not-found mapping"
+      ]
+    },
+    {
+      "name": "gopact-adapters-storage-oss",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/storage/ossblob"
+      ],
+      "conformance_suites": [
+        "blob-backend",
+        "object-backend"
+      ],
+      "required_examples": [
+        "host-injected OSS client",
+        "blob put/get/list",
+        "not-found mapping"
+      ]
+    },
+    {
+      "name": "gopact-adapters-storage-r2",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/storage/r2blob"
+      ],
+      "conformance_suites": [
+        "blob-backend",
+        "object-backend"
+      ],
+      "required_examples": [
+        "host-injected R2-compatible S3 client",
+        "blob put/get/list",
+        "not-found mapping"
+      ]
+    },
+    {
+      "name": "gopact-adapters-storage-s3",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/storage/s3blob"
+      ],
+      "conformance_suites": [
+        "blob-backend",
+        "object-backend"
+      ],
+      "required_examples": [
+        "host-injected S3 client",
+        "blob put/get/list",
+        "not-found mapping"
+      ]
+    },
+    {
+      "name": "gopact-adapters-turnloop-http",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/turnloop/httpstore"
+      ],
+      "conformance_suites": [
+        "turnloop-store",
+        "gopacttest-turnloop-store-conformance",
+        "turnloop-versioned-store",
+        "http-control-plane"
+      ],
+      "required_examples": [
+        "host-injected HTTP client",
+        "turn state load/save",
+        "version conflict handling"
+      ]
+    },
+    {
+      "name": "gopact-adapters-turnloop-redis",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/turnloop/redisstore"
+      ],
+      "conformance_suites": [
+        "turnloop-store",
+        "gopacttest-turnloop-store-conformance",
+        "turnloop-versioned-store",
+        "redis-cas"
+      ],
+      "required_examples": [
+        "host-injected Redis command interface",
+        "turn state load/save",
+        "stale version handling"
+      ]
+    },
+    {
+      "name": "gopact-adapters-turnloop-sql",
+      "kind": "adapter",
+      "source_paths": [
+        "adapters/turnloop/sqlstore"
+      ],
+      "conformance_suites": [
+        "turnloop-store",
+        "gopacttest-turnloop-store-conformance",
+        "turnloop-versioned-store",
+        "sql-row-store"
+      ],
+      "required_examples": [
+        "host-injected database handle",
+        "turn state load/save",
+        "custom SQL query injection"
+      ]
+    },
+    {
+      "name": "gopact-templates-react",
+      "kind": "template",
+      "source_paths": [
+        "templates/react"
+      ],
+      "conformance_suites": [
+        "template-trajectory",
+        "gopacttest-template-trajectory-conformance",
+        "deferred-memory-work-queue",
+        "gopacttest-react-deferred-memory-queue-conformance",
+        "memory-replay"
+      ],
+      "required_examples": [
+        "model/tool loop",
+        "deferred memory work queue",
+        "checkpoint resume"
+      ]
+    },
+    {
+      "name": "gopact-templates-agenttool",
+      "kind": "template",
+      "source_paths": [
+        "templates/agenttool"
+      ],
+      "conformance_suites": [
+        "template-trajectory",
+        "gopacttest-template-trajectory-conformance",
+        "a2a-tool-contract",
+        "policy-boundary"
+      ],
+      "required_examples": [
+        "local runnable as tool",
+        "remote A2A agent as tool",
+        "policy deny/review"
+      ]
+    },
+    {
+      "name": "gopact-templates-devagent",
+      "kind": "template",
+      "source_paths": [
+        "adapters/devagent/channelreview",
+        "adapters/devagent/cireview",
+        "adapters/devagent/gitdiff",
+        "adapters/devagent/modelreview",
+        "templates/devagent"
+      ],
+      "conformance_suites": [
+        "template-trajectory",
+        "gopacttest-template-trajectory-conformance",
+        "verification-evidence",
+        "gopacttest-verification-evidence-conformance",
+        "release-gate",
+        "reviewer-contract"
+      ],
+      "required_examples": [
+        "analyze mode",
+        "plan mode patch proposal",
+        "write mode release gate",
+        "channel/CI/model reviewer"
+      ]
+    }
+  ]
+}

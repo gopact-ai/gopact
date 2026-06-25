@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "overall_status": "in-progress",
+  "current_bootstrap_level": "level-2",
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Runtime Spine",
+      "status": "complete",
+      "objective": "稳定 root SDK defaults、runtime identity、message/event/step/export/import/checkpoint/resume 基础契约，让 graph 可以在稳定 step 边界恢复。",
+      "evidence_docs": [
+        "docs/superpowers/plans/2026-06-23-gopact-runtime-spine.md",
+        "docs/design/contracts.md",
+        "docs/design/sdk.md",
+        "docs/design/events.md",
+        "docs/design/checkpoint-resume.md"
+      ],
+      "open_items": []
+    },
+    {
+      "id": "M2",
+      "name": "Model Spine",
+      "status": "first-slice-complete",
+      "objective": "提供 provider-neutral model contract、provider registry/router、route set、fallback decision、middleware、fake provider 和 OpenAI-compatible reference adapter。",
+      "evidence_docs": [
+        "docs/superpowers/plans/2026-06-23-gopact-model-spine.md",
+        "docs/design/modules.md",
+        "docs/design/repository-boundary.json",
+        "docs/design/extension-conformance.json",
+        "docs/design/external-repositories.json"
+      ],
+      "open_items": [
+        "真实 OpenAI/Anthropic/Gemini/OpenRouter provider adapter 移入外部 gopact-adapters-model 仓库",
+        "生产级 provider 健康检查、预算策略和评测治理继续由 adapter/plugin 深化"
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "Tool and Sandbox Spine",
+      "status": "first-slice-complete",
+      "objective": "提供 visible/deferred tool registry、artifact、sandbox、policy、tool middleware、retry/effect/replay 和 verification evidence 第一片。",
+      "evidence_docs": [
+        "docs/superpowers/plans/2026-06-23-gopact-tool-sandbox-spine.md",
+        "docs/design/security.md",
+        "docs/design/checkpoint-resume.md",
+        "docs/design/events.md"
+      ],
+      "open_items": [
+        "生产级 tool exactly-once ledger 和外部 commit store 仍需在 adapter 或宿主 worker 中实现",
+        "更完整 sandbox profile、secret provider 和 prompt-injection defense 策略需要继续深化"
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "Integration and Extensibility Spine",
+      "status": "first-slice-complete",
+      "objective": "提供 memory、skill、MCP、A2A、TurnLoop、middleware、plugin、channel/transfer、policy/redaction 和外部集成路线第一片。",
+      "evidence_docs": [
+        "docs/superpowers/plans/2026-06-23-gopact-integration-spine.md",
+        "docs/superpowers/plans/2026-06-23-gopact-turnloop-extensibility.md",
+        "docs/design/extensibility.md",
+        "docs/design/channels.md",
+        "docs/design/external-integration-roadmap.json",
+        "docs/design/external-repositories.json"
+      ],
+      "open_items": [
+        "MCP/A2A production transport、Lark 真实 client/OAuth、A2UI renderer、AG-UI WebSocket/plugin 仍在外部仓库路线中",
+        "真实 LangSmith SDK、LangGraph exporter policy/redaction 深化和插件级治理仍需外部 plugin/adapter 完成"
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Agent Template and Evidence Layer",
+      "status": "partial",
+      "objective": "在原子能力之上验证 ReAct、Agent-as-Tool、Dev Agent template contract、trajectory golden、verification evidence、entropy audit 和 reviewer/release gate。",
+      "evidence_docs": [
+        "docs/design/templates.md",
+        "docs/design/template-guide.md",
+        "docs/design/development-plan.md",
+        "docs/research/harness-loop-engineering.md"
+      ],
+      "open_items": [
+        "self-bootstrap workflow release evidence 真实场景、release bundle/conformance 级具体 CI gate requirement、workflow parent child-action summary、action governance metadata 贯穿 process/workflow 边界、ReAct 普通 multi-tool-then-final 与 multi-tool-error golden trajectory 已覆盖；更多 template-specific golden trajectory tests 和更广 Dev Agent workflow process record 场景仍需扩展",
+        "ReAct memory worker 单次 pass、本地内存 DeferredMemoryWorkQueue、默认有界 retry/backoff decider、worker 默认 decider 接线、worker executor、RunOnce lease gate / pass-local lease renewal、有界 drain loop 和 retry/stop/dead-letter 调度决策 evidence 已具备；durable 生产队列 adapter、queue-level visibility timeout、distributed queue leasing、并发调度、生产级调度策略、真实 retry/DLQ storage 和更高级 memory 压缩/合并策略仍需 template adapter 或宿主 harness 实现",
+        "model review 真实评测治理、CI 系统真实接入和人工 release gate 仍需生产化"
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "Production Hardening",
+      "status": "in-progress",
+      "objective": "让 core SDK、public API、schema、CI、release gate、文档、迁移策略和外部扩展仓库达到可长期依赖的状态。",
+      "evidence_docs": [
+        "docs/design/core-ci-gates.json",
+        "docs/design/versioning-policy.md",
+        "docs/design/deprecation-policy.md",
+        "docs/design/migration-guide.md",
+        "docs/design/external-repositories.json",
+        "docs/design/extension-scaffold-spec.json",
+        "docs/design/development-plan.md"
+      ],
+      "open_items": [
+        "外部仓库 scaffold、sync-plan、sync-repos 脚本、本地 -verify 和 -remote-status-json 远端审计已统一绑定 manifest required CI commands；2026-06-26 已真实创建并推送 11 个 gopact-ai 私有外部 scaffold 仓库，remote audit 显示仓库存在、私有且 CI workflow 文件存在；最新 GitHub Actions run 仍全部失败，当前共性原因是外部仓库依赖的 core SDK v0.0.0 未发布为远端可解析 revision，主仓发布/打标或外部仓库切换到可解析 SDK 版本前，M6 不能视为完成",
+        "本地 core gate 已通过；M6 release 前仍必须在 GitHub CI 中稳定通过 race/lint/coverage/examples/security gate",
+        "v1 前仍需继续外迁或删除主仓中过渡性生产 adapter/template"
+      ]
+    }
+  ],
+  "bootstrap_levels": [
+    {
+      "level": "level-1",
+      "allowed_modes": [
+        "read-only analysis",
+        "plan generation",
+        "restricted tests"
+      ],
+      "required_milestones": [
+        "M3"
+      ],
+      "required_gates": [
+        "step export records",
+        "tool-call graph records",
+        "no write-mode patch apply"
+      ]
+    },
+    {
+      "level": "level-2",
+      "allowed_modes": [
+        "docs changes",
+        "examples changes",
+        "tests changes",
+        "reference adapter changes",
+        "conformance scaffold changes"
+      ],
+      "required_milestones": [
+        "M4"
+      ],
+      "required_gates": [
+        "run export",
+        "verification report",
+        "observed diff evidence",
+        "human or reviewer decision before release"
+      ]
+    },
+    {
+      "level": "level-3",
+      "allowed_modes": [
+        "low-risk core issue fixes"
+      ],
+      "required_milestones": [
+        "M5",
+        "M6"
+      ],
+      "required_gates": [
+        "trajectory golden",
+        "verification report",
+        "run export",
+        "entropy audit",
+        "review approval",
+        "human release gate"
+      ]
+    }
+  ]
+}

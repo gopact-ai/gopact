@@ -42,7 +42,7 @@
 - 不把 provider adapter 的私有配置格式泄露成 SDK 公共 API；
 - 不把配置热加载实现成文件 watcher。
 
-SDK 只接收已经解析好的 Go 值：
+SDK 只接收已经解析好的 Go 值。SDK 级默认值和 setup 入口见 [sdk.md](sdk.md)：
 
 - runner-level options：应用初始化 Runner 时传入；
 - run-scoped options：单次 run 传入，只能收窄权限，默认不能扩大 runner 级 policy；
@@ -141,6 +141,8 @@ app loads external config
 - 新 run 使用最新配置；
 - 热替换不能改变正在执行中的 sandbox mount、MCP session 权限或 A2A delegation policy；
 - 如果配置变更影响 resume，必须产生 config drift 事件。
+
+当前代码第一片不计算配置版本，也不读取配置文件；应用可以通过 `graph.WithConfigVersion` 或 `checkpoint.WithConfigVersion` 注入版本。checkpoint 解码时默认拒绝 stored/current version 不一致，显式允许时会把 drift 写入 `checkpoint_config_drift` metadata，并由 `checkpoint_loaded` 事件透传。
 
 ## 默认配置
 

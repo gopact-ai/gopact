@@ -1,0 +1,397 @@
+{
+  "version": 1,
+  "scope": "production-integrations",
+  "allowed_routes": [
+    "adapter-repo",
+    "plugin-repo",
+    "template-repo",
+    "contrib-index"
+  ],
+  "entries": [
+    {
+      "id": "model-providers",
+      "area": "model",
+      "route": "adapter-repo",
+      "target_repo": "gopact-adapters-model",
+      "scaffold_status": "ready",
+      "integrations": [
+        "OpenAI",
+        "Anthropic",
+        "Gemini",
+        "OpenRouter",
+        "OpenAI-compatible"
+      ],
+      "extension_targets": [
+        "gopact-adapters-model-openaicompatible"
+      ],
+      "core_contracts": [
+        "ChatModel",
+        "StreamingModel",
+        "ModelRequest",
+        "ModelResponse",
+        "provider.Router",
+        "model middleware"
+      ],
+      "conformance_suites": [
+        "chat-model",
+        "gopacttest-provider-conformance",
+        "streaming-model",
+        "provider-routing",
+        "model-redaction",
+        "model-policy"
+      ],
+      "host_owned_config": true,
+      "rationale": "Hosted model providers carry credentials, endpoint policy, SDK churn, retry semantics, and vendor capability drift. Core keeps provider-neutral model contracts and routing only."
+    },
+    {
+      "id": "checkpoint-backends",
+      "area": "checkpoint",
+      "route": "adapter-repo",
+      "target_repo": "gopact-adapters-checkpoint",
+      "scaffold_status": "ready",
+      "integrations": [
+        "Redis",
+        "SQL",
+        "S3",
+        "GCS",
+        "R2",
+        "OSS"
+      ],
+      "extension_targets": [
+        "gopact-adapters-checkpoint-gcs",
+        "gopact-adapters-checkpoint-oss",
+        "gopact-adapters-checkpoint-r2",
+        "gopact-adapters-checkpoint-redis",
+        "gopact-adapters-checkpoint-s3",
+        "gopact-adapters-checkpoint-sql"
+      ],
+      "core_contracts": [
+        "CheckpointRecord",
+        "checkpoint.Store",
+        "checkpoint.RowBackend",
+        "checkpoint.ObjectBackend",
+        "StateCodec",
+        "artifact integrity verifier"
+      ],
+      "conformance_suites": [
+        "checkpoint-store",
+        "gopacttest-checkpoint-store-conformance",
+        "checkpoint-row-store",
+        "conditional-object-store",
+        "checkpoint-integrity",
+        "checkpoint-migration"
+      ],
+      "host_owned_config": true,
+      "rationale": "Production checkpoint stores depend on external durability, consistency, credentials, schema migration, and operational tuning. Core keeps store contracts, codecs, integrity checks, and local/reference implementations."
+    },
+    {
+      "id": "turnloop-stores",
+      "area": "turnloop",
+      "route": "adapter-repo",
+      "target_repo": "gopact-adapters-turnloop",
+      "scaffold_status": "ready",
+      "integrations": [
+        "Redis",
+        "SQL",
+        "HTTP control plane",
+        "Object CAS"
+      ],
+      "extension_targets": [
+        "gopact-adapters-turnloop-http",
+        "gopact-adapters-turnloop-redis",
+        "gopact-adapters-turnloop-sql"
+      ],
+      "core_contracts": [
+        "TurnLoopStore",
+        "TurnLoopRowBackend",
+        "TurnLoopVersionedBackend",
+        "TurnLoopBlobBackend",
+        "TurnInputMergeFunc"
+      ],
+      "conformance_suites": [
+        "turnloop-store",
+        "gopacttest-turnloop-store-conformance",
+        "turnloop-row-store",
+        "versioned-cas-store",
+        "turnloop-resume",
+        "turnloop-close"
+      ],
+      "host_owned_config": true,
+      "rationale": "Production TurnLoop persistence is deployment-specific and must preserve host ownership of queues, leases, retry policy, and control-plane topology. Core keeps state, merge, resume, and store contracts."
+    },
+    {
+      "id": "lease-backends",
+      "area": "lease",
+      "route": "adapter-repo",
+      "target_repo": "gopact-adapters-lease",
+      "scaffold_status": "ready",
+      "integrations": [
+        "Redis",
+        "SQL",
+        "HTTP control plane",
+        "Object CAS"
+      ],
+      "extension_targets": [
+        "gopact-adapters-lease-http",
+        "gopact-adapters-lease-redis",
+        "gopact-adapters-lease-sql"
+      ],
+      "core_contracts": [
+        "LeaseBackend",
+        "LeaseRequest",
+        "LeaseRecord",
+        "LeasedTurnLoopStore",
+        "LeaseObserver"
+      ],
+      "conformance_suites": [
+        "lease-backend",
+        "leased-turnloop-store",
+        "lease-conflict",
+        "lease-renewal"
+      ],
+      "host_owned_config": true,
+      "rationale": "Worker ownership and leases are operationally sensitive and tied to backend-specific atomicity. Core keeps the lease port, memory reference backend, and leased TurnLoop wrapper."
+    },
+    {
+      "id": "storage-backends",
+      "area": "storage",
+      "route": "adapter-repo",
+      "target_repo": "gopact-adapters-storage",
+      "scaffold_status": "ready",
+      "integrations": [
+        "S3",
+        "GCS",
+        "R2",
+        "OSS"
+      ],
+      "extension_targets": [
+        "gopact-adapters-storage-gcs",
+        "gopact-adapters-storage-oss",
+        "gopact-adapters-storage-r2",
+        "gopact-adapters-storage-s3"
+      ],
+      "core_contracts": [
+        "ArtifactRef",
+        "artifact integrity verifier",
+        "TurnLoopBlobBackend",
+        "checkpoint.ObjectBackend"
+      ],
+      "conformance_suites": [
+        "blob-backend",
+        "object-backend",
+        "artifact-integrity",
+        "conditional-write"
+      ],
+      "host_owned_config": true,
+      "rationale": "Cloud object/blob storage has provider SDK churn, IAM policy, network, encryption, and consistency concerns. Core keeps artifact references, integrity checks, and generic storage ports."
+    },
+    {
+      "id": "channel-platforms",
+      "area": "channel",
+      "route": "adapter-repo",
+      "target_repo": "gopact-adapters-channel",
+      "scaffold_status": "ready",
+      "integrations": [
+        "A2UI",
+        "AG-UI",
+        "Lark",
+        "WebSocket"
+      ],
+      "extension_targets": [
+        "gopact-adapters-channel-a2ui",
+        "gopact-adapters-channel-agui",
+        "gopact-adapters-channel-lark"
+      ],
+      "core_contracts": [
+        "SurfaceMessage",
+        "SurfaceAction",
+        "Transfer",
+        "Channel",
+        "ChannelEvent",
+        "ResumeRequest"
+      ],
+      "conformance_suites": [
+        "channel-transfer",
+        "gopacttest-channel-conformance",
+        "channel-action-resume",
+        "callback-verification",
+        "history-replay",
+        "json-schema-validator"
+      ],
+      "host_owned_config": true,
+      "rationale": "UI and bot platforms involve platform auth, callback security, user mapping, nonce/replay protection, and renderer release cadence. Core keeps platform-neutral surface and channel contracts."
+    },
+    {
+      "id": "observability-exporters",
+      "area": "observability",
+      "route": "plugin-repo",
+      "target_repo": "gopact-plugins-observability",
+      "scaffold_status": "ready",
+      "integrations": [
+        "LangSmith",
+        "LangGraph",
+        "OpenTelemetry",
+        "Replay",
+        "Evaluation"
+      ],
+      "extension_targets": [
+        "gopact-adapters-observability-trace"
+      ],
+      "core_contracts": [
+        "Event",
+        "EventSubscriber",
+        "RunExport",
+        "VerificationReport",
+        "Plugin",
+        "Policy"
+      ],
+      "conformance_suites": [
+        "plugin-lifecycle",
+        "trace-exporter",
+        "trace-exporter-conformance",
+        "export-policy",
+        "redaction",
+        "run-export"
+      ],
+      "host_owned_config": true,
+      "rationale": "Observability exporters map neutral runtime events to vendor-shaped traces, datasets, evaluations, and feedback APIs. Core keeps events, run export, verification, policy, and plugin contracts."
+    },
+    {
+      "id": "mcp-a2a-transports",
+      "area": "transport",
+      "route": "adapter-repo",
+      "target_repo": "gopact-adapters-transport",
+      "scaffold_status": "ready",
+      "integrations": [
+        "MCP transport",
+        "A2A transport",
+        "OAuth discovery",
+        "resumable streaming",
+        "artifact transfer"
+      ],
+      "extension_targets": [
+        "gopact-adapters-transport-a2a",
+        "gopact-adapters-transport-mcp"
+      ],
+      "core_contracts": [
+        "mcp manager/client/server contracts",
+        "a2a agent/task/message/artifact contracts",
+        "Policy",
+        "RuntimeIDs",
+        "ArtifactRef"
+      ],
+      "conformance_suites": [
+        "mcp-client",
+        "mcp-server",
+        "a2a-client",
+        "a2a-streaming",
+        "transport-policy"
+      ],
+      "host_owned_config": true,
+      "rationale": "Production MCP/A2A transports need OAuth, discovery registries, remote auth, streaming resilience, and deployment policy. Core keeps protocol contracts and lightweight reference paths."
+    },
+    {
+      "id": "react-template",
+      "area": "template",
+      "route": "template-repo",
+      "target_repo": "gopact-templates-react",
+      "scaffold_status": "ready",
+      "integrations": [
+        "ReAct model/tool loop",
+        "checkpoint resume",
+        "deferred memory worker",
+        "memory queue adapter",
+        "trajectory golden"
+      ],
+      "extension_targets": [
+        "gopact-templates-react"
+      ],
+      "core_contracts": [
+        "Runnable",
+        "RunExport",
+        "StepExport",
+        "CheckpointStore",
+        "DeferredMemoryWorkQueue",
+        "VerificationReport"
+      ],
+      "conformance_suites": [
+        "react-template",
+        "gopacttest-template-trajectory-conformance",
+        "gopacttest-react-deferred-memory-queue-conformance",
+        "memory-replay",
+        "trajectory-golden"
+      ],
+      "host_owned_config": true,
+      "rationale": "ReAct is a reusable template and memory worker policy surface, not a core SDK primitive. Core keeps graph, run export, checkpoint, memory replay, and queue contracts."
+    },
+    {
+      "id": "devagent-reviewers",
+      "area": "template",
+      "route": "template-repo",
+      "target_repo": "gopact-templates-devagent",
+      "scaffold_status": "ready",
+      "integrations": [
+        "CI reviewer",
+        "model reviewer",
+        "channel reviewer",
+        "git diff scanner",
+        "Lark callback source"
+      ],
+      "extension_targets": [
+        "gopact-templates-devagent"
+      ],
+      "core_contracts": [
+        "VerificationReport",
+        "VerificationEvidence",
+        "EntropyAudit",
+        "ChannelEvent",
+        "PolicyDecision",
+        "RunExport"
+      ],
+      "conformance_suites": [
+        "devagent-mode-gate",
+        "release-gate",
+        "reviewer-evidence",
+        "gopacttest-verification-evidence-conformance",
+        "channel-reviewer",
+        "gopacttest-template-trajectory-conformance",
+        "trajectory-golden"
+      ],
+      "host_owned_config": true,
+      "rationale": "Code review, CI integration, model review prompts, and release gates are Dev Agent harness behavior. Core keeps observed evidence, channel, policy, export, and resume contracts."
+    },
+    {
+      "id": "agenttool-template",
+      "area": "template",
+      "route": "template-repo",
+      "target_repo": "gopact-templates-agenttool",
+      "scaffold_status": "ready",
+      "integrations": [
+        "Agent-as-Tool",
+        "remote A2A agent discovery",
+        "child run event projection",
+        "artifact passthrough"
+      ],
+      "extension_targets": [
+        "gopact-templates-agenttool"
+      ],
+      "core_contracts": [
+        "Runnable",
+        "Tool",
+        "RuntimeIDs",
+        "ArtifactRef",
+        "a2a agent card"
+      ],
+      "conformance_suites": [
+        "agent-as-tool",
+        "a2a-tool-adapter",
+        "parent-child-runtime-ids",
+        "artifact-propagation",
+        "gopacttest-template-trajectory-conformance",
+        "trajectory-golden"
+      ],
+      "host_owned_config": true,
+      "rationale": "Agent-as-Tool is reusable template composition, not an SDK primitive. Core keeps Runnable, Tool, A2A, event, artifact, and policy contracts."
+    }
+  ]
+}

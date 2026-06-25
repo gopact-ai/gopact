@@ -19,8 +19,19 @@ type ToolSpec struct {
 
 // ToolResult 是工具返回的标准化结果。
 type ToolResult struct {
-	Content  string         `json:"content,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Content   string         `json:"content,omitempty"`
+	Artifacts []ArtifactRef  `json:"artifacts,omitempty"`
+	Effects   []EffectRecord `json:"effects,omitempty"`
+	Events    []Event        `json:"events,omitempty"`
+	Commit    *ToolCommit    `json:"commit,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
+// ToolCommit describes the default tool_call effect committed by a tool invocation.
+type ToolCommit struct {
+	ReplayPolicy   EffectReplayPolicy `json:"replay_policy,omitempty"`
+	IdempotencyKey string             `json:"idempotency_key,omitempty"`
+	Metadata       map[string]any     `json:"metadata,omitempty"`
 }
 
 // Tool 是暴露给 agent 的核心能力接口。
@@ -36,7 +47,7 @@ type ToolFunc struct {
 }
 
 // Spec 返回暴露给模型 provider 的工具 schema。
-func (t ToolFunc) Spec(ctx context.Context) (ToolSpec, error) {
+func (t ToolFunc) Spec(_ context.Context) (ToolSpec, error) {
 	if t.SpecValue.Name == "" {
 		return ToolSpec{}, errors.New("gopact: tool name is required")
 	}

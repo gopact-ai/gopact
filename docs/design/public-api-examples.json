@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "scope": "root-public-api-ergonomics",
+  "policy": "Critical root SDK entrypoints must have executable Go examples. The manifest covers representative setup, runner, export/import/resume, and verification paths; non-root packages keep package-local examples and tests.",
+  "required_examples": [
+    {
+      "name": "ExampleSetup",
+      "categories": [
+        "core-contract",
+        "runtime-facade"
+      ],
+      "symbols": [
+        "Defaults",
+        "LevelInfo",
+        "LevelWarn",
+        "NewTextLogger",
+        "RuntimeIDs",
+        "Setup",
+        "String",
+        "WithDefaultRuntimeIDs",
+        "WithLogger",
+        "WithLogLevel"
+      ],
+      "rationale": "Shows the SDK setup/defaults entrypoint, logger injection, default warn-level behavior, and runtime identity defaults without reading config files."
+    },
+    {
+      "name": "ExampleNewRunner",
+      "categories": [
+        "core-contract",
+        "runtime-facade"
+      ],
+      "symbols": [
+        "NewRunner",
+        "ResolveRunOptions",
+        "Runnable",
+        "RuntimeIDs",
+        "Runner",
+        "WithRunnerRuntimeIDs",
+        "WithRuntimeIDs"
+      ],
+      "rationale": "Shows the root runner facade, context-first event streaming, and run-scoped identity override as the default SDK invocation shape."
+    },
+    {
+      "name": "ExampleNewRunRecorder",
+      "categories": [
+        "core-contract",
+        "export-import-resume"
+      ],
+      "symbols": [
+        "NewRunRecorder",
+        "ReplayRunExport",
+        "RunExport",
+        "RunRecorder",
+        "RuntimeIDs"
+      ],
+      "rationale": "Shows process export and replay as atomic SDK capabilities without re-running model, tool, sandbox, or business harness work."
+    },
+    {
+      "name": "ExampleNewVerificationRecorder",
+      "categories": [
+        "core-contract",
+        "export-import-resume",
+        "verification"
+      ],
+      "symbols": [
+        "NewVerificationRecorder",
+        "RunExport",
+        "RunExportVersion",
+        "RuntimeIDs",
+        "VerificationCheck",
+        "VerificationEvidence",
+        "VerificationStatusPassed"
+      ],
+      "rationale": "Shows verification as observed evidence over a run export, not as hidden command execution or business release-gate policy."
+    },
+    {
+      "name": "ExampleValidateResumePayload",
+      "categories": [
+        "core-contract",
+        "export-import-resume"
+      ],
+      "symbols": [
+        "InterruptApproval",
+        "InterruptRecord",
+        "JSONSchema",
+        "ResumeRequest",
+        "ValidateResumePayload"
+      ],
+      "rationale": "Shows the resume payload schema gate that protects interrupted step boundaries before execution continues."
+    },
+    {
+      "name": "Example_graphRun",
+      "categories": [
+        "core-contract",
+        "runtime-facade"
+      ],
+      "symbols": [
+        "EventNodeCompleted",
+        "EventType",
+        "RuntimeIDs",
+        "WithRuntimeIDs"
+      ],
+      "rationale": "Keeps the graph-facing root option example executable while graph package APIs remain documented in their own package."
+    }
+  ]
+}

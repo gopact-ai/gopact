@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "reference_policy": {
+    "import_policy": "stdlib-or-gopact-only",
+    "rationale": "Reference-only packages may stay in the core repository only when they remain offline, lightweight, and free of provider/platform SDK dependencies. They can import the Go standard library and this module's own contracts, but production service clients belong in external adapter repositories."
+  },
+  "entries": [
+    {
+      "path": "a2a",
+      "disposition": "keep-in-core",
+      "rationale": "A2A agent/task/message/artifact/status contracts are SDK integration boundaries. Production gateways and remote discovery policy remain external adapters."
+    },
+    {
+      "path": "mcp",
+      "disposition": "keep-in-core",
+      "rationale": "MCP manager/client/server contracts are SDK integration boundaries. OAuth registries and production transport bundles remain external adapters."
+    },
+    {
+      "path": "provider",
+      "disposition": "keep-in-core",
+      "rationale": "Provider registry, router, route set, fake provider, middleware, and error taxonomy are core SDK contracts. Concrete hosted model providers remain external adapters."
+    },
+    {
+      "path": "adapters/channel/a2ui",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-channel-a2ui",
+      "rationale": "A2UI is a protocol-specific channel adapter. Core should keep SurfaceMessage, Transfer, Channel, and schema validator contracts only."
+    },
+    {
+      "path": "adapters/channel/agui",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-channel-agui",
+      "rationale": "AG-UI is a protocol-specific channel adapter. Core should keep platform-neutral event and channel contracts only."
+    },
+    {
+      "path": "adapters/channel/lark",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-channel-lark",
+      "rationale": "Lark is a concrete platform adapter with callback signing, user mapping, OAuth, and production delivery concerns outside the SDK core."
+    },
+    {
+      "path": "adapters/channel/sse",
+      "disposition": "reference-only",
+      "rationale": "HTTP SSE is a small no-account reference channel useful for conformance and examples. Production WebSocket/SSE gateways should live externally."
+    },
+    {
+      "path": "adapters/channel/tui",
+      "disposition": "reference-only",
+      "rationale": "Writer-based TUI is a local reference implementation for Transfer and Channel contracts, with no external platform dependency."
+    },
+    {
+      "path": "adapters/checkpoint/gcsstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-checkpoint-gcs",
+      "rationale": "Google Cloud Storage checkpoint persistence is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/checkpoint/objectstore",
+      "disposition": "reference-only",
+      "rationale": "Conditional object checkpoint backend is a generic reference for CAS and index repair contracts. Provider-specific object implementations should live externally."
+    },
+    {
+      "path": "adapters/checkpoint/ossstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-checkpoint-oss",
+      "rationale": "Alibaba Cloud OSS checkpoint persistence is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/checkpoint/r2store",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-checkpoint-r2",
+      "rationale": "Cloudflare R2 checkpoint persistence is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/checkpoint/redisstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-checkpoint-redis",
+      "rationale": "Redis checkpoint persistence is a production backend and should be maintained as an external adapter."
+    },
+    {
+      "path": "adapters/checkpoint/s3store",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-checkpoint-s3",
+      "rationale": "AWS S3 checkpoint persistence is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/checkpoint/sqlstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-checkpoint-sql",
+      "rationale": "database/sql checkpoint persistence is a production backend. Core should keep the RowBackend and conformance contract."
+    },
+    {
+      "path": "adapters/devagent/channelreview",
+      "disposition": "move-to-template-repo",
+      "target": "gopact-templates-devagent",
+      "rationale": "Channel review is Dev Agent harness behavior. Core should keep ChannelEvent and review evidence contracts only."
+    },
+    {
+      "path": "adapters/devagent/cireview",
+      "disposition": "move-to-template-repo",
+      "target": "gopact-templates-devagent",
+      "rationale": "CI review is Dev Agent release-gate behavior and should not be maintained in the core SDK repository."
+    },
+    {
+      "path": "adapters/devagent/gitdiff",
+      "disposition": "move-to-template-repo",
+      "target": "gopact-templates-devagent",
+      "rationale": "Git diff scanning is Dev Agent evidence collection. Core should keep observed diff evidence contracts only."
+    },
+    {
+      "path": "adapters/devagent/modelreview",
+      "disposition": "move-to-template-repo",
+      "target": "gopact-templates-devagent",
+      "rationale": "Model review is Dev Agent harness behavior. Core should keep reviewer decision evidence contracts only."
+    },
+    {
+      "path": "adapters/lease/httpstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-lease-http",
+      "rationale": "HTTP control-plane lease backend is a production integration adapter. Core should keep LeaseBackend and memory reference implementation."
+    },
+    {
+      "path": "adapters/lease/objectstore",
+      "disposition": "reference-only",
+      "rationale": "Conditional object lease backend is a generic reference for lease CAS semantics. Provider-specific object adapters should live externally."
+    },
+    {
+      "path": "adapters/lease/redisstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-lease-redis",
+      "rationale": "Redis lease persistence is a production backend and should be maintained as an external adapter."
+    },
+    {
+      "path": "adapters/lease/sqlstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-lease-sql",
+      "rationale": "database/sql lease persistence is a production backend. Core should keep LeaseBackend and conformance contracts."
+    },
+    {
+      "path": "adapters/model/openaicompatible",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-model-openaicompatible",
+      "rationale": "OpenAI-compatible model transport is a concrete provider adapter. Core should keep ChatModel, StreamingModel, router, and provider contracts."
+    },
+    {
+      "path": "adapters/observability/trace",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-observability-trace",
+      "rationale": "Trace exporters and vendor-shaped envelopes are observability adapters. Core should keep events, RunExport, verification, and plugin contracts."
+    },
+    {
+      "path": "adapters/storage/fileblob",
+      "disposition": "reference-only",
+      "rationale": "Filesystem blob/object storage is a local reference backend useful for tests and examples, with no external service dependency."
+    },
+    {
+      "path": "adapters/storage/gcsblob",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-storage-gcs",
+      "rationale": "Google Cloud Storage blob/object storage is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/storage/objectblob",
+      "disposition": "reference-only",
+      "rationale": "Generic object blob backend is a reference for object storage contracts. Provider-specific implementations should live externally."
+    },
+    {
+      "path": "adapters/storage/ossblob",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-storage-oss",
+      "rationale": "Alibaba Cloud OSS blob/object storage is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/storage/r2blob",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-storage-r2",
+      "rationale": "Cloudflare R2 blob/object storage is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/storage/s3blob",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-storage-s3",
+      "rationale": "AWS S3 blob/object storage is a production cloud backend and should be versioned outside the core SDK."
+    },
+    {
+      "path": "adapters/turnloop/httpstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-turnloop-http",
+      "rationale": "HTTP control-plane TurnLoop store is a production integration adapter. Core should keep TurnLoopStore contracts and local references."
+    },
+    {
+      "path": "adapters/turnloop/objectstore",
+      "disposition": "reference-only",
+      "rationale": "Conditional object TurnLoop backend is a generic reference for versioned CAS semantics. Provider-specific object adapters should live externally."
+    },
+    {
+      "path": "adapters/turnloop/redisstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-turnloop-redis",
+      "rationale": "Redis TurnLoop persistence is a production backend and should be maintained as an external adapter."
+    },
+    {
+      "path": "adapters/turnloop/sqlstore",
+      "disposition": "move-to-adapter-repo",
+      "target": "gopact-adapters-turnloop-sql",
+      "rationale": "database/sql TurnLoop persistence is a production backend. Core should keep TurnLoop store and conformance contracts."
+    },
+    {
+      "path": "templates/agenttool",
+      "disposition": "move-to-template-repo",
+      "target": "gopact-templates-agenttool",
+      "rationale": "Agent-as-Tool is a harness template. Core should keep Runnable, Tool, A2A, policy, and event contracts."
+    },
+    {
+      "path": "templates/devagent",
+      "disposition": "move-to-template-repo",
+      "target": "gopact-templates-devagent",
+      "rationale": "Dev Agent is a concrete development harness. Core should keep verification, entropy, policy, review evidence, and resume primitives."
+    },
+    {
+      "path": "templates/react",
+      "disposition": "reference-only",
+      "target": "gopact-templates-react",
+      "rationale": "The current ReAct implementation can remain as a minimal reference template and trajectory fixture. Production variants should move to a template repository."
+    }
+  ]
+}

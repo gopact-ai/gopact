@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "workflow_path": ".github/workflows/ci.yml",
+  "go_versions": [
+    "1.25"
+  ],
+  "lint_config_path": ".golangci.yml",
+  "coverage_profile_path": "coverage.out",
+  "tool_versions": {
+    "golangci-lint": "v2.8.0",
+    "govulncheck": "v1.1.4"
+  },
+  "required_gates": [
+    "whitespace",
+    "unit",
+    "race",
+    "vet",
+    "lint",
+    "coverage",
+    "examples",
+    "security"
+  ],
+  "required_commands": [
+    "git diff --check",
+    "go test -count=1 ./...",
+    "go test -race -count=1 ./...",
+    "go vet ./...",
+    "golangci-lint run ./...",
+    "go test -coverprofile=coverage.out ./...",
+    "go test -run '^Example' ./...",
+    "govulncheck ./..."
+  ],
+  "required_linters": [
+    "errcheck",
+    "govet",
+    "ineffassign",
+    "misspell",
+    "revive",
+    "staticcheck",
+    "unused"
+  ],
+  "required_formatters": [
+    "gofmt",
+    "goimports"
+  ]
+}

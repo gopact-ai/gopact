@@ -1,0 +1,410 @@
+# gopact 研发计划
+
+日期：2026-06-23
+
+设计入口：[index.md](index.md)
+
+本文是 `gopact` 的工程研发计划。它以 SDK 视角组织工作：先稳定原子能力和调用体验，再通过外部 template、adapter、plugin 仓库扩展生产能力和自举能力。
+
+## 当前结论
+
+当前设计没有发现阻塞实现的问题。需要继续保持的核心判断是：
+
+- `gopact` 是 agent SDK，不是某一种 agent harness；
+- core 提供原子能力、常用内置能力、过程记录、恢复边界和扩展点；SDK 不应该薄到只能做接口拼装；
+- ReAct、code agent、问答机器人、supervisor、plan-execute 等属于 template 或业务层组合；
+- SDK 自身不读取配置文件，所有配置通过 typed options、构造参数、provider、adapter 或 plugin 由宿主应用注入；
+- SDK 默认能力可以 batteries-included，但不能默认要求用户部署额外存储、队列、云服务或平台服务；
+- agent 开发最重要的是过程可观察、可导出、可恢复，而不是只追求最终答案；
+- workflow/graph 必须支持 step 级 export/import，面对任意中断都能从稳定边界 resume。
+- 主 SDK 仓库不长期维护生产级 provider/backend/channel/observability adapter，也不维护业务 harness/plugin；这些能力应拆到独立仓库，主仓只保留 contract、facade、轻量内置实现、reference adapter 和 conformance/testkit。
+- 已经进入主仓的生产型 adapter 第一片视为过渡参考实现；v1 前需要明确“保留 / 移出 / 废弃”的归属，不再把新增生产 adapter 作为主仓 milestone。
+
+## 仓库边界
+
+`gopact` 主仓只维护 SDK 内核：
+
+- root facade、公共 contract、typed options、logger/setup、runtime ids；
+- workflow/graph、event stream、middleware/hook/plugin contract；
+- step export/import、checkpoint/resume、run export/replay、verification recorder；
+- model/tool/memory/sandbox/MCP/A2A/channel 的抽象端口和轻量内置实现；
+- in-memory、本地文件、SQLite/libSQL embedded、fake、no-op、writer-based 等无外部服务依赖的开发/测试/本地生产可用实现；
+- conformance tests、testkit、schema、示例和设计文档。
+
+这些能力不应继续沉入主仓：
+
+- OpenAI、Anthropic、Gemini、OpenRouter 等 provider adapter；
+- Redis、Postgres/MySQL 等外部数据库服务、S3/GCS/R2/OSS 等云对象存储生产 backend adapter；
+- Lark、A2UI、AG-UI、WebSocket、Slack/Discord 等 channel adapter；
+- LangSmith、LangGraph、OTel collector 等 observability/exporter adapter；
+- Dev Agent、ReAct、Agent-as-Tool 等面向场景的 template/harness；
+- 生产 release gate、CI reviewer、model reviewer、Lark callback、git diff scanner 等业务插件。
+
+推荐组织方式：
+
+- `gopact`：core SDK；
+- `gopact-adapters-*`：provider/backend/channel/observability adapter；
+- `gopact-plugins-*`：可安装 plugin；
+- `gopact-templates-*`：ReAct、Dev Agent、Agent-as-Tool 等可选 harness；
+- `gopact-contrib`：社区扩展索引和兼容性矩阵。
+
+主仓可以保留少量 reference adapter 和常用内置实现，但边界看运行依赖而不是 Go 包依赖：可以使用开源工具包，可以提供 SQLite、embedded libSQL/Turso local mode、本地文件、内存队列、bounded worker、retry/backoff 和本地 DLQ；不能让默认能力要求用户额外部署 Redis、Postgres、Kafka、S3、Lark、GitHub、Turso Cloud 等外部服务。外部服务接入应放到 adapter/plugin/template 仓库，并通过同一套 contract 和 conformance test 接入。
+
+## 内置能力边界
+
+`gopact` 的 SDK 形态应是 batteries-included，而不是 only-primitives。判断某个能力能否进入主仓默认实现时，使用以下边界：
+
+- **可以内置**：不需要外部运行服务即可工作的能力，例如内存 store、本地文件 store、SQLite/embedded libSQL store、本地 worker queue、bounded retry/backoff、本地 DLQ record、fake provider、testing helper、writer-based channel、noop/内存 exporter、默认 logger、默认 redactor、默认 policy wrapper。
+- **可以依赖开源工具包**：Go module 依赖本身不是外部运行依赖。只要不要求用户部署额外服务、不隐式读取宿主配置、不默认外连网络，就可以作为内置实现的工程依赖。
+- **不默认内置外部服务依赖**：Redis、Postgres/MySQL server、S3/GCS/R2/OSS、Kafka/SQS、Lark/Slack/GitHub、LangSmith/LangGraph hosted endpoint、Turso Cloud remote mode 等需要账号、网络、凭据、服务运维或平台权限的能力，默认放在 adapter/plugin/template 仓库。
+- **内置实现必须可替换**：所有 built-in batteries 都必须挂在 contract 后面，用户能用 typed options、构造参数或 plugin 替换成生产 backend；内置实现不能变成绕过 policy、middleware、event、checkpoint、verification 的旁路。
+- **业务 harness 仍不下沉**：可以内置通用 worker queue、retry/backoff、DLQ record、memory merge helper，但不内置“code agent 应如何写代码”“问答机器人应如何追问”“release gate 应如何审批”这类业务流程判断。
+
+这意味着 ReAct deferred memory worker 不应该只停留在 planner/executor 原子函数。SDK 可以提供本地队列、bounded worker、retry/backoff 和本地 DLQ 的默认实现；生产 Redis/SQS/Postgres 队列、分布式 lease、云端 DLQ、平台告警和业务重试策略仍通过 adapter 或宿主 harness 接入。
+
+## 当前代码状态
+
+已完成第一批骨架：
+
+- root contract：消息、内容块、运行身份、事件、surface message projector、transfer/channel/channel event、step snapshot/export、step/resume run option、`JSONSchemaValidator` / `JSONSchemaValidatorFunc` 可插拔 schema validator 契约、`ValidateJSONSchemaValue` portable schema subset 原语、`ValidateResumePayload` schema gate 第二片、run export、logger/setup、runner facade。
+- repository boundary：`docs/design/repository-boundary.json` 已对当前主仓内的 core protocol 包、adapter 包、template 包和 Dev Agent 相关能力给出 `keep-in-core` / `reference-only` / `move-to-adapter-repo` / `move-to-template-repo` / `remove-before-v1` 归属，并声明 reference-only 包只能导入标准库或本模块内部包；`TestRepositoryBoundaryManifestCoversExtensionPackages` 检查覆盖，`TestRepositoryBoundaryReferenceOnlyPackagesStayLightweight` 防止 reference-only 包引入第三方 provider/platform SDK 依赖。
+- extension conformance：`docs/design/extension-conformance.json` 已把需要迁移到外部仓库的 adapter/template 目标连接到 SDK 兼容矩阵、必跑 conformance suite、scaffold 文件、README 模板、CONFORMANCE 模板、CI 命令和 examples 要求，并由 `TestExtensionConformanceManifestCoversMovedBoundaryTargets` 检查所有 `move-to-adapter-repo` / `move-to-template-repo` 目标都有对应外部仓库契约；`TestExtensionScaffoldContractDocumentsExternalRepoCI` 检查外部仓库 owner、module path prefix、必备文件、CI workflow 模板、CONFORMANCE 模板和 offline conformance checklist；`docs/design/external-repositories.json` 已把 roadmap target repo 映射到 gopact-ai 私有仓库初始化清单、extension targets、必备 scaffold 文件和 CI 命令；`docs/design/extension-scaffold-spec.json` 已把初始化时的通用文件规则、repo module path 和每个 extension target 的初始 package path 显式化；`internal/extensionscaffold` 已提供本仓内部 scaffold materializer，`LoadRepositoriesFromDesign` 可从三个 design manifest 组装所有外部仓库计划，`WriteRepositoriesFromDesign` 可批量写出 `<output>/<repo-name>` scaffold workspace，并渲染为 go.mod、README、记录已知 gopacttest helper reference 的 CONFORMANCE、GitHub Actions CI 和接入 `gopacttest.RequireExtensionScaffoldConformance` / helper-reference 机器检查的 minimal test，`RenderSyncPlanFromDesign` 可导出包含私有仓库创建命令、文件清单、CI 命令和本地验证命令的机器可读远端同步计划，`RenderSyncScriptFromDesign` 可导出先初始化本地 git、逐仓库运行 manifest required CI commands、最后通过 `gh repo create` 或 push 同步私有仓库的可审查 shell 脚本；`cmd/gopact-extscaffold` 已提供本仓维护命令，可用 `go run ./cmd/gopact-extscaffold -root . -out <dir> -verify` 生成外部仓库 scaffold workspace、写入本地 `go.work`、`sync-plan.json` 和 `sync-repos.sh`，并逐仓库运行 manifest required CI commands（默认 `git diff --check`、`go test -count=1 ./...`、`go vet ./...`），用 `-dry-run` 查看计划，用 `-plan-json` 输出远端 bootstrap/sync JSON 计划，用 `-plan-sh` 输出远端 bootstrap/sync shell 脚本，或用 `-remote-status-json` 只读审计远端仓库存在性、私有性、CI workflow 和最新 Actions run 状态；`docs/design/extension-repository-template.md` 已给出外部扩展 README 模板，`docs/design/extension-conformance-template.md` 已给出外部扩展 CONFORMANCE 模板，`docs/design/extension-ci-workflow.yml` 已给出默认 GitHub Actions CI 模板。
+- external integration roadmap：`docs/design/external-integration-roadmap.json` 已把 OpenAI/Anthropic/Gemini/OpenRouter、Redis/SQL/S3/GCS/R2/OSS、A2UI/AG-UI/Lark/WebSocket、LangSmith/LangGraph、MCP/A2A production transport、CI/model reviewer 等生产集成归入外部 adapter/plugin/template 路线，并由 `TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore` 确保生产集成不回流到 core repo、所有路线都已 scaffold-ready、ready 路线必须绑定 extension conformance target，且已迁移的 conformance target 都被路线图引用；`TestExternalRepositoryManifestCoversRoadmapRepositories` 进一步要求每条 ready 路线都有私有外部仓库计划。
+- milestone readiness：`docs/design/milestone-readiness.json` 已把 M1-M6 的当前状态、证据文档、未完成项和自举级别显式化，并由 `TestMilestoneReadinessManifestCoversMStages` 防止把 first-slice 完成误判成整体完成。
+- public API boundary：`docs/design/public-api-boundary.json` 已对 root 包当前顶层导出符号给出 category、stability、source file 和 rationale，并声明 exported root receiver methods 继承 receiver type 的边界策略；`TestPublicAPIBoundaryManifestCoversRootTopLevelExports` 防止新增 root exported API 绕过 SDK 边界审查，`TestPublicAPIBoundaryCoversRootExportedMethodsByReceiver` 防止 exported method 挂到未登记 receiver type 上；`docs/design/public-api-examples.json` 已登记 setup、runner、run export/replay、verification 和 resume schema 等关键 root 入口的可执行 Example，并由 `TestPublicAPIExamplesManifestCoversRequiredEntrypoints` 防止调用体验示例腐烂；`docs/design/deprecation-policy.md` 已定义 public API 稳定性、`Deprecated:` 标记、移除窗口和兼容性审查，并由 `TestDeprecationPolicyDocumentedAndIndexed` / `TestDeprecationPolicyCoversPublicAPIStabilityStates` 防止策略脱离边界清单；`docs/design/versioning-policy.md` 已定义 core SDK、schema 和外部 extension 的 semver、release gates 和兼容性策略，并由 `TestVersioningPolicyDocumentedAndIndexed` 防止 versioning 规则脱离 release 文档。
+- graph：类型化 graph、event stream、checkpoint hook、`WithNodeMiddleware`。
+- provider：registry、router、route set、fallback、错误分类、model middleware、model rate limiter contract/middleware、fake provider、OpenAI-compatible adapter。
+- tools/artifact/sandbox：tool registry、visible/deferred search、promotion、direct invocation、model-visible invocation guard、tool middleware、tool middleware 错误路径事件保留、scope metadata 进入 tool policy request、tool-call effect 第一片、`ToolResult.Commit` tool 幂等提交契约第一片、tool-call replay handler 第一片、effect graph/replay policy 契约第一片、`PlanEffectReplay` 单步 runtime plan 第一片、`BuildRunEffectGraph` 跨 step effect graph 第一片、`PlanRunEffectReplay` run-level plan 第一片、`EffectReplayRegistry` handler 分发第一片、`ExecuteEffectReplay` / `ExecuteRunEffectReplay` executor 第一片、step-level/run-level effect replay verification evidence 桥接第一片、事件 replay plan typed helper 第一片、artifact store、artifact integrity verifier 第一片、sandbox exec verification evidence 桥接第一片、本地和内存 sandbox。
+- integration modules：memory、skill、MCP-like manager、A2A registry/fake agent、local runnable agent adapter、HTTP JSON/JSONL client/server wrapper、JSON-RPC 2.0 + SSE client/server wrapper、A2A task cancel/message/artifact/status stream、agent card discovery 和 auth context 第一片。
+- control/extensibility：`TurnLoop`、TurnLoop pending/resume queue、`TurnInputMergeFunc` 业务级输入合并策略第一片、TurnLoop interrupted resume schema gate 第一片、TurnLoop resume policy gate/event 第一片、`TurnLoopStore` 持久化第一片、内存/本地 file/row/blob/versioned CAS TurnLoop store、root `LeaseBackend` / `NewMemoryLeaseBackend` 租约第一片、`NewLeasedTurnLoopStore` worker ownership wrapper、可选后台续约和 `LeaseObserver` 争用/续约观测第一片、`adapters/lease/sqlstore` database/sql lease backend 第一片、`adapters/lease/redisstore` Redis lease backend 第一片、`adapters/lease/httpstore` HTTP/JSON control-plane lease backend 第一片、`adapters/lease/objectstore` conditional object lease backend 第一片、`NodeContext`、`EventContext`、`ModelContext`、`ToolContext`、`PluginHost`、`PluginDescriptor` / `PluginCapability`、node/event/model/tool middleware、`EventSinkMiddleware` strict/fallback 第一片、`AsyncEventSink` bounded queue/backpressure 第一片、事件订阅、插件 subscriber strict/fallback、插件生命周期状态机、幂等 close、close-while-running 等待，以及 Runner/TurnLoop close 第一版。
+- policy/redaction：root `Policy` contract、`PolicyFunc`、`PolicyDeniedError`、model/tool/A2A send/channel/MCP/skill/exporter policy boundary、memory/sandbox/artifact policy wrapper 第一片、skill registry/resource/script policy wrapper 第一片、trace HTTP/JSON exporter、trace OTLP/HTTP JSON exporter、trace exporter policy wrapper 第一片、root `PolicyChannel` 第一片、MCP newline JSON-RPC client/transport、MCP Streamable HTTP POST + JSON/SSE response transport、GET listen stream、continuous listen reconnect/retry、session/protocol header、DELETE session termination、404 session-expired 处理与 legacy initialize/initialized 兼容握手第一片、MCP `ToolServer` server adapter 第一片、MCP manager/client policy wrapper 第一片、policy requested/decided events、review-to-approval interrupt、`TextRedactor`、`RedactModelRequest` / `RedactModelResponse` / `ModelIORedactionMiddleware`、`RedactToolResult` / `ToolResultRedactionMiddleware`、event redaction middleware 和 `Event.Redaction` 状态第一版。
+- interrupt/resume：root `InterruptRecord`、`ResumeRequest`、`InterruptError`、`EventRunInterrupted`、root `WithStepExport` / `WithResumeRequest` 运行选项、graph node interrupt 事件，以及 interrupted `StepExport` + `ResumeRequest` 恢复第一版；graph runnable adapter 已能把 root resume option 转成 graph invoke option。
+
+尚未完成路线图：
+
+- checkpoint database/sql adapter 与 schema 指南第一片、checkpoint Redis atomic row/index backend 第一片、checkpoint conditional object row/index backend 第一片、checkpoint objectstore 索引 `VerifyIndex` / `RepairIndex` / `RecordIndexConsistencyCheck` 第一片、checkpoint AWS SDK v2 S3 conditional backend 第一片、checkpoint Google Cloud Storage generation-CAS backend 第一片、checkpoint Cloudflare R2 S3-compatible conditional backend 第一片、checkpoint Alibaba Cloud OSS SDK v2 conditional backend 第一片、TurnLoop database/sql row/versioned CAS adapter 与 schema 指南第一片、TurnLoop HTTP/JSON control-plane row/versioned CAS adapter 第一片、TurnLoop Redis GET/SET/EVAL row/versioned CAS adapter 第一片、TurnLoop conditional object versioned CAS adapter 第一片、filesystem object/blob backend 第一片、通用对象 client object/blob backend 第一片、AWS SDK v2 S3 object/blob adapter 第一片、Google Cloud Storage object/blob adapter 第一片、Cloudflare R2 S3-compatible object/blob adapter 第一片、Alibaba Cloud OSS SDK v2 object/blob adapter 第一片、TurnLoop versioned CAS store 端口第一片、root lease/memory backend 第一片、leased TurnLoop wrapper、可选后台续约、`LeaseObserver` 争用/续约观测第一片、database/sql lease backend 第一片、Redis lease backend 第一片、HTTP/JSON control-plane lease backend 第一片和 conditional object lease backend 第一片已落地；仍需更多对象 checkpoint provider-specific 云 SDK 绑定，以及更多生产级 backend adapter；
+- template verification 节点第一片已落地，Dev Agent channel reviewer adapter 第一片已支持 review prompt 投递和 channel action 回流，CI reviewer adapter 第一片已可把已观察 `VerificationReport`、required checks 和 `EntropyAudit` 转换成 reviewer decision，model reviewer adapter 第一片已可通过宿主注入的 `gopact.ChatModel` 生成显式 JSON review decision，并用 `WithGovernance` 把 prompt/eval/policy metadata 写入模型请求与 reviewer decision，Lark callback source 第一片已可把卡片 action callback 转成统一 `ChannelEvent`；仍需更多证据采集来源、model review 真实评测治理深化、CI 系统真实接入深化、Lark 真实 client/plugin、生产 release gate 策略，以及 tool backend 的生产级 exactly-once ledger / 外部 commit store；
+- HTTP/JSON trace exporter adapter、OTLP/HTTP JSON exporter adapter、LangSmith-compatible HTTP run exporter 和 LangGraph-style HTTP event exporter 第一片已完成；仍需真实 LangSmith SDK 和更细粒度插件能力治理；
+- ReAct、Agent-as-Tool、Dev Agent template 的更完整 workflow；
+- record/replay、trajectory test、verification evidence 采集来源、entropy audit；
+- 真实 LangSmith SDK、LangGraph-style exporter 的 policy/redaction 深化、完整前端 A2UI renderer、完整 JSON Schema engine adapter/plugin 与 conformance 深化、更完整 catalog negotiation 深化、AG-UI WebSocket/plugin transfer/channel adapter、Lark 真实 client/OAuth/plugin 和生产级 callback 治理；HTTP/JSON trace exporter、OTLP/HTTP JSON exporter、LangSmith-compatible HTTP run exporter、LangGraph-style HTTP event exporter、TUI writer adapter、HTTP SSE adapter、host-injected Lark transfer/channel/callback source adapter、A2UI v0.9 transfer/JSONL channel/history replay/schema catalog validation/复用 root schema validator 且支持自定义 validator 注入的 component validation/client-supported catalog negotiation/in-memory reference renderer/action decode 和 AG-UI event transfer/HTTP SSE channel 已完成第一片，后续仍需插件化接入和更完整交互。
+
+## 开发原则
+
+1. Public API 先过调用体验审查。代码要像 SDK，而不是内部框架泄漏。
+2. root package 只暴露稳定 facade、公共契约和轻量默认值。
+3. 业务 harness 概念不沉入 core；core 沉淀事件、checkpoint、middleware、policy、artifact、resume 等过程原语，也可以提供通用本地默认实现。
+4. 默认实现必须可测试、无外部运行服务依赖；开源 Go 包、SQLite、embedded libSQL、本地文件、内存队列等可以作为 SDK 内置能力；需要账号、网络、凭据或独立部署的真实后端通过外部 adapter/plugin 仓库接入。
+5. 所有会影响恢复、审计或外部可见行为的动作必须产生事件。
+6. 中间件能改写输入输出，但不能暗改 graph 分支、私写 checkpoint 或吞错误。
+7. 每个 milestone 都要有单元测试、集成测试、示例和文档状态更新。
+8. 每完成一个可验证任务单元，完成对应验证后都要提交一个独立 commit；commit 只包含该任务相关改动，并在信息中说明完成项和关键验证命令。
+9. 新增生产级 adapter/plugin/template 默认不进入主 SDK 仓库；确需放入主仓时必须证明它是 contract reference 或 conformance fixture。
+
+## M4 Closure Plan
+
+目标：把当前 M4 骨架从“能跑”收束到“可扩展、可恢复、可接入”。
+
+### 1. Middleware Contract
+
+交付：
+
+- `[done: first slice]` `ModelMiddleware`：包裹 provider/router 调用，支持 request 改写、response 改写、cache 短路、policy 阻断和错误传播；model I/O redaction middleware 和 model rate limit middleware 已补齐，trace、生产级 redaction 策略和生产级 rate-limit 算法 adapter 后续深化。
+- `[done: first slice]` `ToolMiddleware`：包裹 registry tool invocation，支持 args 改写、result 改写、cache 短路、policy 阻断、review-to-approval interrupt、policy events 和错误传播；tool retry decision contract、tool retry middleware 与 tool result redaction middleware 已补齐，生产级 retry 策略 adapter 和生产级 result redaction 策略后续深化。
+- `[done: first slice]` `EventMiddleware`：包裹 Runner event emission，支持 enrich、redact、sampling、drop、event redaction middleware、plugin subscriber publish，以及 `EventSinkMiddleware` strict/fallback 策略。
+- 错误语义：middleware error 必须进入 event stream，并保留 `errors.Is/As`。
+
+验收：
+
+- node/event/model/tool middleware 已有 before/after 或 drop/short-circuit/error 的第一批测试。
+- middleware 顺序稳定，支持多个 middleware 串行组合。
+- 不允许 middleware 私自改变 checkpoint 或 graph edge。
+
+### 2. Plugin Lifecycle
+
+交付：
+
+- `[done: first slice]` `PluginHost` 已支持 install/close，重复安装可检测，关闭后禁止新安装，close 失败会返回 joined errors。
+- `[done: first slice]` `Runner` 已可挂载 `PluginHost`，使用其中的 event middleware 和 subscriber，并通过 `Runner.Close(ctx)` 关闭插件；关闭中的 plugin host 会拒绝新 run，并等待 active run 结束。
+- `[done: first slice]` `TurnLoop.Close(ctx)` 会标记 loop closed、取消 active turn、按 runner -> store 顺序关闭资源；已成功关闭的资源不会重复关闭，因 context 或资源错误失败的关闭可重试；关闭后的 `Run` / `Push` 会返回 `ErrTurnLoopClosed`。
+- plugin 可注册 node/event/model/tool middleware 和 event subscriber；provider router 与 tools registry 已可通过 `WithPluginHost` 接入 model/tool middleware。
+- `[done: first slice]` `PluginHost.Close(ctx)` 已具备幂等语义；`Runner.Run` 会在 event stream 生命周期里占用 plugin host，`Runner.Close(ctx)` 会阻止新 run 并等待 active run 结束后再逆序关闭插件。
+- `[done: first slice]` 插件 capability 声明已支持 `PluginDescriber`、`PluginDescriptor`、`PluginCapability`、安装时 descriptor 校验、按安装顺序枚举和实际注册 middleware/subscriber 能力补全。
+- `[done: first slice]` 插件 subscriber failure policy 已支持默认 strict 和 `WithPluginFailureFallback()` 降级，fallback 会把错误写入 `plugin_subscriber_errors` metadata；plugin setup/close 仍保持严格失败语义。
+- `[done: first slice]` `AsyncEventSink` 已支持 bounded queue、默认 block 背压、drop-newest 策略、drop metadata、close drain 和 sink error 汇总。
+- HTTP/JSON trace exporter adapter、OTLP/HTTP JSON exporter adapter、LangSmith-compatible HTTP run exporter 和 LangGraph-style HTTP event exporter 第一片已完成；真实 LangSmith SDK 和插件级 redaction/policy 深化后续补齐。
+
+验收：
+
+- plugin lifecycle 测试已覆盖重复安装、setup 失败回滚、关闭逆序、关闭失败、幂等 close、关闭后拒绝安装、关闭后拒绝 run、close-while-running 等待、Runner close 和 TurnLoop close。
+- 插件注册的 event middleware 已能被 Runner 使用；node middleware 已能被 graph option 使用；model/tool middleware 已能被 provider/tools 原子模块通过 `WithPluginHost` 使用。
+
+### 3. Resume Spine
+
+交付：
+
+- `CheckpointRecord` 与 graph step snapshot 对齐。
+- `[done: first slice]` checkpoint codec/integrity、migration/config drift、本地持久化、数据库型行存储端口和对象存储端口：`checkpoint.Record`、`StateCodec`、默认 `JSONCodec`、统一 `WithCodec` option、`EncodeCheckpoint` / `DecodeCheckpoint`、state hash 校验、`ConfigVersion`、`WithRecordMigration`、`WithConfigDriftPolicy`、`WithConfigVersion` 和 `graph.WithConfigVersion` 已落地；`checkpoint.Memory` 内部保存 encoded record，并在 `Get` / `Latest` 时校验 integrity 后解码；`checkpoint.FileStore` 已支持单 JSON 文件持久化、原子 rename 写入、跨实例恢复、按 id get、按 thread list/latest 和同 ID 覆盖；`checkpoint.RowBackend` / `RowStore` 已支持按稳定 `Record` 行 upsert/get/list、按 id get、按 thread list/latest、同 ID 覆盖、integrity 校验和共享 codec/config/migration option；`adapters/checkpoint/sqlstore` 已支持 database/sql row backend 第一片，`adapters/checkpoint/redisstore` 已支持 Redis atomic row/index backend 第一片，`adapters/checkpoint/objectstore` 已支持 conditional object row/index backend、索引 `VerifyIndex` / `RepairIndex` 和索引一致性 verification evidence 第一片；`adapters/checkpoint/s3store` 已支持 AWS SDK v2 S3 conditional checkpoint backend 第一片；`adapters/checkpoint/gcsstore` 已支持 Google Cloud Storage generation-CAS checkpoint backend 第一片；`adapters/checkpoint/r2store` 已支持 Cloudflare R2 S3-compatible conditional checkpoint backend 第一片；`adapters/checkpoint/ossstore` 已支持 Alibaba Cloud OSS SDK v2 conditional checkpoint backend 第一片；`checkpoint.ObjectBackend` / `ObjectStore` 已支持每 checkpoint record 一个对象、`WithObjectPrefix` namespace、按 id get、按 thread list/latest、同 ID 覆盖、integrity 校验和共享 codec/config/migration option；`adapters/storage/fileblob` 已支持 filesystem object backend 第一片；`adapters/storage/objectblob` 已支持通用对象 client backend 第一片，覆盖 adapter prefix、paged list、provider-specific not-found matcher 和 checkpoint/TurnLoop 复用；`adapters/storage/s3blob` 已支持 AWS SDK v2 S3 object/blob adapter 第一片；`adapters/storage/gcsblob` 已支持 Google Cloud Storage object/blob adapter 第一片；`adapters/storage/r2blob` 已支持 Cloudflare R2 S3-compatible object/blob adapter 第一片；`adapters/storage/ossblob` 已支持 Alibaba Cloud OSS SDK v2 object/blob adapter 第一片；`EventCheckpointLoaded` 会透传 config drift metadata。
+- `[done: first slice]` `StepImport` / checkpoint load 执行入口：`graph.WithStepExport` 已支持从 completed step export 恢复到后继 node，也支持 interrupted step export 通过 `graph.WithResumeRequest` 校验 pending interrupt 后继续，还支持 canceled step export 从 safe point 继续；成功导入会产生 `StepImported`，带 resume request 时产生 `ResumeReceived`，恢复后的第一个 node 产生 `NodeResumed`。`graph.WithCheckpointLoader` 已支持按 `ThreadID` 读取 latest checkpoint，并用 checkpoint `State`、`Queue`、`Pending` 恢复；`graph.WithCheckpointStore` 已支持一个 option 同时写入和 latest load；load 成功会产生 `CheckpointLoaded`，带 resume request 的 interrupted checkpoint 会产生 `ResumeReceived`。导入 step/checkpoint 时可通过 `graph.WithArtifactVerifier` 校验 `StepSnapshot.Artifacts` 和 `EffectRecord.Artifacts`，随后会为已记录 effects 生成 `EffectReplayPlan`，并通过事件 metadata 暴露。
+- `[done: first slice]` `InterruptRecord`：表达 human approval、external input、policy block；当前已支持 approval/input/selection/external_wait 类型和结构化 `ErrInterrupted`。
+- `[done: first slice]` checkpoint queue/pending：completed step 写入后继 queue，interrupt 返回前写入 pending interrupt 和 queue，node cancel safe point 写入 canceled checkpoint 和 queue。
+- `[done: first slice]` TurnLoop pending/resume queue：root `TurnLoop.Push` 可排队 user input，`TurnLoop.Resume` 可排队 `ResumeRequest`，`Pending` 暴露队列副本，`Interrupted` 暴露最近一次 interrupted input 和可选 `InterruptRecord`；下一次 `Run` 默认会用 `TurnInputBatch` 把 current input、pending input 和 interrupted input 交给 runner，并产生 `TurnInputReceived` / `TurnInputMerged` / `TurnResumed` / `TurnInterrupted` 事件；`TurnLoop.Cancel(reason)` 会在 `TurnCanceled` metadata 中保留取消原因；宿主可通过 `WithTurnInputMerge` 注入 `TurnInputMergeFunc`，把 current、pending、interrupted 和 resume request 合并成业务自己的 runner input，同时把策略 metadata 写入 `TurnInputMerged`；`WithResume` 也会把 resume request 透传成底层 runner 可读取的 root `RunOption`；interrupted resume 会先通过 `ResumeSchema` gate，随后可通过 `WithTurnPolicy` 注入 turn-level resume policy gate，产生 `PolicyRequested` / `PolicyDecided`，deny 阻止 runner，review 转成 approval interrupt。
+- `[done: first slice]` persistent TurnLoop queue：root `TurnLoopStore`、`TurnLoopState`、`WithTurnLoopStore(ctx, store)`、`NewMemoryTurnLoopStore`、`NewFileTurnLoopStore`、`NewRowTurnLoopStore`、`NewBlobTurnLoopStore`、`NewVersionedTurnLoopStore` 和 `NewLeasedTurnLoopStore` 已落地；pending input、pending turn events、interrupted input 和 input sequence 可跨 `TurnLoop` 实例恢复；本地 file store 支持 JSON schema version、跨实例恢复、原子 rename 写入和 schema mismatch 拒绝；row store 通过 `TurnLoopRowBackend` 注入 SQL/KV/Redis hash/内部控制面 backend，当前提供 `NewMemoryTurnLoopRowBackend` 作为测试和本地实现，`adapters/turnloop/sqlstore` 提供 database/sql row backend 第一片和 schema 指南，`adapters/turnloop/httpstore` 提供 HTTP/JSON control-plane row backend 第一片，`adapters/turnloop/redisstore` 提供 Redis GET/SET row backend 第一片；blob store 通过 `TurnLoopBlobBackend` 注入远程/对象/缓存/DB backend，当前提供 `NewMemoryTurnLoopBlobBackend` 作为测试和本地实现，`adapters/storage/fileblob` 提供 filesystem blob backend 第一片，`adapters/storage/objectblob` 提供通用对象 client blob backend 第一片；versioned store 通过 `TurnLoopVersionedBackend` 注入 SQL version、Redis revision、对象存储 etag 或内部控制面 revision backend，当前提供 `NewMemoryTurnLoopVersionedBackend` 作为测试和本地实现，`adapters/turnloop/sqlstore` 提供 database/sql versioned CAS backend 第一片和 schema 指南，`adapters/turnloop/httpstore` 提供 HTTP/JSON control-plane versioned CAS backend 第一片，`adapters/turnloop/redisstore` 提供 Redis EVAL/Lua versioned CAS backend 第一片，`adapters/turnloop/objectstore` 提供 conditional object versioned CAS backend 第一片，stale save 会返回 `ErrTurnLoopStoreConflict`；root `LeaseBackend` / `NewMemoryLeaseBackend` 已提供 worker ownership acquire/renew/release/get 第一片，`NewLeasedTurnLoopStore` 会在任意 `TurnLoopStore` 的 `Load` / `Save` 前 acquire/renew lease，支持 `WithLeasedTurnLoopRenewalInterval` 后台续约、`LeaseObserver` 续约/争用观测、`Release(ctx)` / `Close(ctx)` 显式释放，并会被 `TurnLoop.Close` 关闭；`adapters/lease/sqlstore` 已提供 database/sql lease backend 第一片，`adapters/lease/redisstore` 已提供 Redis GET/EVAL lease backend 第一片，`adapters/lease/httpstore` 已提供 HTTP/JSON control-plane lease backend 第一片，`adapters/lease/objectstore` 已提供 conditional object lease backend 第一片。
+- cancel/preempt 到 safe point 后可导出恢复包。
+
+验收：
+
+- `[done: first slice]` completed node 的 `StepExport` 可以 import 到新 graph run 并从后继 node 继续。
+- `[done: first slice]` interrupted node 的 `StepExport` 可以通过匹配的 `ResumeRequest` import 到新 graph run 并从 snapshot queue 继续；缺少 resume request 时保持 `run_interrupted`，不降级为 `run_failed`。
+- `[done: first slice]` canceled node 的 `StepExport` 可以 import 到新 graph run 并从 snapshot queue 继续；node 返回 `context.Canceled` 时产生 `StepCanceled` snapshot 和 `run_canceled`。
+- `[done: first slice]` latest checkpoint 可以 load 到新 graph run，并从 checkpoint queue 的第一个节点以 `NodeResumed` 继续；interrupted checkpoint 可以通过匹配的 `ResumeRequest` 继续；带 effects 的 checkpoint load 会产生 `effect_replay_plan`。
+- `[done: first slice]` interrupt 后 TurnLoop 会保留 interrupted input，pending/resume input 会进入下一次 `Run` 的 `TurnInputBatch`。
+- `[done: first slice]` cancel/preempt 有事件、checkpoint 和 resume marker；Push(preempt) 会取消 active run 并把新输入排队。
+
+### 4. Tool Side Effect Recording
+
+交付：
+
+- `[done: first slice]` tool-call effect：`ToolResult` 可携带 `Effects`；`ToolResult.Commit` 可声明默认 `tool_call` effect 的 replay policy、idempotency key 和 commit metadata；只提供 `IdempotencyKey` 时 registry 会把该 effect 标记为 `EffectReplayIdempotent` 并记录可重放 `tool_args`，无参数 tool 记录 `{}`，显式 idempotent 但缺 key 会被拒绝；`ToolContext.AddEffect` 可由 middleware 追加副作用；tools registry 成功 invoke 后会追加默认 `tool_call` effect；`NodeContext.AddEffect` 可把 effect 送入 graph step snapshot。
+- `[done: first slice]` `StepExport` 包含副作用摘要：graph 已把 `NodeContext.Effects` 复制到 completed/interrupted/canceled/failed `StepSnapshot.Effects`，checkpoint 也会保留 effects。
+- `[done: first slice]` effect graph contract：`EffectRecord` 已支持 replay policy、idempotency key、`DependsOn`、artifact refs、sandbox 操作摘要；`StepSnapshot.Validate` 会检查重复 effect id、空 dependency id、非法 replay policy 和 idempotent 缺 key。
+- `[done: first slice]` effect replay runtime plan：root `PlanEffectReplay` 会为单个 step 的 effects 生成稳定拓扑排序后的 `record_only` / `replay` / `skip` 决策；`StepImported` 和 `CheckpointLoaded` 事件会携带 `effect_replay_plan` metadata，root `EventEffectReplayPlan(event)` 提供类型化读取并返回深拷贝。
+- `[done: first slice]` cross-step effect graph：root `BuildRunEffectGraph` 会从 `RunExport.Steps` 收集稳定 step 的 effects，生成 run-scope nodes、edges 和稳定拓扑顺序，并拒绝重复 effect id、缺失 dependency、未来 dependency 和 cycle。
+- `[done: first slice]` run-level effect replay plan：root `PlanRunEffectReplay` 会基于跨 step effect graph 生成带 step 身份的 replay/skip/record_only 决策，不触发外部动作。
+- `[done: first slice]` effect replay executor：root `ExecuteEffectReplay` / `ExecuteRunEffectReplay` 只对 `replay` 决策调用外部 executor；`skip` 和 `record_only` 只生成结果，不触发外部动作；run-level 结果保留 step 身份。root `EffectReplaySnapshotFromEvent(event, results, err)` 可把导入/checkpoint 事件身份与已观察 replay 结果组装成 recorder input；root `RecordEffectReplayCheck` 可把已观察 step-level plan/results/error 转成标准 `effect_replay` verification evidence；root `RecordRunEffectReplayCheck` 可把已观察 run-level plan/results/error 转成标准 `run_effect_replay` verification evidence；这些 helper 都不执行 replay，只记录 decision/result count、planned/result effect ids、identity、错误和 mismatch。
+- `[done: first slice]` backend replay adapter slot：root `EffectReplayRegistry` 会按 effect type/target 分发到已注册 handler，并支持 fallback handler；`tools.NewReplayHandler` 已提供 `tool_call` backend handler 第一片，可按记录的 `tool_args` 重新调用 registry；`sandbox.NewReplayHandler` 已提供 `sandbox_exec`、`sandbox_file_read`、`sandbox_file_write` backend handler 第一片，可按记录的 `Sandbox.Command`、`Sandbox.Path` 和文件 metadata 通过 sandbox manager 重放命令或文件读写；`memory.NewReplayHandler` 已提供 `memory_put`、`memory_delete`、`memory_search` backend handler 第一片，可按记录的 `memory`、`memory_id`、`memory_query` metadata 调用 memory store；`memory.NewExtractionReplayHandler` 已提供 `memory_extract` backend handler 第一片，可按记录的 final state/runtime ids 调用宿主 extractor、补齐 memory runtime scope 并写入 store；`artifact.NewReplayHandler` 已提供 `artifact_write` backend verify handler 第一片，可按 `EffectRecord.Artifacts` 校验 payload integrity。
+- `[done: first slice]` artifact payload integrity：`artifact.VerifyRef` / `artifact.VerifyRefs` 会按 `ArtifactRef` 重新读取 payload，并校验 size/hash；`graph.WithArtifactVerifier` 已把 artifact 校验接入 step import 和 checkpoint load 边界，`artifact.RecordVerifyRefs` 已把 artifact refs 校验结果接入 `VerificationRecorder` evidence，`artifact.NewReplayHandler` 已接入 replay verify。
+- `[done: first slice]` tool-level retry policy contract：root `ToolRetryPolicy` / `ToolRetryRequest` / `ToolRetryDecision` / `ToolRetryDeciderFunc` / `DecideToolRetry` / `ToolRetryMiddleware` 已落地；decision contract 只对已失败 tool attempt 生成 retry/stop 决策，middleware 只在 tool middleware 边界按 decider 重新运行下游 handler；默认要求 idempotency key，context canceled/deadline 不重试，`MaxAttempts` 控制上限，`Backoff` 和 `RetryIf` 由宿主注入。
+
+验收：
+
+- `[done: first slice]` 同一个 step 的 tool call、artifact refs、sandbox 操作摘要和 dependency edge 已能进入 `StepSnapshot.Effects`；runtime 已能生成单步 replay/skip plan、跨 step effect graph、run-level replay plan，并执行单步与 run-level replay 决策分发；tool-call backend replay handler、`sandbox_exec` / `sandbox_file_read` / `sandbox_file_write` backend replay handler、`memory_put` / `memory_delete` / `memory_search` backend replay handler 和 `artifact_write` backend verify handler 已完成第一片。
+- sandbox 文件读写和命令执行有事件，effect 摘要可由 tool/node middleware 记录。
+- 非幂等 tool 默认不可自动重试；`DecideToolRetry` 默认要求显式 idempotency key，除非宿主通过 `RetryNonIdempotent` 显式放开。
+
+### 5. Run Export / Record-Replay Foundation
+
+交付：
+
+- `[done: first slice]` `RunExport` 验证契约已落地，包含 version、runtime ids、outcome、events、stable step snapshots、run-level verification reports、created time 和 metadata；`RunExportJSONSchema()` 暴露 v1 JSON Schema map，供 adapter、CI、collector 或外部校验器复用，不在 SDK core 内绑定具体 schema engine。
+- `[done: first slice]` `RunRecorder` 可从 event stream 机械记录 `RunExport`，拒绝混合 run/thread id，只把非 running 的稳定 step snapshot 放入 `Steps`，并可显式记录 verification report 或从事件 metadata 的 `verification_report` 自动提取 report；`RecordRunExportCheck` 可把已观察 `RunExport` 转成标准 run_export verification evidence，供 release gate 通过 `RequireEvidenceTypes("run_export")` 或 `RequireCheckIDs("run-export:<run_id>")` 门禁；调用方 metadata 不能覆盖 outcome/count/runtime ids 等 canonical run export 字段；completed export 至少要有一个 event 和一个稳定 step 才能作为 passed evidence。
+- `[done: first slice]` `RecordPolicyDecisionCheck` 可把宿主已经观察到的 `PolicyRequest` / `PolicyDecision` 记录成标准 policy_decision verification evidence；它不调用 policy，只记录 boundary、request action、decision action、runtime ids、reason 和 metadata，非 allow 决策会先记录 failed evidence 再返回 `ErrPolicyDecisionNotAllowed`。
+- `[done: first slice]` `RecordChannelEventCheck` 可把宿主已经观察到的 `ChannelEvent` / error 记录成标准 channel_event verification evidence；它不接收 channel，只记录 runtime ids、channel、event/action 类型、text/payload shape 和 metadata keys，不保存 raw text/payload content。
+- `[done: first slice]` `ReplayRunExport` 可验证 export 并按原顺序回放 recorded events；这是轨迹测试和 exporter 的原子能力，不包含业务 harness 决策。
+- `[done: first slice]` `TaskRecord`、`InputRecord`、`InterventionRecord` 已作为 root process record contract 接入 `RunExport`；`RunRecorder` 提供显式 `RecordTask` / `RecordInput` / `RecordIntervention`，用于后续 template 和 Dev Agent 记录任务、输入与 HITL 边界。
+- `[done: second slice]` `FailureAttribution` 已作为 root process record contract 接入 `RunExport`；`RunRecorder.RecordFailure` 支持显式记录，`RunRecorder.Record(EventRunFailed)` 会派生最小 failure attribution，优先消费 `EventMetadataFailureKind`，其次按 policy denial / policy request、标准 `call_model` / `call_tool` / verify / context / review / resume / entropy / sandbox / external 等 node 信号保守推断 failure kind；root taxonomy 覆盖 `runtime`、`unknown`、`context`、`model`、`tool`、`feedback`、`policy`、`verification`、`recovery`、`entropy`、`sandbox`、`external`，并在已观察到 failed verification report 时升级为 `FailureVerification` 且附带 report evidence；`RecordFailureAttributionCheck` 可把已观察 failure attribution 转成标准 failed verification evidence，并把 attribution metadata 同步复制到 check 与 evidence metadata，不扫描环境。
+- `[done: first slice]` `EntropyAudit` / `EntropyFinding` 已作为 root audit contract 接入 `RunExport`；`RunRecorder.RecordEntropyAudit` 支持记录 diff、dependency、stale docs、residue、process、security 等已观察 entropy findings，但不执行扫描；`RecordEntropyAuditCheck` 可把已观察 entropy audit 转成标准 verification evidence，供 release gate 通过 `RequireCheckIDs("entropy-audit:<id>")` 门禁。
+- `[done: second slice]` run_export、model_call、tool_call、channel_event、effect_replay、run_effect_replay、memory_replay、memory_work_schedule、checkpoint、checkpoint_objectstore_index、sandbox_exec、command、ci_gate、diff、file_snapshot、review、failure_attribution 和 entropy_audit evidence bridge 的调用方 metadata 只能补充非保留字段，不能覆盖 ref、计数字段、runtime ids、状态、错误和 shape 摘要等 canonical evidence 字段。
+- `[done: first slice]` `templates/react` 的 `WithVerifier` 候选 `RunExport` 已自动填充 template task、run input、resume input 和 resolved intervention process records；这仍是可观测记录，不负责业务 harness 决策。
+- `[done: third slice]` `templates/devagent.BuildProcessRecords` / `RecordProcessRecords` 可把已观察 action result、sanitized patch summary、release gate 和 reviewer decision 转成 `RunRecorder` 的 task/input/intervention process records；`templates/devagent.EvaluateAction` 会把调用方传入的 action metadata 防御性复制到 `ActionResult`，process/workflow child task/input/intervention metadata 会继续保留这些 prompt/eval/policy governance ref，并由 SDK canonical 字段覆盖冲突键；patch input 不保存 raw diff，release gate input 只记录 gate status/mode/report/review/max entropy 摘要，也不执行命令、不读取工作区、不替代真实 Dev Agent workflow。`templates/devagent.BuildWorkflowProcessRecords` / `RecordWorkflowProcessRecords` 可把一组已观察 action boundary 汇总成 workflow 父 task、子 action task、input 和 intervention records，用于描述 analyze/plan/write/release 过程链路；child task/input/intervention metadata 会保留 `workflow_id`、`workflow_action_index` 和 `workflow_action_count`，让外部系统即使重排记录也能恢复过程顺序，并拒绝子 action 显式冲突的 run/user/session/thread/agent/app/call/trace 等 runtime identity；它不调度步骤、不重新评估 action、不 apply patch。`templates/devagent.BuildReleaseBundle` / `ReleaseBundle` 可把已观察 `RunExport`、`VerificationReport`、entropy audits、approved review decision、passed release gate、write-mode release action 和 sanitized process records（可通过 `ReleaseBundleInput.Process` 显式传入已观察 workflow child process records）组织成 release-ready evidence bundle，并校验 run/report/gate/process/required checks/evidence types/required CI gates 对齐，要求 release gate 内的 report/review status 与 max entropy severity 摘要存在且匹配 bundle 中的 report/review/entropy audits，要求 process task metadata/input/output 与 release action 对齐、release gate input value 与 gate 摘要对齐、review intervention metadata 与 reviewer/status 对齐，要求 run export 与 process records 匹配 bundle 已知的 session/user/thread/agent/call/trace 等 runtime identity，且 verification report / entropy audit 只要携带这些细分身份也必须匹配；如果 run export 内已经携带 verification reports / task/input/intervention process records，则必须分别包含 bundle 顶层 verification report 和 bundle process records 的同一语义快照；同时拒绝 failed entropy audit 和仍包含 `FailureAttribution` 的 run export；bundle 会防御性拷贝 `RunExport`，避免宿主后续 mutation 污染已封存证据；`templates/devagent.RecordReleaseBundleCheck` 可把校验通过的 bundle 写入 `VerificationRecorder`，生成标准 `release_bundle` evidence，并在 metadata 中保留 reviewer、gate report/review/max entropy 摘要、required CI gates 以及 process task / release gate input / review intervention id；`TestRecordReleaseBundleCheckCapturesObservedWorkflowRelease` 已覆盖 analyze -> plan -> write release 的 self-bootstrap workflow process、run export、release bundle 和 release bundle evidence 端到端封存，并验证 raw diff 不进入 release evidence；调用方 metadata 只能补充非保留字段，不能覆盖这些 canonical release evidence 字段；它不重新执行验证、不调用 reviewer、不 apply patch。
+- `[done: first slice]` `VerificationReport` / `VerificationRecorder` 可从 `RunExport` 和已收集的 verification checks 汇总 passed/failed/skipped 状态、证据引用和报告状态；`RunExport.VerificationReports` 可保存已产生的 run-level reports；它不执行命令，也不绑定 Dev Agent harness。
+- `[done: first slice]` `gopacttest` trajectory frame helper 可从 events 或 `RunExport` 提取 compact trajectory frames，支持精确断言 event type、node 和 step，并提供 JSON golden fixture 读写、显式 update、events/run export golden compare helper，以及 trajectory golden -> `VerificationRecorder` evidence 桥接。
+- `[done: first slice]` `gopacttest` template trajectory conformance helper 已提供 `CheckTemplateTrajectoryConformance` / `RequireTemplateTrajectoryConformance`，外部 ReAct、Agent-as-Tool、Dev Agent 等 template 可复用同一批 template name、optional run export validation、event presence、terminal run event、required event type subsequence 和 required frame pattern contract case；它不要求固定完整 golden，只验证 template trajectory 的最小公共语义。
+- `[done: first slice]` `gopacttest` portable JSON Schema validator conformance helper 已提供 `PortableJSONSchemaValidatorConformanceCases`、`CheckPortableJSONSchemaValidatorConformance` 和 `RequirePortableJSONSchemaValidatorConformance`，外部完整 JSON Schema engine adapter 可复用同一批 root schema boundary case；它只跑 SDK portable subset contract，不把完整 engine 绑定进 core。
+- `[done: first slice]` `gopacttest/providerconformance` provider conformance helper 已提供 `CheckProviderConformance` / `RequireProviderConformance`，外部 OpenAI、Anthropic、Gemini、OpenRouter、OpenAI-compatible adapter 可复用同一批 provider name、model listing、canceled context、generate response、request immutability 和 stream event contract case；它不绑定任何真实 provider SDK，也不沉降 provider routing/fallback/harness 策略。
+- `[done: first slice]` `gopacttest/checkpointconformance` checkpoint store conformance helper 已提供 `CheckCheckpointStoreConformance` / `RequireCheckpointStoreConformance`，外部 SQL、Redis、Object、S3、GCS、R2、OSS checkpoint backend 可复用同一批 Put、Latest、Get、List、missing get、canceled context 和 checkpoint input immutability contract case；它只验证 checkpoint store 的最小公共语义，不绑定具体 CAS、schema migration 或云厂商一致性策略。
+- `[done: second slice]` `gopacttest/reactconformance` ReAct deferred memory work queue conformance helper 已提供 `CheckDeferredMemoryWorkQueueConformance` / `RequireDeferredMemoryWorkQueueConformance`，外部 ReAct template 或 memory worker queue adapter 可复用同一批 empty dequeue、canceled context、dequeue、complete、retry requeue、stop/dead-letter terminal transition 和 input immutability contract case；`templates/react.NewMemoryDeferredMemoryWorkQueue` 已提供本地内存队列实现，覆盖 pending、complete、retry requeue、stop、dead-letter 和 snapshot defensive copy；`templates/react.NewDeferredMemoryWorkRetryDecider` 已提供默认有界 retry/backoff 调度决策，并已作为 `DeferredMemoryWorkWorker` 未显式配置 decider 时的默认调度器；`templates/react.WithDeferredMemoryWorkLease` 已支持基于宿主 `LeaseBackend` 的 RunOnce ownership gate，`templates/react.WithDeferredMemoryWorkLeaseRenewalInterval` 已支持单次 worker pass 内续租并在续租丢失时阻断 queue transition；`templates/react.DeferredMemoryWorkWorker.Drain` 已提供显式 limit 的单进程有界 drain loop；生产 durable queue、queue-level visibility timeout、distributed queue leasing、concurrency orchestration、sleep scheduler、生产级调度策略或 DLQ storage 仍由 adapter 或宿主实现。
+- `[done: first slice]` `gopacttest` turnloop store conformance helper 已提供 `CheckTurnLoopStoreConformance` / `RequireTurnLoopStoreConformance`，外部 HTTP control plane、Redis、SQL 等 TurnLoop store adapter 可复用同一批 Load missing、Save/Load、canceled context、state input immutability 和 loaded state copy contract case；它只验证 durable queue snapshot 的最小公共语义，不绑定 lease、worker 调度、CAS 冲突处理或业务 merge 策略。
+- `[done: first slice]` `gopacttest` channel/transfer conformance helper 已提供 `CheckTransferConformance` / `RequireTransferConformance` 和 `CheckChannelConformance` / `RequireChannelConformance`，外部 A2UI、AG-UI、Lark、WebSocket 等 channel adapter 可复用同一批 name、target support、canceled context、input immutability、send、event stream 和 close contract case；它不绑定任何平台 SDK，也不把生产 channel adapter 留在 core。
+- `[done: second slice]` `gopacttest` verification evidence conformance helper 已提供 `CheckVerificationEvidenceConformance` / `RequireVerificationEvidenceConformance`，外部 Dev Agent、CI reviewer、model reviewer、release gate 或 evidence bridge 可复用同一批 report validation、required check id、required evidence type 和 required CI gate contract case；required CI gate 只接受 `ci_gate` evidence 中 status 为 passed 的具体 gate；它不执行验证、不读取 evidence ref、不替代业务 release gate。
+- `[done: first slice]` `gopacttest.RecordCommandCheck` 可把宿主已经观察到的命令结果记录成标准 command verification evidence；它不执行命令，只记录 exit code、stdout/stderr 摘要、duration、目录和结构化 command args。`gopacttest.RecordCIGateSuiteCheck` 可把 whitespace、unit、race、vet、lint、coverage、examples、security 等已观察 CI command results 聚合成标准 `ci_gate` verification evidence；它不运行 CI，只记录 gate 名、命令、状态和聚合计数。
+- `[done: first slice]` `gopacttest.RecordFileSnapshotCheck` 可把宿主已经观察到的文件快照记录成标准 file snapshot verification evidence；它不读取文件，只记录 path、hash、hash algorithm、size、mtime、错误和自定义 metadata。
+- `[done: first slice]` `gopacttest.RecordDiffCheck` 可把宿主已经观察到的 patch/worktree diff 记录成标准 diff verification evidence；它不执行 git、不读取工作区，只记录 diff 文本、文件列表、增删统计、错误和自定义 metadata。
+- `[done: first slice]` `checkpoint.RecordVerificationCheck` 可把宿主已经观察到的 `checkpoint.Record` 记录成标准 checkpoint verification evidence；它不读取 checkpoint store、不解码 state，只记录 checkpoint id、runtime ids、step/node/phase、state 摘要、queue、pending interrupt、effect/artifact 计数、config version、时间、错误和自定义 metadata。
+- `[done: first slice]` `gopacttest.RecordReviewCheck` 可把宿主已经观察到的 human/model/CI/Lark 等 reviewer decision 记录成标准 review verification evidence；它不调用 reviewer、不阻塞人工流程，只记录 reviewer、source、status、summary、时间、错误和自定义 metadata，并把 reviewer metadata 同步复制到 check 与 evidence metadata，使 prompt/eval/policy governance 信息可以随单条 review evidence 被外部审计消费。
+- `[done: first slice]` `sandbox.RecordExecCheck` 可把 sandbox 已观察到的 `ExecRequest` / `ExecResult` / error 转成标准 verification evidence；它不执行命令，只记录 sandbox session、argv、exit code、stdout/stderr 摘要、duration 和 request metadata。
+- `[done: first slice]` `EventEffectReplayPlan(event)` 可类型化读取 `StepImported` / `CheckpointLoaded` 事件上的 replay plan；`EffectReplaySnapshotFromEvent(event, results, err)` 可把事件身份与已观察结果组装成 recorder input；`RecordEffectReplayCheck` 可把已观察的 step-level replay plan/results/error 记录成标准 effect_replay verification evidence；`RecordRunEffectReplayCheck` 可把已观察的 run-level replay plan/results/error 记录成标准 run_effect_replay verification evidence；它们不执行 replay，只记录 decision/result count、planned/result effect ids、identity、错误和 mismatch。`memory.RecordReplayCheck` 可把已观察的 memory replay plan/results/error 记录成标准 memory replay verification evidence；它不执行 replay，只记录 planned effects、result effects、run/thread identity、错误和 result mismatch。`templates/react.RecordDeferredMemoryWorkCheck` 可把 `RunDeferredMemoryWork` 的单次 worker pass report 转成同一类 `memory_replay` evidence，额外保留 worker status、report count 和 error summary，供 release gate 或宿主审计要求该异步记忆工作已经被观察；`templates/react.RecordDeferredMemoryWorkScheduleCheck` 可把宿主已经观察到的 retry / stop / dead-letter 调度决策记录成标准 `memory_work_schedule` evidence，保留 attempt、next attempt、max attempts、delay、reason、worker status、planned/result effect ids 和错误摘要，但不执行 retry、不持有队列、不实现 DLQ。
+
+验收：
+
+- recorder 不绑定 graph/provider/tool 模块，只消费 SDK `Event`。
+- replay 只回放 recorded events，不自动执行 tool、sandbox、model 或 effect replay。
+- 更多 verification evidence 采集来源、failure attribution 跨组件证据深化、具体 entropy audit 采集器、Dev Agent 真实 workflow process record 覆盖，以及更多 template-specific golden trajectory cases 后续在 M5 template 层继续补齐。
+
+## M5 Agent Template Plan
+
+目标：在原子能力之上验证 template contract，而不是把某种 harness 写死进 core。主仓只保留最小 reference template 和 conformance case；生产级 ReAct、Dev Agent、Agent-as-Tool 等 template 应迁移到独立 `gopact-templates-*` 仓库维护。
+
+### 1. ReAct Template
+
+交付：
+
+- `[done: second slice]` `templates/react`：最小 model/tool loop 已落地，支持模型直接 final、模型发起 tool call、tool result 回灌到下一次 model request，可选 memory recall 搜索、`MemorySearched` 事件、可审计 `gopact.memory` context 注入，显式 `WithMemoryExtractor` 同步写入 memory、`MemoryPut` 事件和已 applied 的 `memory_put` effect；`WithMemoryMerge` 可在 extractor 之后、写入/effect 记录之前调用宿主注入的 memory 压缩/合并策略，只改写 extracted memories，不内置总结算法；也可通过 `WithMemoryWriteMode(MemoryWriteDeferred)` 只记录 pending `MemoryPut` event 和可重放 idempotent `memory_put` effect，由宿主后台 executor 或队列提交；还可通过 `WithMemoryExtractMode(MemoryExtractDeferred)` 不在当前 run 调用 extractor/store，只记录带 final state 和 runtime ids 的 idempotent `memory_extract` effect，供宿主通过 `memory.NewExtractionReplayHandler` 在 worker、队列或 resume 流程中抽取并写入；`PlanDeferredMemoryWork` / `ExecuteDeferredMemoryWork` / `RunDeferredMemoryWork` 可从 `RunExport` 中筛选未应用的 pending memory effects，通过宿主注入的 replay executor 执行，并返回包含 plan、partial results、status 和 error summary 的 `DeferredMemoryWorkReport`；`NewMemoryDeferredMemoryWorkQueue` 提供本地内存队列和 transition snapshot；`NewDeferredMemoryWorkRetryDecider` 提供默认有界 retry/backoff 调度决策，只返回 retry/dead-letter decision 和 delay，不 sleep、不持有队列；`DeferredMemoryWorkWorker.RunOnce` 可消费 `DeferredMemoryWorkQueue`，调用 replay executor，并根据 worker report 和宿主 decider 执行 complete / retry / stop / dead-letter 队列转换，且 worker 未显式配置 decider 时默认接入该 retry/backoff decider；`WithDeferredMemoryWorkLease` 可用宿主注入的 `LeaseBackend` 对每次 `RunOnce` 做 acquire / transition check / release ownership gate；`WithDeferredMemoryWorkLeaseRenewalInterval` 可在单次 worker pass 内续租，并在续租丢失时阻止 complete/retry/stop/dead-letter queue transition；`DeferredMemoryWorkWorker.Drain` 可用显式 limit 有界消费多条 job，并在队列为空、达到上限或终端错误时返回 completed/retried/dead-lettered/stopped 汇总；`RecordDeferredMemoryWorkCheck` 可把该 report 记录成标准 `memory_replay` verification evidence；`RecordDeferredMemoryWorkScheduleCheck` 可把宿主已观察到的 retry / stop / dead-letter 调度决策记录成 `memory_work_schedule` verification evidence；durable 生产队列 adapter、queue-level visibility timeout、distributed queue leasing、并发调度、sleep scheduler、生产级调度策略和真实 DLQ storage 仍由 adapter 或宿主 worker 负责；model/tool node completed step snapshot、completed `call_model` / `call_tool` `StepExport` 恢复继续、`WithCheckpointStore` 持久化 completed model/tool checkpoint 并按 `ThreadID` resume、tool approval interrupted checkpoint + `ResumeRequest.CheckpointID` / `InterruptID` 恢复继续、`WithArtifactVerifier` 校验 step/checkpoint artifact refs 后再恢复、tool policy review -> approval interrupt、从 interrupted tool `StepExport` + `ResumeRequest` 恢复原 tool call，多 tool 批次 resume 不重复已完成工具，通过 `gopact.AdaptStreamingModel(router)` 消费 provider fallback events，tool artifact refs 进入 event stream 和 run export，`RunRecorder` 从 ReAct event stream 记录 run export stable steps、interrupted tool step、model/tool/policy failure attribution 和 verify report，以及可选 `WithVerifier` 在完成前运行 `verify` node，基于候选 `RunExport` 生成 `VerificationReport` gate；golden trajectory fixture 已覆盖 direct final、tool-then-final、multi-tool-then-final、multi-tool-error、max iterations loop guard、unpromoted deferred tool rejection、tool error、missing tool registry、verifier failed report、verifier error、artifact verifier failure、completed model step export resume、completed tool step export resume、completed model checkpoint resume、completed tool checkpoint resume、memory recall、memory write、memory merge、memory deferred write、memory deferred extract、provider fallback、approval interrupt、policy deny、approval step resume、multi-tool pending resume 和 interrupted checkpoint resume。
+- `[done: first slice]` 支持 max iteration、visible/deferred tool 隔离和 model route hint；ReAct model-driven tool call 使用 `tools.Registry.InvokeVisible`，未 promote 的 deferred tool 即使被模型猜中名字也会拒绝执行；tool policy 可通过 `tools.Registry` middleware 接入，并在 deny / review 时透传 policy requested/decided events。
+- `[done: second slice]` 后台 memory 策略已有 deferred memory write effect、deferred memory extract request effect、`memory_extract` replay handler、宿主注入 memory merge hook、`RunExport` -> pending memory work planner/executor 第一片、`DeferredMemoryWorkQueue` worker executor、本地内存队列实现、默认有界 retry/backoff decider、worker 默认 decider 接线、单次 worker pass 的 observable report contract、RunOnce lease gate / pass-local lease renewal、有界 drain loop，以及 retry / stop / dead-letter schedule decision evidence contract；更高级压缩/合并算法、更广 policy/approval UI/channel 接入、durable 生产队列 adapter、queue-level visibility timeout、distributed queue leasing、并发调度、生产级调度策略和真实 retry/DLQ storage 仍由后续 template adapter 或宿主 harness 接入。
+
+验收：
+
+- fake model + fake tool 可稳定跑 direct final、tool-then-final、multi-tool-then-final、multi-tool-error、max iterations loop guard、unpromoted deferred tool rejection、tool error、missing tool registry、verifier failed report、verifier error、artifact verifier failure、completed model step export resume、completed tool step export resume、completed model checkpoint resume、completed tool checkpoint resume、memory recall、memory write、memory deferred write、memory deferred extract、provider fallback、approval interrupt、policy deny、approval step resume、multi-tool pending resume 和 interrupted checkpoint resume 轨迹。
+- ReAct event stream 可被 `RunRecorder` 记录为包含 completed `StepSnapshot` 和 run-level verification report 的 `RunExport`。
+- trajectory golden 可被 `gopacttest.RecordGoldenTrajectoryCheck` / `RecordRunExportGoldenTrajectoryCheck` 写入 `VerificationRecorder`，并汇总成 `VerificationReport`。
+- `[done: first slice]` `WithVerifier` 必须在 completed run commit 前运行 `verify` node，verifier 可向 `VerificationRecorder` 写入 evidence；failed report 或 verifier error 必须产生 failed verify step 和 `RunFailed` outcome，并有可回归的 golden trajectory。
+- memory recall 注入必须可观察，并且只在用户显式启用 `WithMemory` 后发生。
+- memory 写入必须只在用户显式配置 `WithMemoryExtractor` 后发生；默认同步模式产生 `MemoryPut` 事件，并在 `call_model` step snapshot 中记录已 applied 的 `memory_put` effect；deferred 模式必须产生 pending `MemoryPut` event 和可由 `memory.NewReplayHandler` 提交的 idempotent `memory_put` effect，但不能提前写入 store。
+- deferred memory extraction 必须只在用户显式配置 `WithMemoryExtractor` 和 `WithMemoryExtractMode(MemoryExtractDeferred)` 后发生；当前 run 不调用 extractor、不写 store、不产生 `MemoryPut`，只在 `call_model` step snapshot 中记录可由 `memory.NewExtractionReplayHandler` 处理的 idempotent `memory_extract` effect。
+- `[done: first slice]` deferred memory worker pass 必须从 `RunExport` 规划并执行 pending memory work，返回可观察的 status、plan、result count、partial results 和 error summary；空 plan 不要求 executor，失败时保留 partial results；worker report 可通过 `RecordDeferredMemoryWorkCheck` 进入标准 `memory_replay` verification evidence。
+- `[done: second slice]` 宿主 worker 对失败 pass 做出的 retry / stop / dead-letter 调度决策必须可观察，`RecordDeferredMemoryWorkScheduleCheck` 只记录 attempt、next attempt、max attempts、delay、reason、worker status、planned/result effect ids、错误和宿主 metadata，生成 `memory_work_schedule` evidence；retry 记录 passed check，stop 对 skipped worker report 记录 skipped、对 failed worker report 记录 failed 并返回 `ErrDeferredMemoryWorkScheduleFailed`，dead-letter 记录 failed check 并返回 `ErrDeferredMemoryWorkDeadLettered`。
+- `[done: fifth slice]` `DeferredMemoryWorkWorker.RunOnce` 必须消费 `DeferredMemoryWorkQueue`，单次 dequeue 后运行 replay executor；成功调用 `Complete`，失败交给 `DeferredMemoryWorkScheduleDecider` 并调用 `Retry` / `Stop` / `DeadLetter`，可选把 normalized schedule decision 写入 `memory_work_schedule` evidence；`WithDeferredMemoryWorkLease` 必须在 `RunOnce` dequeue 前 acquire 宿主 `LeaseBackend`，竞争 lease 时不得 dequeue，queue transition 前确认 lease 仍由当前 worker 持有，并在 `RunOnce` 返回前释放；`WithDeferredMemoryWorkLeaseRenewalInterval` 必须在单次 pass 内按间隔续租当前 token，续租失败必须阻止 queue transition，避免 lease 丢失后仍把 job 标记完成或重试；`DeferredMemoryWorkWorker.Drain` 必须用调用方提供的正整数 limit 有界重复 `RunOnce`，在队列为空、达到上限或终端错误时返回已 dequeue/completed/retried/dead-lettered/stopped 汇总和每次 pass 的 defensive copy；`NewMemoryDeferredMemoryWorkQueue` 可作为本地内存队列和测试/reference 实现，`NewDeferredMemoryWorkRetryDecider` 可作为默认有界 retry/backoff 决策器，且 worker 未显式配置 decider 时默认接入该决策器；SDK 不 sleep、不提供生产持久化队列、不内置并发、queue-level visibility timeout、distributed queue leasing 或生产 DLQ storage。
+- `[done: first slice]` visible/deferred tool 隔离必须可测试，deferred tool 只有 promote 后才进入 model-visible tool set，并且未 promote 时不能被 model-driven invocation 执行；未 promote 的 deferred tool 被模型猜名调用时必须产生可回归的 golden trajectory。
+- `[done: first slice]` max iterations exceeded 必须产生结构化错误、`RunFailed` outcome 和可回归的 golden trajectory。
+- tool policy deny 必须保留 policy events，并产生 failed step snapshot 和 `RunFailed` outcome。
+- tool approval interrupt 必须保留 policy events，并产生 pending approval `StepSnapshot` 和 `RunInterrupted` outcome。
+- tool approval resume 必须通过 root `WithStepExport` / `WithResumeRequest` 导入 interrupted tool step，产生 `StepImported`、`ResumeReceived`、`NodeResumed`，并把 resume payload 暴露给 tool policy。
+- 多 tool 批次 resume 必须跳过 interrupted snapshot output 中已有 tool result 的 tool call，只执行尚未完成的 call。
+- completed `call_model` `StepExport` 导入后必须继续 pending tool calls，不重新调用已完成的 model step。
+- `[done: first slice]` completed `call_model` `StepExport` 导入后必须产生 `StepImported`、恢复到 pending `call_tool`、执行尚未完成的 tool，并有可回归的 golden trajectory。
+- completed `call_tool` `StepExport` 导入后必须继续下一次 model call，不重复已完成 tool call。
+- `[done: first slice]` completed `call_tool` `StepExport` 导入后必须产生 `StepImported`、恢复到下一次 `call_model`、不重复执行已完成 tool，并有可回归的 golden trajectory。
+- completed `call_model` / `call_tool` checkpoint load 后必须产生 `CheckpointLoaded` 和 `NodeResumed`，并分别继续 pending tool calls / 下一次 model call。
+- `[done: first slice]` completed `call_model` checkpoint load 必须产生 `CheckpointLoaded`、恢复到 pending `call_tool`、执行尚未完成的 tool，并有可回归的 golden trajectory。
+- `[done: first slice]` completed `call_tool` checkpoint load 必须产生 `CheckpointLoaded`、恢复到下一次 `call_model`、不重复执行已完成 tool，并有可回归的 golden trajectory。
+- `WithArtifactVerifier` 必须在 ReAct `StepExport` import 和 checkpoint load 继续执行前校验 step/effect artifact refs，失败时产生 `RunFailed` 并阻止恢复节点运行。
+- `[done: first slice]` checkpoint artifact verifier failure 必须只产生 `RunStarted` / `RunFailed` 轨迹，不恢复节点、不执行 tool，并有可回归的 golden trajectory。
+- provider fallback 必须通过 streaming model adapter 暴露 route planned、attempt failed、fallback started、attempt completed 和 final model message events，且这些事件必须带上 ReAct `call_model` node/step。
+- tool artifact refs 必须出现在 `EventToolResult`、tool node `StepSnapshot` 和 `RunExport` 对应 step 中。
+- `[done: first slice]` tool runtime error 必须产生 failed tool step、`RunFailed` outcome、`FailureTool` run export attribution 和可回归的 golden trajectory。
+- `[done: first slice]` missing tool registry 必须产生 failed tool step、`RunFailed` outcome 和可回归的 golden trajectory，不能把模型 tool call 静默吞掉。
+- 后续 trajectory golden test 仍要覆盖其他漏调用、其他错误恢复、更高级 memory 压缩/合并策略、durable 生产队列 adapter、queue-level visibility timeout、distributed queue leasing、并发调度、生产级调度策略和真实 retry/DLQ storage 行为。
+
+### 2. Agent-as-Tool Template
+
+交付：
+
+- `[done: first slice]` `templates/agenttool` 支持 A2A `AgentCard` 与 `ToolSpec` 互转。
+- `[done: first slice]` 本地 `gopact.Runnable` 可包装为 `gopact.Tool`，默认输入支持 `input` / `messages` JSON payload。
+- `[done: first slice]` 远程 `a2a.Agent` 可通过 `agenttool.NewA2A` 包装为 `gopact.Tool`，调用时发送 `a2a.Task`，并把 `a2a.Result` 映射回 `ToolResult`。
+- `[done: first slice]` `tools.Registry` 会把 `Scope.IDs` 注入 tool context，Agent-as-Tool 可派生 child `CallID` 并保留 `ParentCallID`。
+- `[done: first slice]` child events 和 artifact refs 会进入 `ToolResult`，供父 agent event stream 继续转发。
+- `[done: first slice]` remote A2A send adapter 会产生 `a2a_task_sent` / `a2a_task_completed` / `a2a_task_failed` 事件，并保留 parent/child call chain。
+- `[done: first slice]` remote A2A send 可通过 `agenttool.WithPolicy` 走 `PolicyBoundaryA2A` / `PolicyActionSend`，policy deny 不会触发 remote send，policy review 会返回 approval interrupt。
+- `[done: first slice]` remote A2A send 可通过 `agenttool.WithTimeout` 设置调用 timeout，超时会走 `a2a_task_failed` 事件并保留错误。
+- `[done: first slice]` A2A registry 和 `agenttool.A2ATool` 已支持显式 task cancel API；cancel 会走 `PolicyBoundaryA2A` / `PolicyActionCancel`，成功时产生 `a2a_task_canceled` 事件，policy deny/review 不会触发 remote cancel。
+- `[done: first slice]` `a2a.NewRunnableAgent` 可把 local `gopact.Runnable` 暴露为 direct A2A `Agent` / `StreamingAgent`，复用 task `RuntimeIDs`，把 task input 转成 user message，并把 assistant message、artifact refs、completed/failed runtime event 聚合/投影为 `a2a.Result` 和 `TaskEvent`。
+- `[done: first slice]` `a2a.NewHTTPAgent` / `a2a.NewHTTPHandler` 已提供 HTTP JSON/JSONL client/server wrapper；card/send/cancel 走 JSON，task stream 走 JSONL，HTTP client、headers、response limit 和 card metadata 都由宿主 typed option 注入，不读取 SDK 配置文件。
+- `[done: first slice]` `a2a.NewJSONRPCAgent` / `a2a.NewJSONRPCHandler` 已提供 JSON-RPC 2.0 + SSE client/server wrapper；`SendMessage`、`SendStreamingMessage`、`CancelTask` 走 JSON-RPC envelope，stream 使用 SSE `data:` frame，handler 可接受官方 `message.parts[].text` send shape，并把 sanitized auth / RuntimeIDs 作为 metadata extension 透传。
+- `[done: first slice]` A2A `StreamingAgent` / `TaskEvent` / `TaskStatus` 已支持 remote task message/artifact/status stream；`agenttool.A2ATool.Stream` 会在 send policy 之后产生 `a2a_task_sent`、`a2a_message_received`、`a2a_artifact_updated`、`a2a_task_status_updated`、`a2a_task_completed` / `a2a_task_failed` / `a2a_task_canceled` 事件，并保留 parent/child call chain、status message、metadata 和 artifact refs。
+- `[done: first slice]` A2A `Discoverer` / `DiscoveryQuery` / `DiscoveryResult` 已支持 agent card discovery 和 registry card cache，并产生 `a2a_agent_card_fetched` 事件；`agenttool.WithCard` 可使用已发现 card 生成 tool spec。
+- `[done: first slice]` A2A `Authenticator` / `AuthRequest` / `Auth` 已支持宿主注入认证上下文；`agenttool.WithAuth` 会在 policy/send/stream/cancel 前注入 sanitized auth 到 task/context，并把 scheme/principal/credential ref 写入审计 metadata，不读取配置文件或持有 secret。
+- `[future: production adapter]` 更完整 official A2A proto/schema task/message/artifact 模型、生产级 discovery registry、OAuth/advanced auth negotiation、resumable streaming 和 artifact transfer 深化；不阻塞当前 SDK core / reference template 第一片。
+
+验收：
+
+- `[done: first slice]` 父 agent 能通过 tool registry 调用本地子 agent，事件保留 parent/child call chain。
+- `[done: first slice]` 父 agent 能通过 tool registry 调用远程 A2A agent，A2A task id 映射到 child `CallID`，artifact refs 返回父 tool result。
+- `[done: first slice]` local `gopact.Runnable` 能通过 direct A2A `Agent` 契约被调用和 streaming 消费，任务身份、输出文本、artifact refs 和失败错误跨边界保留。
+- `[done: first slice]` HTTP A2A wrapper 可通过 `httptest` round-trip card/send/cancel/stream，sanitized auth 会进入 task 与服务端 context，远端错误会返回调用方。
+- `[done: first slice]` JSON-RPC A2A wrapper 可通过 `httptest` round-trip well-known card、`SendMessage`、`CancelTask` 和 SSE `SendStreamingMessage`，并能接受官方 `message.parts[].text` 入站 shape。
+- `[done: first slice]` A2A policy deny/review 不会越过本地授权边界；send timeout 会向父 tool result 返回失败事件；显式 cancel 成功会返回 canceled event，cancel policy deny 不会触发 remote cancel；task streaming policy deny 不会触发 remote stream；auth 注入发生在 policy 和 remote send/stream 前，policy 可审计 sanitized auth context。
+- `[done: first slice]` A2A message/artifact/status/completed stream 事件顺序有 golden trajectory fixture 覆盖，call chain 由普通断言覆盖。
+- `[done: first slice]` 子 agent 失败时 tool result 仍保留 child events，错误向父 agent 的 tool 调用边界传播。
+- `[done: first slice]` 子 agent 失败不会污染父 graph 状态。
+
+### 3. Dev Agent Template
+
+交付：
+
+- read-only analyse mode；
+- plan mode 输出 patch 建议；
+- write mode 按宿主权限 apply patch；
+- verification evidence 采集来源；
+- `[done: first slice]` mode/action gate contract：`templates/devagent.EvaluateAction` 区分 analyze/plan/write mode；analyze 只能分析，plan 可以输出 patch proposal 但不能 apply，write apply 必须带 policy allow decision、sandbox event、observed diff 和 observed checkpoint ref；release 必须引用 passed release gate；
+- `[done: first slice]` entropy audit collector：`templates/devagent.BuildEntropyAudit` 从已观察 patch metadata、显式 `PatchProposal.Files`、unified diff header 和 `VerificationReport` 生成 `EntropyAudit`，覆盖 dependency change、sensitive file、source-without-docs 等第一批启发式规则；不执行 git diff 或文件系统扫描；
+- `[done: first slice]` release gate contract：`templates/devagent.EvaluateReleaseGate` 消费已经产生的 `VerificationReport`、`EntropyAudit` 和 reviewer decision，write mode 默认要求验证通过、无超过阈值的 entropy finding、review approved；调用方可用 `RequireCheckIDs` 要求指定 verification checks 存在且 passed，用 `RequireEvidenceTypes` 要求 run_export、model_call、tool_call、channel_event、effect_replay、run_effect_replay、memory_replay、memory_work_schedule、policy_decision、ci_gate、diff、file_snapshot、checkpoint、checkpoint_objectstore_index、trajectory、failure_attribution、entropy_audit 等已观察 verification evidence 类型，并可用 `RequireCIGates` 要求 `ci_gate` evidence 中指定 gate 已 passed；analyze/plan mode 只返回 skipped，不执行 release；
+- `[done: first slice]` release gate evidence bridge：`templates/devagent.RecordReleaseGateCheck` 可把已评估的 `GateResult` 写入 `VerificationRecorder`，记录 passed/failed/skipped、gate status、mode、report/review/entropy 摘要和 release gate evidence，调用方 metadata 不能覆盖这些 canonical release gate 字段；rejected gate 会先记录 failed evidence 再返回 `ErrReleaseGateRejected`；
+- `[done: second slice]` process record bridge：`templates/devagent.BuildProcessRecords` / `RecordProcessRecords` 可把已观察 `ActionResult`、sanitized `PatchProposal`、`GateResult` 和 `ReviewDecision` 转成或写入 `RunRecorder` 的 task/input/intervention process records；`EvaluateAction` 会防御性复制 `ActionInput.Metadata`，process/workflow 边界会保留 `ActionResult.Metadata` 中的 prompt/eval/policy governance ref；patch input 只记录 id、summary、file_count、has_diff 和 file path/intent，release gate input 只记录 gate status/mode/report/review/max entropy 摘要，不保存 raw diff；`templates/devagent.BuildWorkflowProcessRecords` / `RecordWorkflowProcessRecords` 可把多个已观察 action boundary 组织成 workflow 父 task 和子 action task，并通过 `workflow_id` / `workflow_action_index` / `workflow_action_count` 元数据补足可重排的自举过程链路证据，并拒绝子 action 显式冲突的 run/user/session/thread/agent/app/call/trace 等 runtime identity；
+- `[done: fourth slice]` release evidence bundle：`templates/devagent.BuildReleaseBundle` / `ReleaseBundle` 可把已观察 `RunExport`、`VerificationReport`、entropy audits、`ReviewDecision`、passed `GateResult`、write-mode release `ActionResult` 和 sanitized process records 打包成 release-ready evidence bundle，要求 verification report passed、gate passed、gate report/review/max entropy status 摘要存在且与 bundle 中的 report/review/entropy audits 匹配、entropy audits 不为 failed、process task completed 且 process task metadata/input/output 与 release action 对齐、release gate input value 与 gate 摘要对齐、review intervention metadata 与 reviewer/status 对齐、workflow parent output 保留稳定 child action summary、run export 与 process records 匹配 bundle 已知的 session/user/thread/agent/call/trace 等 runtime identity、verification report / entropy audit 携带的细分身份不漂移、run export 内嵌 verification reports 非空时必须包含 bundle 顶层 report 的同一语义快照、run export 内嵌 task/input/intervention process records 非空时必须包含 bundle process records 的同一语义快照、review approved 且有 reviewer identity、action 为 write-mode release、run/report IDs 与 outcome 对齐、run export 不含 `FailureAttribution`，并可校验 required check IDs / evidence types / CI gates；`templates/devagent.RecordReleaseBundleCheck` 可把该 bundle 转成标准 `release_bundle` evidence，并在 metadata 中保留 reviewer、gate report/review/max entropy 摘要、required CI gates 以及 process task / release gate input / review intervention id；`TestRecordReleaseBundleCheckCapturesObservedWorkflowRelease` 已覆盖 self-bootstrap workflow process -> run export -> release bundle -> release bundle verification evidence 的真实场景封存；调用方 metadata 只能补充非保留字段，不能覆盖这些 canonical release evidence 字段；它仍然不执行命令、不扫描工作区、不替代宿主 harness；
+- `[done: first slice]` model call evidence bridge：root `RecordModelCallCheck` 可把已观察 `ModelRequest` / `ModelResponse` / error 写入 `VerificationRecorder`，记录 runtime ids、route、usage、消息/工具/能力计数和输出 tool call 摘要；它不执行模型调用，不保存 raw prompt/response text，失败调用会先记录 failed evidence 再返回 `ErrModelCallFailed`；
+- `[done: first slice]` tool call evidence bridge：root `RecordToolCallCheck` 可把已观察 `ToolCall` / `ToolResult` / error 写入 `VerificationRecorder`，记录 runtime ids、工具名、参数/结果字节数和 artifact/effect/event 计数；它不执行工具，不保存 raw args/result content，失败调用会先记录 failed evidence 再返回 `ErrToolCallFailed`；
+- `[done: first slice]` channel event evidence bridge：root `RecordChannelEventCheck` 可把已观察 `ChannelEvent` / error 写入 `VerificationRecorder`，记录 runtime ids、channel、event/action 类型、text/payload shape 和 metadata keys；它不接收 channel，不保存 raw text/payload content，失败事件会先记录 failed evidence 再返回 `ErrChannelEventFailed`；
+- `[done: first slice]` reviewer plugin slot：`templates/devagent.Reviewer` / `ReviewerFunc` / `StaticReviewer` 消费已观察 patch/action/report/entropy/gate evidence，返回显式 `ReviewDecision`；输入和返回 metadata 做 defensive copy，不执行模型调用、不阻塞人工流程、不改仓库；
+- `[done: first slice]` git diff scanner adapter：`adapters/devagent/gitdiff.Scanner` 可捕获 worktree/staged `git diff --binary` 与 `git diff --numstat`，输出 `gopacttest.DiffSnapshot` 和 `devagent.PatchProposal`；它只采集证据，不 apply patch、不做 release 决策；
+- `[done: first slice]` channel reviewer adapter：`adapters/devagent/channelreview.Reviewer` 可选通过 `gopact.Transfer` 把默认 `SurfaceMessageApproval` review prompt 转成目标 payload 并投递到 `gopact.Channel`，随后消费 inbound events，把明确 approve/reject action、payload 或 metadata 转成 `ReviewDecision`，用于把 TUI、Lark、SSE、CI callback 等外部审批入口通过统一 channel 边界接入 release gate；
+- `[done: first slice]` CI reviewer adapter：`adapters/devagent/cireview.Reviewer` 只消费宿主已观察到的 `VerificationReport`、required checks 和 `EntropyAudit`，不执行命令、不读取工作区、不连接 CI 系统，把报告失败、required check 缺失/失败/跳过和高 entropy finding 转成 rejected reviewer decision，把通过报告转成 approved reviewer decision；
+- `[done: first slice]` model reviewer adapter：`adapters/devagent/modelreview.Reviewer` 通过宿主注入的 `gopact.ChatModel` 把 `ReviewInput` 序列化成模型请求，默认要求 JSON schema/JSON decision，并把模型返回的 approved/rejected JSON 转成 `ReviewDecision`；`WithGovernance` 可把 prompt id/version、eval id/version、policy ref 和宿主 metadata 注入模型请求与 reviewer decision，形成可审计的 prompt/eval governance 第一片；它不执行命令、不读取工作区、不 apply patch、不做 release 决策；
+- 更完整 entropy audit 采集器、git diff scanner 策略和 reviewer/release adapter；
+- `gopacttest.RecordReviewCheck` 已能把已观察 reviewer decision 写入 verification evidence；reviewer 体系的 channel prompt/bridge、CI evidence review、model review adapter、model review prompt/eval metadata governance 和 Lark callback source 第一片已完成，model review 真实评测治理深化、CI 系统真实接入深化、Lark 真实 client/plugin 和生产 release 策略后续通过 adapter/plugin 接入。
+
+验收：
+
+- 能在测试仓库里完成 docs/examples/tests 级别修改。
+- 每次修改有 event、diff、checkpoint、verification report。
+- `[done: first slice]` action gate 可以拒绝 analyze mode patch proposal、plan mode patch apply，以及缺失 policy/sandbox/diff/checkpoint 证据的 write mode patch apply。
+- `[done: first slice]` entropy collector 可以从显式文件列表或 unified diff header 识别依赖文件变更、敏感文件变更、源码无文档变更，并转换成标准 `EntropyAudit` finding。
+- `[done: first slice]` git diff scanner adapter 可以把 worktree/staged git diff 转成标准 diff snapshot 与 patch proposal，用于后续 diff evidence 和 entropy audit。
+- `[done: first slice]` release gate 可以拒绝 failed verification、高 severity entropy finding、缺失 reviewer approval、调用方显式要求但 verification report 中缺失或未 passed 的 check ID，以及缺失的 evidence type。
+- `[done: first slice]` reviewer slot 可以校验必须返回 approved/rejected 和 reviewer identity，并且 reviewer 不能通过输入引用改写原始证据。
+- `[done: first slice]` channel reviewer adapter 可以先经 transfer/channel 投递 approval prompt，再从 channel action stream 中提取 approved/rejected decision，并保留 channel、event、action 和来源 metadata。
+- `[done: first slice]` CI reviewer adapter 可以从已观察 verification report、required check 和 entropy audit 中产出 approved/rejected decision，并保留 report status、计数、缺失/失败/跳过检查和最大 entropy severity metadata。
+- `[done: first slice]` model reviewer adapter 可以把 review input evidence 转成模型请求，并只接受显式 JSON approved/rejected decision，模型错误和非法 decision 不会被伪装成通过；prompt/eval governance metadata 会同时进入模型请求和 reviewer decision。
+- 默认不做破坏性 git 操作。
+
+### 4. Observability Adapter
+
+交付：
+
+- `[done: first slice]` provider-neutral trace plugin：`adapters/observability/trace` 已提供 `gopact.Plugin`，通过 event subscriber 消费 runtime events，并把 run/turn/node/model/tool/policy/checkpoint/A2A/memory/sandbox event 投影成稳定 `SpanRecord`；当前提供 `MemoryExporter`、`ExporterFunc`、HTTP/JSON `HTTPExporter`、OTLP/HTTP JSON `OTLPHTTPExporter`、LangSmith-compatible `LangSmithHTTPExporter`、LangGraph-style `LangGraphHTTPExporter`、`PolicyExporter` 和 `CheckExporterConformance` / `RequireExporterConformance` trace exporter conformance helper，不引入具体 SaaS 或 OTel SDK 依赖；
+- `[done: first slice]` OpenTelemetry OTLP/HTTP JSON exporter adapter；
+- `[done: first slice]` LangGraph-style HTTP event exporter adapter：把 `SpanRecord` 转成 thread/run/attempt/node/step/event/status/metadata envelope，供宿主 collector 或后续 LangGraph bridge 消费；
+- 真实 LangSmith SDK / LangGraph-style trace exporter policy/redaction 深化；
+- record/replay store；
+- `[done: first slice]` run export JSON schema：root `RunExportJSONSchema()` 已暴露可深拷贝的 schema map；后续可以在 adapter 层绑定具体 JSON Schema engine 或发布 schema artifact。
+
+验收：
+
+- `[done: first slice]` run/node/model/tool span record 对齐 runtime ids、node、step、event type、status 和低基数字段。
+- redaction 在外部 sink 前执行。
+- exporter 失败不改变业务执行结果。
+
+## M6 Production Hardening Plan
+
+目标：让 SDK 可以被外部项目长期依赖。
+
+交付：
+
+- 兼容性策略：[versioning-policy.md](versioning-policy.md)、semver、public API review、deprecation policy。
+- CI：`docs/design/core-ci-gates.json`、`.github/workflows/ci.yml`、`.golangci.yml` 和 `Makefile` 已定义 whitespace、test、race、vet、lint、coverage、examples 和 security checks 第一片，并把 lint config 与 coverage profile 纳入受测契约；2026-06-25 已在本地用 Go 1.25.11 fresh 验证全部 core gate；`gopacttest.RecordCIGateSuiteCheck` 可把这些已观察 gate results 聚合成 `ci_gate` evidence，`gopacttest.RequireVerificationEvidenceConformance` 可在 adapter/testkit 层要求具体 gate 已 passed，`templates/devagent.RequireCIGates` 和 `ReleaseBundle.RequiredCIGates` 可要求具体 gate 名称已通过，供 release gate 或 Dev Agent release bundle 引用。
+- 仓库拆分：主仓只保留 core contract、轻量内置实现、reference adapter 和 conformance/testkit；OpenAI、Anthropic、Gemini、OpenRouter、Redis、SQL、S3/GCS/R2/OSS、MCP/A2A transport、A2UI、AG-UI、Lark、LangSmith、LangGraph 等生产 adapter/plugin 迁移到独立仓库。
+- 安全：sandbox policy、secret provider、redaction rule、prompt-injection defense。
+- 文档：README、godoc、examples、[migration-guide.md](migration-guide.md)、[template-guide.md](template-guide.md)。
+
+验收：
+
+- `docs/design/core-ci-gates.json` 中定义的 whitespace、test、race、vet、lint、coverage、examples、security gate 已在本地通过；release 前仍必须在 GitHub CI 上稳定通过，并使用受测的 `.golangci.yml` 与 `coverage.out`。
+- public examples 可复制运行。
+- migration guide 和 template guide 已被 README、设计入口和本计划索引。
+- 核心 package 不依赖具体 SaaS provider。
+- 主仓不再以生产 adapter 数量作为完成标准；完成标准是 contract 稳定、conformance 清晰、外部 adapter 可以无侵入接入。
+
+## 自举门槛
+
+自举分三级：
+
+- Level 1：M3 后允许只读分析、生成计划、运行受限测试。
+- Level 2：M4 closure 后允许受控修改 docs、examples、tests、reference adapter 或 conformance 骨架。
+- Level 3：M5 后允许处理低风险 core issue，但必须有 trajectory test、verification report、run export、review 和人工 release gate。
+
+当前代码已经具备 Level 1 的大部分基础，也具备部分 Level 2 雏形。但正式进入 Level 2 前，主仓应优先完成 SDK 边界收敛：保留 core、reference implementation 和 conformance/testkit，暂停在主仓新增生产级 provider/backend/channel/observability adapter。已有 adapter/template 第一片可作为迁移清单输入，后续真实 LangSmith SDK、LangGraph-style exporter policy/redaction 深化、完整前端 A2UI renderer、AG-UI WebSocket/plugin、Lark 真实 client/OAuth/plugin、model review 真实评测治理深化、CI 系统真实接入、对象存储 adapter 和生产级 backend adapter 应进入外部 adapter/plugin/template 仓库。
+
+当前 `milestone-readiness.json` 将整体状态标为 `in-progress`，当前自举级别标为 `level-2`：允许继续处理 docs、examples、tests、reference adapter 和 conformance scaffold，但低风险 core issue 的日常自举仍必须等待 M5/M6 的 trajectory、verification、entropy、review 和 release gate 更完整。
+
+## 下一批任务顺序
+
+1. `[done: second slice]` 做主仓边界审计：`docs/design/repository-boundary.json` 已把当前已进入主仓的 provider/backend/channel/observability adapter、template 和 Dev Agent 相关能力标注为 `keep-in-core`、`reference-only`、`move-to-adapter-repo`、`move-to-template-repo` 或 `remove-before-v1`，并由测试防止新增 extension package 漏归属；reference-only 包还受 `stdlib-or-gopact-only` import policy 约束，防止本应轻量的参考实现重新引入第三方 provider/platform SDK 依赖。
+2. `[done: fifth slice]` 建立外部扩展仓库骨架和兼容性契约：`docs/design/extension-conformance.json` 已定义 moved adapter/template 目标、版本矩阵、必跑 conformance suite、required scaffold files、README 模板、CONFORMANCE 模板、CI workflow 模板、offline conformance checklist 和 examples 接入方式；`docs/design/external-repositories.json` 已定义 gopact-ai 私有仓库初始化清单和 bootstrap sequence，由测试确保 roadmap target repo、extension target、required files 和 CI 命令不会脱节；`docs/design/extension-scaffold-spec.json` 已定义真实初始化每个仓库时的文件规则、module path 和 target package path；`internal/extensionscaffold` 已能通过 `LoadRepositoriesFromDesign` 从 design manifest 组装仓库计划，通过 `WriteRepositoriesFromDesign` 批量写出 `<output>/<repo-name>` scaffold workspace，通过 `RenderSyncPlanFromDesign` 输出远端私有仓库 bootstrap/sync JSON 计划，并通过 `RenderSyncScriptFromDesign` 输出可审查的 `sync-repos.sh`；`cmd/gopact-extscaffold` 已把该能力暴露为本仓维护命令，并在输出根生成本地 `go.work`、`sync-plan.json` 和 `sync-repos.sh`，`-verify` 会逐仓库运行 manifest required CI commands（默认 `git diff --check`、`go test -count=1 ./...`、`go vet ./...`），`-plan-json` 会输出包含 `gh repo create gopact-ai/<repo> --private`、文件清单、CI 命令和本地验证命令的机器可读计划，`-plan-sh` 会输出可执行 shell 同步计划，`-remote-status-json` 会只读输出远端仓库存在性、私有性、CI workflow 和最新 Actions run 状态；2026-06-26 已执行真实 gopact-ai 私有仓库 bootstrap，11 个外部 scaffold 仓库均已创建并推送 main，remote audit 显示仓库存在、私有且 CI workflow 文件存在；最新 GitHub Actions run 仍全部失败，当前共性原因是外部仓库依赖的 core SDK `v0.0.0` 未发布为远端可解析 revision，主仓发布/打标或外部仓库切换到可解析 SDK 版本前，不能把 M6 视为完成；`gopacttest.RequireExtensionScaffoldConformance` 已提供外部仓库 layout/module/README/CONFORMANCE/example 的离线 scaffold conformance gate；provider、checkpoint store、ReAct memory work queue、turnloop store、channel、trace exporter、verification evidence 和 template trajectory conformance helper 已落地。
+3. `[done: fifth slice]` 收敛主仓 public API：`docs/design/public-api-boundary.json` 已把 root 包顶层导出符号归入 core contract、runtime facade、typed option、middleware/plugin、export/import/resume、verification、reference implementation 或 transitional，并声明 exported root receiver methods 继承 receiver type 的边界策略；测试会防止新增 root exported API 漏过分类，也会防止 exported method 挂到未登记 receiver type 上；`docs/design/public-api-examples.json` 已把关键 root SDK 入口绑定到可执行 Example，覆盖 setup/defaults、Runner facade、RunExport 录制回放、VerificationRecorder 和 resume payload schema gate；`docs/design/deprecation-policy.md` 已把 stable/experimental/transitional、`Deprecated:` 标记、移除窗口和兼容性 review 变成受测试保护的策略；`docs/design/versioning-policy.md` 已把 semver、schema version、release gate 和 external extension compatibility 变成受测试保护的策略；后续继续做真正的 API 移动/删除。
+4. `[done: fourth slice]` 把生产级后端接入计划从主仓 milestone 中移出：`docs/design/external-integration-roadmap.json` 已把真实 LangSmith SDK、LangGraph exporter 深化、OpenAI/Anthropic/Gemini/OpenRouter、Redis/SQL/S3/GCS/R2/OSS、A2UI/AG-UI/Lark/WebSocket、MCP/A2A production transport、CI/model reviewer 等归入外部 adapter/plugin/template 路线，并要求 host-owned config、core contract、conformance suite 和 scaffold-ready 状态；所有路线都必须绑定 `extension-conformance.json` 中的目标，MCP/A2A production transport 已拆成 `gopact-adapters-transport-mcp` 与 `gopact-adapters-transport-a2a` 两个 protocol-specific conformance target；`external-repositories.json`、`extension-scaffold-spec.json`、`extension-conformance.json`、`extension-conformance-template.md` 和 `extension-ci-workflow.yml` 已补外部 repo scaffold/CI 第一片；后续继续做真实 GitHub 仓库初始化、CI 启用和外部仓库真实 adapter/template 对具体 conformance helper 的调用接入。
+5. `[done: second slice]` 扩展 conformance 而不是扩展内置 adapter：`gopacttest/providerconformance` provider conformance helper、`gopacttest/checkpointconformance` checkpoint store conformance helper、`gopacttest/reactconformance` ReAct deferred memory work queue conformance helper、extension scaffold conformance helper、turnloop store conformance helper、channel/transfer conformance helper、trace exporter conformance helper、verification evidence conformance helper（含具体 required CI gate 检查）和 template trajectory conformance helper 已落地。
+6. `[done: first slice]` 保留少量 reference adapter：`reference-only` 包只允许标准库和本模块内部导入，当前测试会阻止第三方服务 SDK 回流；后续仍需按 v1 迁移计划删除或外迁不再需要的过渡包。
+7. 在边界收敛后再推进自举：自举只依赖 core contract、reference implementation 和外部 adapter/plugin 的显式注入，不依赖主仓内置生产后端。
+
+## 每阶段完成定义
+
+一个阶段只有同时满足以下条件才算完成：
+
+- public API 示例可读、可编译；
+- 单元测试覆盖正常路径、错误路径和取消/恢复路径；
+- event stream 能解释关键过程；
+- checkpoint/export 不丢失恢复所需状态；
+- 没有把新的生产级 adapter/plugin/template 沉入主仓，外部扩展通过 contract/conformance 接入；
+- README 和设计文档状态同步；
+- `go test ./... -count=1`、`go test -race ./... -count=1`、`go vet ./...`、`golangci-lint run ./...`、`go test -coverprofile=coverage.out ./...`、`go test -run '^Example' ./...`、`govulncheck ./...`、`git diff --check` 本地通过；M6 release 前还必须让这些 gate 在 GitHub CI 通过。
