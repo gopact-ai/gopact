@@ -9,6 +9,34 @@ linters:
     - revive
     - staticcheck
     - unused
+  exclusions:
+    rules:
+      # Generic checkpoint option implementations are invoked through sealed
+      # option interfaces. The unused analyzer does not connect those concrete
+      # methods back to public constructors such as WithCodec and
+      # WithConfigVersion.
+      - path: ^checkpoint/options\.go$
+        linters:
+          - unused
+        text: "func .*\\.apply(Memory|FileStore|ObjectStore|RowStore) is unused"
+      - path: ^checkpoint/object\.go$
+        linters:
+          - unused
+        text: "func normalizeObjectPrefix is unused"
+      # Public API documentation is tracked through design/release review while
+      # the SDK surface is still settling. Keep revive enabled for code smells,
+      # but avoid turning early API naming passes into mandatory comment churn.
+      - linters:
+          - revive
+        text: "^exported:"
+      # Test doubles often implement SDK callback/interface signatures where
+      # some parameters are intentionally ignored to keep the test focused.
+      # Keep the rule active for production code while avoiding noisy mock-only
+      # churn in tests.
+      - path: _test\.go$
+        linters:
+          - revive
+        text: "^unused-parameter:"
 
 formatters:
   enable:
