@@ -284,6 +284,7 @@ func TestRemoteA2AToolReturnsFailureEventOnSendError(t *testing.T) {
 		result.Events[1].Type != gopact.EventA2ATaskFailed {
 		t.Fatalf("result events = %+v, want sent/failed A2A events", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_send_failure.golden.json", result.Events)
 	if result.Events[1].Error() == "" {
 		t.Fatalf("failure event error is empty, want remote error")
 	}
@@ -335,6 +336,7 @@ func TestRemoteA2AToolPolicyDenySkipsSendAndReturnsPolicyEvents(t *testing.T) {
 		result.Events[1].Type != gopact.EventPolicyDecided {
 		t.Fatalf("result events = %+v, want policy requested/decided", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_policy_deny.golden.json", result.Events)
 	if result.Events[1].PolicyDecision == nil || result.Events[1].PolicyDecision.Action != gopact.PolicyDeny {
 		t.Fatalf("policy decision event = %+v, want deny", result.Events[1])
 	}
