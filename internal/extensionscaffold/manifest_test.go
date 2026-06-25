@@ -180,6 +180,9 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	if workspace.SyncScript.Path != "sync-repos.sh" {
 		t.Fatalf("sync script path = %q, want sync-repos.sh", workspace.SyncScript.Path)
 	}
+	if workspace.SecretScript.Path != "sync-secrets.sh" {
+		t.Fatalf("secret script path = %q, want sync-secrets.sh", workspace.SecretScript.Path)
+	}
 	if len(workspace.Scaffolds) != expectedScaffoldRepositoryCount {
 		t.Fatalf("workspace scaffolds = %d, want %d", len(workspace.Scaffolds), expectedScaffoldRepositoryCount)
 	}
@@ -196,12 +199,23 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read sync-repos.sh: %v", err)
 	}
+	secretScriptBody, err := os.ReadFile(filepath.Join(dir, "sync-secrets.sh"))
+	if err != nil {
+		t.Fatalf("read sync-secrets.sh: %v", err)
+	}
 	syncScriptInfo, err := os.Stat(filepath.Join(dir, "sync-repos.sh"))
 	if err != nil {
 		t.Fatalf("stat sync-repos.sh: %v", err)
 	}
+	secretScriptInfo, err := os.Stat(filepath.Join(dir, "sync-secrets.sh"))
+	if err != nil {
+		t.Fatalf("stat sync-secrets.sh: %v", err)
+	}
 	if syncScriptInfo.Mode().Perm()&0o111 == 0 {
 		t.Fatalf("sync-repos.sh mode = %s, want executable bit", syncScriptInfo.Mode())
+	}
+	if secretScriptInfo.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("sync-secrets.sh mode = %s, want executable bit", secretScriptInfo.Mode())
 	}
 	if !strings.Contains(string(syncPlanBody), `"create_command": "gh repo create gopact-ai/gopact-adapters-model --private --source <generated>/gopact-adapters-model --remote origin --push"`) {
 		t.Fatalf("sync-plan.json missing unescaped create command:\n%s", string(syncPlanBody))
@@ -217,6 +231,17 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	} {
 		if !strings.Contains(string(syncScriptBody), want) {
 			t.Fatalf("sync-repos.sh missing %q:\n%s", want, string(syncScriptBody))
+		}
+	}
+	for _, want := range []string{
+		"#!/usr/bin/env bash",
+		"GOPACT_GITHUB_TOKEN must contain a GitHub token",
+		"gh secret set GOPACT_GITHUB_TOKEN",
+		"set_secret 'gopact-ai/gopact-adapters-model'",
+		"set_secret 'gopact-ai/gopact-templates-agenttool'",
+	} {
+		if !strings.Contains(string(secretScriptBody), want) {
+			t.Fatalf("sync-secrets.sh missing %q:\n%s", want, string(secretScriptBody))
 		}
 	}
 	for _, want := range []string{
@@ -392,6 +417,27 @@ func TestRenderSyncScriptFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
 		"sync_repo 'gopact-templates-devagent' 'gopact-templates-devagent' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
 		"git -C \"${repo_dir}\" push -u origin HEAD:main",
+	} {
+		if !strings.Contains(file.Body, want) {
+			t.Fatalf("script missing %q:\n%s", want, file.Body)
+		}
+	}
+}
+
+func TestRenderSecretScriptFromDesignCapturesRemoteSecretSteps(t *testing.T) {
+	file, err := RenderSecretScriptFromDesign(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("RenderSecretScriptFromDesign() error = %v", err)
+	}
+	if file.Path != "sync-secrets.sh" {
+		t.Fatalf("script path = %q, want sync-secrets.sh", file.Path)
+	}
+	for _, want := range []string{
+		"set -euo pipefail",
+		"GOPACT_GITHUB_TOKEN must contain a GitHub token",
+		"gh secret set GOPACT_GITHUB_TOKEN",
+		"set_secret 'gopact-ai/gopact-adapters-model'",
+		"set_secret 'gopact-ai/gopact-templates-devagent'",
 	} {
 		if !strings.Contains(file.Body, want) {
 			t.Fatalf("script missing %q:\n%s", want, file.Body)

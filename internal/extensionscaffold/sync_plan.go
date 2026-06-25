@@ -112,6 +112,15 @@ func RenderSyncScriptFromDesign(root string) (File, error) {
 	return renderSyncScriptFile(plan), nil
 }
 
+// RenderSecretScriptFromDesign renders a reviewable shell script for configuring required repository secrets.
+func RenderSecretScriptFromDesign(root string) (File, error) {
+	plan, err := RenderSyncPlanFromDesign(root)
+	if err != nil {
+		return File{}, err
+	}
+	return renderSecretScriptFile(plan), nil
+}
+
 func renderSyncScriptFile(plan SyncPlan) File {
 	var b strings.Builder
 	b.WriteString("#!/usr/bin/env bash\n")
@@ -212,6 +221,29 @@ func renderSyncScriptFile(plan SyncPlan) File {
 		b.WriteByte('\n')
 	}
 	return File{Path: "sync-repos.sh", Body: b.String()}
+}
+
+func renderSecretScriptFile(plan SyncPlan) File {
+	var b strings.Builder
+	b.WriteString("#!/usr/bin/env bash\n")
+	b.WriteString("set -euo pipefail\n\n")
+	b.WriteString("if ! command -v gh >/dev/null 2>&1; then\n")
+	b.WriteString("  echo \"gh CLI is required to configure external repository secrets\" >&2\n")
+	b.WriteString("  exit 127\n")
+	b.WriteString("fi\n\n")
+	b.WriteString("if [[ -z \"${GOPACT_GITHUB_TOKEN:-}\" ]]; then\n")
+	b.WriteString("  echo \"GOPACT_GITHUB_TOKEN must contain a GitHub token with read access to github.com/gopact-ai/gopact\" >&2\n")
+	b.WriteString("  exit 1\n")
+	b.WriteString("fi\n\n")
+	b.WriteString("set_secret() {\n")
+	b.WriteString("  local repo=\"$1\"\n")
+	b.WriteString("  echo \"==> ${repo}\"\n")
+	b.WriteString("  gh secret set GOPACT_GITHUB_TOKEN -R \"${repo}\" --body \"${GOPACT_GITHUB_TOKEN}\"\n")
+	b.WriteString("}\n\n")
+	for _, repo := range plan.Repositories {
+		fmt.Fprintf(&b, "set_secret %s\n", shellQuote(plan.Organization+"/"+repo.Name))
+	}
+	return File{Path: "sync-secrets.sh", Body: b.String()}
 }
 
 func shellQuote(value string) string {

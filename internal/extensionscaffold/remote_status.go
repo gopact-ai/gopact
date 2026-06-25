@@ -35,28 +35,31 @@ func (report RemoteStatusReport) Repository(name string) *RemoteRepositoryStatus
 
 // RemoteRepositoryStatus records the observed GitHub state of one external repository.
 type RemoteRepositoryStatus struct {
-	Name               string `json:"name"`
-	Remote             string `json:"remote"`
-	ExpectedVisibility string `json:"expected_visibility"`
-	Visibility         string `json:"visibility,omitempty"`
-	URL                string `json:"url,omitempty"`
-	DefaultBranch      string `json:"default_branch,omitempty"`
-	CIWorkflowPath     string `json:"ci_workflow_path,omitempty"`
-	CIRunWorkflowName  string `json:"ci_run_workflow_name,omitempty"`
-	CIRunStatus        string `json:"ci_run_status,omitempty"`
-	CIRunConclusion    string `json:"ci_run_conclusion,omitempty"`
-	CIRunEvent         string `json:"ci_run_event,omitempty"`
-	CIRunHeadBranch    string `json:"ci_run_head_branch,omitempty"`
-	CIRunURL           string `json:"ci_run_url,omitempty"`
-	Error              string `json:"error,omitempty"`
-	CIWorkflowError    string `json:"ci_workflow_error,omitempty"`
-	CIRunError         string `json:"ci_run_error,omitempty"`
-	Exists             bool   `json:"exists"`
-	Private            bool   `json:"private"`
-	CIWorkflowPresent  bool   `json:"ci_workflow_present"`
-	CIWorkflowRunSeen  bool   `json:"ci_workflow_run_seen"`
-	CIRunPassed        bool   `json:"ci_run_passed"`
-	Ready              bool   `json:"ready"`
+	Name                    string `json:"name"`
+	Remote                  string `json:"remote"`
+	ExpectedVisibility      string `json:"expected_visibility"`
+	Visibility              string `json:"visibility,omitempty"`
+	URL                     string `json:"url,omitempty"`
+	DefaultBranch           string `json:"default_branch,omitempty"`
+	CIWorkflowPath          string `json:"ci_workflow_path,omitempty"`
+	CIRunWorkflowName       string `json:"ci_run_workflow_name,omitempty"`
+	CIRunStatus             string `json:"ci_run_status,omitempty"`
+	CIRunConclusion         string `json:"ci_run_conclusion,omitempty"`
+	CIRunEvent              string `json:"ci_run_event,omitempty"`
+	CIRunHeadBranch         string `json:"ci_run_head_branch,omitempty"`
+	CIRunURL                string `json:"ci_run_url,omitempty"`
+	PrivateSDKSecretName    string `json:"private_sdk_token_secret_name,omitempty"`
+	Error                   string `json:"error,omitempty"`
+	CIWorkflowError         string `json:"ci_workflow_error,omitempty"`
+	CIRunError              string `json:"ci_run_error,omitempty"`
+	PrivateSDKSecretError   string `json:"private_sdk_token_secret_error,omitempty"`
+	Exists                  bool   `json:"exists"`
+	Private                 bool   `json:"private"`
+	CIWorkflowPresent       bool   `json:"ci_workflow_present"`
+	CIWorkflowRunSeen       bool   `json:"ci_workflow_run_seen"`
+	CIRunPassed             bool   `json:"ci_run_passed"`
+	PrivateSDKSecretPresent bool   `json:"private_sdk_token_secret_present"`
+	Ready                   bool   `json:"ready"`
 }
 
 // CheckRemoteRepositories checks GitHub repository existence and CI workflow presence.
@@ -89,6 +92,7 @@ func CheckRemoteRepositories(ctx context.Context, root string, options RemoteSta
 		}
 		fillRepositoryView(ctx, ghPath, &status)
 		if status.Exists {
+			fillRepositorySecrets(ctx, ghPath, &status)
 			fillRepositoryWorkflow(ctx, ghPath, &status)
 		}
 		if status.CIWorkflowPresent {
@@ -153,6 +157,29 @@ func fillRepositoryWorkflow(ctx context.Context, ghPath string, status *RemoteRe
 		return
 	}
 	status.CIWorkflowError = fmt.Sprintf("unexpected workflow path %q", workflow.Path)
+}
+
+func fillRepositorySecrets(ctx context.Context, ghPath string, status *RemoteRepositoryStatus) {
+	const secretName = "GOPACT_GITHUB_TOKEN"
+	status.PrivateSDKSecretName = secretName
+	output, err := runGH(ctx, ghPath, "secret", "list", "-R", status.Remote, "--json", "name")
+	if err != nil {
+		status.PrivateSDKSecretError = commandError(err, output)
+		return
+	}
+	var secrets []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &secrets); err != nil {
+		status.PrivateSDKSecretError = err.Error()
+		return
+	}
+	for _, secret := range secrets {
+		if secret.Name == secretName {
+			status.PrivateSDKSecretPresent = true
+			return
+		}
+	}
 }
 
 func fillRepositoryWorkflowRun(ctx context.Context, ghPath string, status *RemoteRepositoryStatus) {
