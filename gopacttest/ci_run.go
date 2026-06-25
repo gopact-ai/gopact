@@ -1,0 +1,287 @@
+package gopacttest
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/gopact-ai/gopact"
+)
+
+// CIRun is an already-observed remote CI run.
+type CIRun struct {
+	ID            string
+	Name          string
+	Provider      string
+	Repository    string
+	Workflow      string
+	RunID         string
+	URL           string
+	HeadSHA       string
+	HeadBranch    string
+	Status        string
+	Conclusion    string
+	RequiredGates []string
+	Gates         []CIRunGate
+	Metadata      map[string]any
+}
+
+// CIRunGate is one already-observed gate inside a remote CI run.
+type CIRunGate struct {
+	Gate        string
+	Status      gopact.VerificationStatus
+	Job         string
+	Step        string
+	URL         string
+	StartedAt   time.Time
+	CompletedAt time.Time
+	Duration    time.Duration
+	Metadata    map[string]any
+}
+
+// RecordCIRunCheck records an already-observed remote CI run as one verification check.
+func RecordCIRunCheck(recorder *gopact.VerificationRecorder, run CIRun) error {
+	if recorder == nil {
+		return errors.New("gopacttest: verification recorder is nil")
+	}
+	if err := validateCIRun(run); err != nil {
+		return err
+	}
+
+	check := ciRunCheck(run)
+	if err := recorder.Record(check); err != nil {
+		return err
+	}
+	if check.Status == gopact.VerificationStatusFailed {
+		return ErrCIGateFailed
+	}
+	return nil
+}
+
+func validateCIRun(run CIRun) error {
+	if len(run.Gates) == 0 {
+		return fmt.Errorf("%w: gates are required", ErrCIGateRequired)
+	}
+	gateByName := make(map[string]struct{}, len(run.Gates))
+	for i, gate := range run.Gates {
+		name := strings.TrimSpace(gate.Gate)
+		if name == "" {
+			return fmt.Errorf("%w: gate %d name is required", ErrCIGateRequired, i)
+		}
+		if !validCIRunGateStatus(gate.Status) {
+			return fmt.Errorf("%w: gate %s status %q is invalid", ErrCIGateRequired, name, gate.Status)
+		}
+		gateByName[name] = struct{}{}
+	}
+	for _, gate := range run.RequiredGates {
+		gate = strings.TrimSpace(gate)
+		if gate == "" {
+			return fmt.Errorf("%w: required gate is empty", ErrCIGateRequired)
+		}
+		if _, ok := gateByName[gate]; !ok {
+			return fmt.Errorf("%w: required gate %s is missing", ErrCIGateRequired, gate)
+		}
+	}
+	return nil
+}
+
+func validCIRunGateStatus(status gopact.VerificationStatus) bool {
+	switch status {
+	case gopact.VerificationStatusPassed,
+		gopact.VerificationStatusFailed,
+		gopact.VerificationStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
+func ciRunCheck(run CIRun) gopact.VerificationCheck {
+	id := run.ID
+	if id == "" {
+		id = ciRunCheckID(run)
+	}
+	name := run.Name
+	if name == "" {
+		name = "CI run"
+	}
+	status, passed, failed, skipped := ciRunStatus(run.Gates)
+	return gopact.VerificationCheck{
+		ID:       id,
+		Name:     name,
+		Status:   status,
+		Summary:  ciGateSuiteSummary(status, passed, failed, skipped),
+		Evidence: ciRunEvidence(run),
+		Metadata: ciRunMetadata(run, passed, failed, skipped),
+	}
+}
+
+func ciRunCheckID(run CIRun) string {
+	parts := make([]string, 0, 4)
+	for _, part := range []string{run.Provider, run.Repository, run.Workflow, run.RunID} {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return VerificationCheckCIGates
+	}
+	return "ci-run:" + strings.Join(parts, ":")
+}
+
+func ciRunStatus(gates []CIRunGate) (gopact.VerificationStatus, int, int, int) {
+	passed := 0
+	failed := 0
+	skipped := 0
+	for _, gate := range gates {
+		switch gate.Status {
+		case gopact.VerificationStatusFailed:
+			failed++
+		case gopact.VerificationStatusSkipped:
+			skipped++
+		default:
+			passed++
+		}
+	}
+	if failed > 0 {
+		return gopact.VerificationStatusFailed, passed, failed, skipped
+	}
+	if passed > 0 {
+		return gopact.VerificationStatusPassed, passed, failed, skipped
+	}
+	return gopact.VerificationStatusSkipped, passed, failed, skipped
+}
+
+func ciRunEvidence(run CIRun) []gopact.VerificationEvidence {
+	evidence := make([]gopact.VerificationEvidence, 0, len(run.Gates))
+	for _, gate := range run.Gates {
+		evidence = append(evidence, gopact.VerificationEvidence{
+			Type:     VerificationEvidenceTypeCIGate,
+			Ref:      ciGateRef(gate.Gate),
+			Summary:  ciGateEvidenceSummary(gate.Gate, gate.Status),
+			Metadata: ciRunGateMetadata(run, gate),
+		})
+	}
+	return evidence
+}
+
+func ciRunMetadata(run CIRun, passed, failed, skipped int) map[string]any {
+	metadata := map[string]any{
+		"gate_count":         len(run.Gates),
+		"passed_gate_count":  passed,
+		"failed_gate_count":  failed,
+		"skipped_gate_count": skipped,
+	}
+	if len(run.RequiredGates) > 0 {
+		metadata["required_gates"] = append([]string(nil), run.RequiredGates...)
+	}
+	addCIRunIdentityMetadata(metadata, run)
+	if run.Status != "" {
+		metadata["status"] = run.Status
+	}
+	if run.Conclusion != "" {
+		metadata["conclusion"] = run.Conclusion
+	}
+	mergeSupplementalMetadata(metadata, run.Metadata, ciRunReservedMetadataKey)
+	return metadata
+}
+
+func ciRunGateMetadata(run CIRun, gate CIRunGate) map[string]any {
+	metadata := map[string]any{
+		"gate":   ciGateName(gate.Gate),
+		"status": string(gate.Status),
+	}
+	addCIRunIdentityMetadata(metadata, run)
+	if gate.Job != "" {
+		metadata["job"] = gate.Job
+	}
+	if gate.Step != "" {
+		metadata["step"] = gate.Step
+	}
+	if gate.URL != "" {
+		metadata["url"] = gate.URL
+	} else if run.URL != "" {
+		metadata["url"] = run.URL
+	}
+	if !gate.StartedAt.IsZero() {
+		metadata["started_at"] = gate.StartedAt.Format(time.RFC3339Nano)
+	}
+	if !gate.CompletedAt.IsZero() {
+		metadata["completed_at"] = gate.CompletedAt.Format(time.RFC3339Nano)
+	}
+	if gate.Duration > 0 {
+		metadata["duration_ms"] = gate.Duration.Milliseconds()
+	}
+	mergeSupplementalMetadata(metadata, gate.Metadata, ciRunGateReservedMetadataKey)
+	return metadata
+}
+
+func addCIRunIdentityMetadata(metadata map[string]any, run CIRun) {
+	if run.Provider != "" {
+		metadata["ci_provider"] = run.Provider
+	}
+	if run.Repository != "" {
+		metadata["repository"] = run.Repository
+	}
+	if run.Workflow != "" {
+		metadata["workflow"] = run.Workflow
+	}
+	if run.RunID != "" {
+		metadata["run_id"] = run.RunID
+	}
+	if run.URL != "" {
+		metadata["url"] = run.URL
+	}
+	if run.HeadSHA != "" {
+		metadata["head_sha"] = run.HeadSHA
+	}
+	if run.HeadBranch != "" {
+		metadata["head_branch"] = run.HeadBranch
+	}
+}
+
+func ciRunReservedMetadataKey(key string) bool {
+	switch key {
+	case "gate_count",
+		"passed_gate_count",
+		"failed_gate_count",
+		"skipped_gate_count",
+		"required_gates",
+		"ci_provider",
+		"repository",
+		"workflow",
+		"run_id",
+		"url",
+		"head_sha",
+		"head_branch",
+		"status",
+		"conclusion":
+		return true
+	default:
+		return false
+	}
+}
+
+func ciRunGateReservedMetadataKey(key string) bool {
+	switch key {
+	case "gate",
+		"status",
+		"ci_provider",
+		"repository",
+		"workflow",
+		"run_id",
+		"url",
+		"head_sha",
+		"head_branch",
+		"job",
+		"step",
+		"started_at",
+		"completed_at",
+		"duration_ms":
+		return true
+	default:
+		return false
+	}
+}
