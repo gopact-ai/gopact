@@ -364,7 +364,7 @@
 - 兼容性策略：[versioning-policy.md](versioning-policy.md)、semver、public API review、deprecation policy。
 - CI：`docs/design/core-ci-gates.json`、`.github/workflows/ci.yml`、`.golangci.yml` 和 `Makefile` 已定义 whitespace、test、race、vet、lint、coverage、examples 和 security checks 第一片，并把 lint config 与 coverage profile 纳入受测契约；2026-06-25 已在本地用 Go 1.25.11 fresh 验证全部 core gate；2026-06-26 已核实 GitHub Actions `gopact-ai/gopact` `ci` run `28199128163` 在 `main` / `a54e4becf8f8f63311d57a0b245a38d8064c1180` 上成功通过 Check whitespace、Test、Race、Vet、Lint、Coverage、Examples 和 Security；`gopacttest.RecordCIGateSuiteCheck` 可把这些已观察 gate results 聚合成 `ci_gate` evidence，`gopacttest.RequireVerificationEvidenceConformance` 可在 adapter/testkit 层要求具体 gate 已 passed，`templates/devagent.RequireCIGates` 和 `ReleaseBundle.RequiredCIGates` 可要求具体 gate 名称已通过，供 release gate 或 Dev Agent release bundle 引用。
 - 仓库拆分：主仓只保留 core contract、轻量内置实现、reference adapter 和 conformance/testkit；OpenAI、Anthropic、Gemini、OpenRouter、Redis、SQL、S3/GCS/R2/OSS、MCP/A2A transport、A2UI、AG-UI、Lark、LangSmith、LangGraph 等生产 adapter/plugin 迁移到独立仓库。
-- 安全：sandbox policy、secret provider、redaction rule、prompt-injection defense。
+- 安全：sandbox policy、root `SecretRef` / `SecretProvider` / `SecretValue` secret provider 原子契约、redaction rule、prompt-injection defense。
 - 文档：README、godoc、examples、[migration-guide.md](migration-guide.md)、[template-guide.md](template-guide.md)。
 
 验收：

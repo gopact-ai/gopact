@@ -47,7 +47,7 @@
       ],
       "open_items": [
         "生产级 tool exactly-once ledger 和外部 commit store 仍需在 adapter 或宿主 worker 中实现",
-        "更完整 sandbox profile、secret provider 和 prompt-injection defense 策略需要继续深化"
+        "root SecretRef / SecretProvider / SecretValue secret provider 原子契约已具备第一片；更完整 sandbox profile、secret 继承授权策略和 prompt-injection defense 策略仍需继续深化"
       ]
     },
     {

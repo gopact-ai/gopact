@@ -1618,6 +1618,46 @@
       ]
     },
     {
+      "category": "core-contract",
+      "stability": "experimental",
+      "source_file": "secret.go",
+      "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
+      "symbols": [
+        {
+          "name": "ErrSecretRefInvalid",
+          "kind": "var"
+        },
+        {
+          "name": "NewSecretRef",
+          "kind": "func"
+        },
+        {
+          "name": "NewSecretValue",
+          "kind": "func"
+        },
+        {
+          "name": "SecretProvider",
+          "kind": "type"
+        },
+        {
+          "name": "SecretProviderFunc",
+          "kind": "type"
+        },
+        {
+          "name": "SecretRef",
+          "kind": "type"
+        },
+        {
+          "name": "SecretValue",
+          "kind": "type"
+        },
+        {
+          "name": "ValidateSecretRef",
+          "kind": "func"
+        }
+      ]
+    },
+    {
       "category": "verification",
       "stability": "experimental",
       "source_file": "policy_verification.go",

@@ -107,17 +107,18 @@ SDK 侧只负责校验 typed options 的运行时约束：
 
 ## Secret Provider
 
-secret 也由外部注入。SDK 不提供默认 env loader，但可以定义最小接口：
+secret 也由外部注入。SDK 不提供默认 env loader；当前 root package 已提供最小原子契约：
 
 ```go
 type SecretProvider interface {
-	ResolveSecret(ctx context.Context, ref SecretRef) ([]byte, error)
+	ResolveSecret(ctx context.Context, ref SecretRef) (SecretValue, error)
 }
 ```
 
 规则：
 
 - secret value 不写入事件、checkpoint、artifact、trace；
+- `SecretValue` 的 `String`、`fmt` 和 JSON 表示必须始终 redacted，只有显式调用 `Bytes()` 的 adapter 能取得拷贝；
 - secret provider 可以由应用实现为 env、file、OS keychain、remote secret service 或内部密钥系统；
 - secret ref 可以进入 config snapshot，secret 明文不能进入；
 - sandbox 默认不继承 secret，除非 policy 明确授权。
