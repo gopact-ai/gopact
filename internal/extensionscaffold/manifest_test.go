@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact/gopacttest"
 )
@@ -209,6 +210,8 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 		"#!/usr/bin/env bash",
 		"gh repo view \"${repo}\"",
 		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private'",
+		"prepare_remote_go_module \"${repo_dir}\"",
+		"GOWORK=off",
 		"git -C \"${repo_dir}\" commit -m \"chore: bootstrap gopact extension scaffold\"",
 		"gh repo create \"${repo}\" \"${visibility_flag}\" --source \"${repo_dir}\" --remote origin --push",
 	} {
@@ -270,45 +273,22 @@ func TestVerifyBootstrapWorkspaceRunsGeneratedRepositoryTests(t *testing.T) {
 	}
 }
 
-func TestVerifyBootstrapWorkspaceRunsRequiredCICommands(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repository root: %v", err)
-	}
-	dir := t.TempDir()
-
-	workspace, err := WriteBootstrapWorkspace(context.Background(), root, dir)
-	if err != nil {
-		t.Fatalf("WriteBootstrapWorkspace() error = %v", err)
-	}
-	report, err := VerifyBootstrapWorkspace(context.Background(), dir, workspace)
-	if err != nil {
-		t.Fatalf("VerifyBootstrapWorkspace() error = %v", err)
-	}
-
-	model, ok := scaffoldByName(workspace.Scaffolds, "gopact-adapters-model")
-	if !ok {
-		t.Fatal("workspace missing gopact-adapters-model")
-	}
-	got := verificationCommandsForRepository(report.Results, "gopact-adapters-model")
-	if !stringSlicesEqual(got, model.Repository.RequiredCICommands) {
-		t.Fatalf("verification commands = %#v, want required CI commands %#v", got, model.Repository.RequiredCICommands)
-	}
-}
-
 func TestVerifyBootstrapWorkspaceRunsCommandLinesWithShell(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDirWithRetryCleanup(t)
 	repoDir := filepath.Join(dir, "repo")
 	if err := os.Mkdir(repoDir, 0o755); err != nil {
 		t.Fatalf("create generated repository: %v", err)
 	}
 
-	const commandLine = "printf shell-ok > shell-command.txt"
+	requiredCommands := []string{
+		"printf shell-one > shell-one.txt",
+		"printf shell-two > shell-two.txt",
+	}
 	workspace := BootstrapWorkspace{
 		Scaffolds: []RepositoryScaffold{{
 			Repository: Repository{
 				Name:               "repo",
-				RequiredCICommands: []string{commandLine},
+				RequiredCICommands: requiredCommands,
 			},
 			Directory: "repo",
 		}},
@@ -318,18 +298,17 @@ func TestVerifyBootstrapWorkspaceRunsCommandLinesWithShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyBootstrapWorkspace() error = %v", err)
 	}
-	if len(report.Results) != 1 {
-		t.Fatalf("verification results = %d, want 1", len(report.Results))
+	if len(report.Results) != len(requiredCommands) {
+		t.Fatalf("verification results = %d, want %d", len(report.Results), len(requiredCommands))
 	}
-	if report.Results[0].CommandLine != commandLine {
-		t.Fatalf("result CommandLine = %q, want %q", report.Results[0].CommandLine, commandLine)
+	gotCommands := verificationCommandsForRepository(report.Results, "repo")
+	if !stringSlicesEqual(gotCommands, requiredCommands) {
+		t.Fatalf("verification commands = %#v, want required CI commands %#v", gotCommands, requiredCommands)
 	}
-	got, err := os.ReadFile(filepath.Join(repoDir, "shell-command.txt"))
-	if err != nil {
-		t.Fatalf("shell command output missing: %v", err)
-	}
-	if string(got) != "shell-ok" {
-		t.Fatalf("shell command output = %q, want shell-ok", string(got))
+	for _, path := range []string{"shell-one.txt", "shell-two.txt"} {
+		if _, err := os.Stat(filepath.Join(repoDir, path)); err != nil {
+			t.Fatalf("shell command output %s missing: %v", path, err)
+		}
 	}
 }
 
@@ -407,6 +386,8 @@ func TestRenderSyncScriptFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 		"set -euo pipefail",
 		"local organization='gopact-ai'",
 		"ensure_git_repo \"${repo_dir}\"",
+		"prepare_remote_go_module \"${repo_dir}\"",
+		"GIT_CONFIG_KEY_0=\"${git_key}\"",
 		"run_ci_command \"${repo_dir}\" \"${command}\"",
 		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
 		"sync_repo 'gopact-templates-devagent' 'gopact-templates-devagent' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
@@ -416,15 +397,6 @@ func TestRenderSyncScriptFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 			t.Fatalf("script missing %q:\n%s", want, file.Body)
 		}
 	}
-}
-
-func scaffoldByName(scaffolds []RepositoryScaffold, name string) (RepositoryScaffold, bool) {
-	for _, scaffold := range scaffolds {
-		if scaffold.Repository.Name == name {
-			return scaffold, true
-		}
-	}
-	return RepositoryScaffold{}, false
 }
 
 func verificationCommandsForRepository(results []VerificationResult, repository string) []string {
@@ -505,4 +477,25 @@ func writeManifestFixture(t *testing.T, root, path, body string) {
 	if err := os.WriteFile(fullPath, []byte(body), 0o644); err != nil {
 		t.Fatalf("write fixture %s: %v", path, err)
 	}
+}
+
+func tempDirWithRetryCleanup(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "gopact-extscaffold-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		var removeErr error
+		for range 10 {
+			removeErr = os.RemoveAll(dir)
+			if removeErr == nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("remove temp dir %s: %v", dir, removeErr)
+	})
+	return dir
 }

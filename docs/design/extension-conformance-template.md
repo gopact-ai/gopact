@@ -31,6 +31,8 @@ go vet ./...
 
 The default offline suite should also call `gopacttest.RequireExtensionScaffoldConformance` with the repository module path, required scaffold files, and already-observed file contents. When a target suite has a known gopacttest helper, `CONFORMANCE.md` should record that helper reference and the offline suite should machine-check that the reference stays present.
 
+While the core SDK repository is private, CI should set `GOPACT_GITHUB_TOKEN` to a token with read access to `github.com/gopact-ai/gopact`; the generated workflow falls back to `github.token` when organization settings allow cross-repository private reads. Local scaffold sync must materialize `go.sum` with `GOWORK=off go mod tidy` before pushing.
+
 ## Integration Tests
 
 Document any optional live-service tests here.

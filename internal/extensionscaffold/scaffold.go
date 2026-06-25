@@ -225,6 +225,7 @@ func renderReadme(repo Repository) string {
 	}
 	b.WriteString("```\n\n")
 	b.WriteString("The default offline suite includes `gopacttest.RequireExtensionScaffoldConformance` so repository layout, host-owned config notes, CONFORMANCE commands, and examples stay aligned with the scaffold contract.\n\n")
+	b.WriteString("While `github.com/gopact-ai/gopact` remains private, GitHub Actions should use a repository secret named `GOPACT_GITHUB_TOKEN` with read access to the core SDK repository; the generated workflow falls back to `github.token` when organization settings allow cross-repository private reads. The local `sync-repos.sh` prepares `go.sum` with `GOWORK=off go mod tidy` before pushing scaffold updates.\n\n")
 	b.WriteString("## Targets\n\n")
 	for _, target := range repo.Targets {
 		fmt.Fprintf(&b, "- `%s` (%s): package `%s`\n", target.Name, target.Kind, target.PackagePath)
@@ -265,6 +266,7 @@ func renderConformance(repo Repository) string {
 	}
 	b.WriteString("```\n\n")
 	b.WriteString("The default offline suite calls `gopacttest.RequireExtensionScaffoldConformance` with the repository module path, required scaffold files, and already-observed file contents.\n\n")
+	b.WriteString("While the core SDK repository is private, CI should set `GOPACT_GITHUB_TOKEN` to a token with read access to `github.com/gopact-ai/gopact`; the generated workflow falls back to `github.token` when organization settings allow cross-repository private reads. Local scaffold sync must materialize `go.sum` with `GOWORK=off go mod tidy` before pushing.\n\n")
 	b.WriteString("## Integration Tests\n\n")
 	b.WriteString("- Build tag: `<integration tag, if any>`\n")
 	b.WriteString("- Required host-owned credentials or clients: `<none by default>`\n")
@@ -339,9 +341,23 @@ func renderCIWorkflow(repo Repository) string {
 	b.WriteString("on:\n  pull_request:\n  push:\n    branches:\n      - main\n\n")
 	b.WriteString("jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n")
 	b.WriteString("      - name: Checkout\n        uses: actions/checkout@v4\n\n")
+	b.WriteString("      - name: Configure private SDK access\n")
+	b.WriteString("        env:\n")
+	b.WriteString("          GOPACT_GITHUB_TOKEN: ${{ secrets.GOPACT_GITHUB_TOKEN || github.token }}\n")
+	b.WriteString("        run: |\n")
+	b.WriteString("          if [ -z \"${GOPACT_GITHUB_TOKEN}\" ]; then\n")
+	b.WriteString("            echo \"GOPACT_GITHUB_TOKEN or github.token is required while github.com/gopact-ai/gopact is private.\" >&2\n")
+	b.WriteString("            exit 1\n")
+	b.WriteString("          fi\n")
+	b.WriteString("          git config --global url.\"https://x-access-token:${GOPACT_GITHUB_TOKEN}@github.com/\".insteadOf \"https://github.com/\"\n\n")
 	b.WriteString("      - name: Set up Go\n        uses: actions/setup-go@v5\n        with:\n")
 	fmt.Fprintf(&b, "          go-version: %s\n", strconv.Quote(repo.GoVersion))
 	b.WriteString("          cache: true\n\n")
+	b.WriteString("      - name: Configure private Go modules\n")
+	b.WriteString("        run: |\n")
+	b.WriteString("          go env -w GOPRIVATE='github.com/gopact-ai/*'\n")
+	b.WriteString("          go env -w GONOSUMDB='github.com/gopact-ai/*'\n")
+	b.WriteString("          go env -w GONOPROXY='github.com/gopact-ai/*'\n\n")
 	for i, command := range repo.RequiredCICommands {
 		if i > 0 {
 			b.WriteByte('\n')

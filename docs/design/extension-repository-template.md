@@ -37,6 +37,8 @@ go vet ./...
 
 The offline test suite should include `gopacttest.RequireExtensionScaffoldConformance` so the repository layout, module path, host-owned configuration notes, CONFORMANCE commands, known helper references, and minimal example stay aligned with the scaffold contract.
 
+While `github.com/gopact-ai/gopact` remains private, GitHub Actions should use a repository secret named `GOPACT_GITHUB_TOKEN` with read access to the core SDK repository; the generated workflow falls back to `github.token` when organization settings allow cross-repository private reads. The local `sync-repos.sh` prepares `go.sum` with `GOWORK=off go mod tidy` before pushing scaffold updates.
+
 If the extension needs live services, keep those tests behind an explicit integration build tag and keep the default conformance suite offline.
 
 Each scaffolded extension repository should start with:

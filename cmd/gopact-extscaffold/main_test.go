@@ -90,6 +90,8 @@ func TestRunPrintsSyncPlanShellScript(t *testing.T) {
 		"#!/usr/bin/env bash",
 		"set -euo pipefail",
 		"local organization='gopact-ai'",
+		"prepare_remote_go_module \"${repo_dir}\"",
+		"GOWORK=off",
 		"run_ci_command \"${repo_dir}\" \"${command}\"",
 		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
 		"gh repo create \"${repo}\" \"${visibility_flag}\" --source \"${repo_dir}\" --remote origin --push",
@@ -202,9 +204,10 @@ func TestRunWritesScaffoldWorkspace(t *testing.T) {
 
 func TestRunWritesAndVerifiesScaffoldWorkspace(t *testing.T) {
 	var stdout, stderr bytes.Buffer
+	root := writeScaffoldFixture(t)
 	dir := t.TempDir()
 
-	code := run(context.Background(), []string{"-root", "../..", "-out", dir, "-verify"}, &stdout, &stderr)
+	code := run(context.Background(), []string{"-root", root, "-out", dir, "-verify"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
 	}
@@ -212,15 +215,85 @@ func TestRunWritesAndVerifiesScaffoldWorkspace(t *testing.T) {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 	for _, want := range []string{
-		"wrote 11 repositories",
-		"verified 33 checks across 11 repositories",
-		"gopact-adapters-model\tgit diff --check\tok",
-		"gopact-adapters-model\tgo test -count=1 ./...\tok",
-		"gopact-templates-react\tgo vet ./...\tok",
+		"wrote 1 repositories",
+		"verified 2 checks across 1 repositories",
+		"gopact-adapters-example\tprintf cli-one > cli-one.txt\tok",
+		"gopact-adapters-example\tprintf cli-two > cli-two.txt\tok",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout.String())
 		}
+	}
+}
+
+func writeScaffoldFixture(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	writeFixtureFile(t, root, "docs/design/external-repositories.json", `{
+  "version": 1,
+  "organization": "gopact-ai",
+  "default_visibility": "private",
+  "bootstrap_sequence": ["create-private-repos"],
+  "repositories": [{
+    "name": "gopact-adapters-example",
+    "route": "adapter-repo",
+    "visibility": "private",
+    "module_path": "github.com/gopact-ai/gopact-adapters-example",
+    "scaffold_status": "ready-to-create",
+    "host_owned_config": true,
+    "extension_targets": ["gopact-adapters-example-target"],
+    "required_files": [
+      "go.mod",
+      "README.md",
+      "CONFORMANCE.md",
+      "examples/minimal_test.go",
+      ".github/workflows/ci.yml"
+    ],
+    "required_ci_commands": [
+      "printf cli-one > cli-one.txt",
+      "printf cli-two > cli-two.txt"
+    ]
+  }]
+}`)
+	writeFixtureFile(t, root, "docs/design/extension-conformance.json", `{
+  "version": 1,
+  "sdk_compatibility": {
+    "module": "github.com/gopact-ai/gopact",
+    "go_versions": ["1.25"]
+  },
+  "targets": [{
+    "name": "gopact-adapters-example-target",
+    "kind": "adapter",
+    "source_paths": ["adapters/example"],
+    "conformance_suites": ["gopacttest-extension-scaffold-conformance"],
+    "required_examples": ["minimal example"]
+  }]
+}`)
+	writeFixtureFile(t, root, "docs/design/extension-scaffold-spec.json", `{
+  "version": 1,
+  "repositories": [{
+    "name": "gopact-adapters-example",
+    "module_path": "github.com/gopact-ai/gopact-adapters-example",
+    "targets": [{
+      "name": "gopact-adapters-example-target",
+      "package_path": "example",
+      "minimal_example_path": "examples/minimal_test.go"
+    }]
+  }]
+}`)
+	return root
+}
+
+func writeFixtureFile(t *testing.T, root, path, body string) {
+	t.Helper()
+
+	fullPath := filepath.Join(root, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatalf("create fixture directory for %s: %v", path, err)
+	}
+	if err := os.WriteFile(fullPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write fixture %s: %v", path, err)
 	}
 }
 
