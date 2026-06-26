@@ -369,6 +369,109 @@ func TestBuildWorkflowProcessRecordsSummarizesRejectedChildAction(t *testing.T) 
 	}
 }
 
+func TestBuildWorkflowProcessRecordsSummarizesInterruptedChildAction(t *testing.T) {
+	createdAt := time.Date(2026, 6, 25, 17, 0, 0, 0, time.UTC)
+	pending := gopact.InterruptRecord{
+		ID:         "approval-1",
+		Type:       gopact.InterruptApproval,
+		Reason:     "release approval is pending",
+		RequiredBy: "devagent.release_gate",
+		Prompt: gopact.Message{
+			Role:    gopact.RoleAssistant,
+			Content: "Review the proposed self-bootstrap release.",
+		},
+		CreatedAt: createdAt,
+	}
+
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		Name:      "self-bootstrap interrupted release workflow",
+		CreatedAt: createdAt,
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionInterrupted,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+					Reasons: []string{
+						"release approval is pending",
+					},
+				},
+				Gate: &GateResult{
+					Status:       GatePending,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					Reasons: []string{
+						"release approval is pending",
+					},
+				},
+				Pending: &pending,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	if records.Task.Status != gopact.TaskInterrupted ||
+		records.Task.Metadata["failed_action_count"] != 0 ||
+		records.Task.Metadata["interrupted_action_count"] != 1 {
+		t.Fatalf("workflow task = %+v, want interrupted parent with one interrupted action", records.Task)
+	}
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	if output["failed_action_count"] != 0 ||
+		output["interrupted_action_count"] != 1 ||
+		output["action_count"] != 2 {
+		t.Fatalf("workflow output = %+v, want action, failed, and interrupted counts", output)
+	}
+	actionSummaries, ok := output["actions"].([]map[string]any)
+	if !ok {
+		t.Fatalf("workflow output actions = %T, want []map[string]any", output["actions"])
+	}
+	interrupted := actionSummaries[1]
+	if interrupted["index"] != 2 ||
+		interrupted["status"] != string(gopact.TaskInterrupted) ||
+		interrupted["mode"] != string(ModeWrite) ||
+		interrupted["action"] != string(ActionRelease) ||
+		interrupted["action_status"] != string(ActionInterrupted) ||
+		interrupted["reason_count"] != 1 ||
+		interrupted["input_count"] != 1 ||
+		interrupted["intervention_count"] != 1 ||
+		interrupted["release_gate_input_id"] == "" ||
+		interrupted["review_intervention_id"] == "" {
+		t.Fatalf("interrupted action summary = %+v, want interrupted release summary", interrupted)
+	}
+	if len(records.Tasks) != 2 ||
+		records.Tasks[1].Status != gopact.TaskInterrupted ||
+		records.Tasks[1].Metadata["action_status"] != string(ActionInterrupted) {
+		t.Fatalf("child tasks = %+v, want interrupted release child task", records.Tasks)
+	}
+	if len(records.Inputs) != 1 || records.Inputs[0].Source != "devagent.release_gate" {
+		t.Fatalf("inputs = %+v, want one release gate input", records.Inputs)
+	}
+	if len(records.Interventions) != 1 ||
+		records.Interventions[0].Status != gopact.InterventionRequested ||
+		records.Interventions[0].Request == nil ||
+		records.Interventions[0].Request.ID != "approval-1" {
+		t.Fatalf("interventions = %+v, want requested approval intervention", records.Interventions)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records:              records,
+		RequiredActions:      []ActionKind{ActionAnalyze, ActionRelease},
+		RequiredInputSources: []string{"devagent.release_gate"},
+	})
+}
+
 func TestRecordWorkflowProcessRecordsAppendsParentAndChildren(t *testing.T) {
 	recorder := gopact.NewRunRecorder()
 

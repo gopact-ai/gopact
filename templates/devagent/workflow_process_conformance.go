@@ -329,9 +329,13 @@ func checkWorkflowProcessFailureSummary(records WorkflowRecords) WorkflowProcess
 		return failedWorkflowProcessConformance("failure-summary", fmt.Errorf("workflow output = %T, want map", records.Task.Output))
 	}
 	failedActions := workflowProcessFailedActionCount(records.Tasks)
+	interruptedActions := workflowProcessInterruptedActionCount(records.Tasks)
 	wantStatus := gopact.TaskCompleted
-	if failedActions > 0 {
+	switch {
+	case failedActions > 0:
 		wantStatus = gopact.TaskFailed
+	case interruptedActions > 0:
+		wantStatus = gopact.TaskInterrupted
 	}
 	if records.Task.Status != wantStatus {
 		return failedWorkflowProcessConformance(
@@ -350,6 +354,12 @@ func checkWorkflowProcessFailureSummary(records WorkflowRecords) WorkflowProcess
 			return failedWorkflowProcessConformance(
 				"failure-summary",
 				fmt.Errorf("workflow %s failed_action_count = %v, want %d", source.name, source.data["failed_action_count"], failedActions),
+			)
+		}
+		if got, ok := workflowProcessIntMetadata(source.data, "interrupted_action_count"); !ok || got != interruptedActions {
+			return failedWorkflowProcessConformance(
+				"failure-summary",
+				fmt.Errorf("workflow %s interrupted_action_count = %v, want %d", source.name, source.data["interrupted_action_count"], interruptedActions),
 			)
 		}
 	}
@@ -511,7 +521,9 @@ func workflowProcessReviewIntervention(records []gopact.InterventionRecord, acti
 }
 
 func workflowProcessReleaseRequiresReview(task gopact.TaskRecord, gateValue map[string]any) bool {
-	return workflowProcessStringMetadata(task.Metadata, "review_status") != "" ||
+	return ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status")) == ActionInterrupted ||
+		GateStatus(workflowProcessStringMetadata(gateValue, "status")) == GatePending ||
+		workflowProcessStringMetadata(task.Metadata, "review_status") != "" ||
 		workflowProcessStringMetadata(gateValue, "review_status") != ""
 }
 
@@ -530,8 +542,12 @@ func validateWorkflowProcessReleaseGateInput(
 	if got, want := string(status), workflowProcessStringMetadata(task.Metadata, "gate_status"); want != "" && got != want {
 		return nil, fmt.Errorf("release gate status = %q, want task gate_status %q", got, want)
 	}
-	if ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status")) == ActionAllowed && status != GatePassed {
+	actionStatus := ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status"))
+	if actionStatus == ActionAllowed && status != GatePassed {
 		return nil, fmt.Errorf("allowed release gate status = %q, want %q", status, GatePassed)
+	}
+	if actionStatus == ActionInterrupted && status != GatePending {
+		return nil, fmt.Errorf("interrupted release gate status = %q, want %q", status, GatePending)
 	}
 	return value, nil
 }
@@ -541,6 +557,26 @@ func validateWorkflowProcessReleaseReview(
 	gateValue map[string]any,
 	record gopact.InterventionRecord,
 ) error {
+	if ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status")) == ActionInterrupted ||
+		GateStatus(workflowProcessStringMetadata(gateValue, "status")) == GatePending {
+		if record.Status != gopact.InterventionRequested {
+			return fmt.Errorf("pending review intervention status = %q, want %q", record.Status, gopact.InterventionRequested)
+		}
+		if record.Request == nil {
+			return errors.New("pending review intervention request is required")
+		}
+		if record.Request.Type != gopact.InterruptApproval {
+			return fmt.Errorf("pending review request type = %q, want %q", record.Request.Type, gopact.InterruptApproval)
+		}
+		if got := workflowProcessStringMetadata(record.Metadata, "interrupt_id"); got != "" && got != record.Request.ID {
+			return fmt.Errorf("pending review interrupt_id = %q, want request id %q", got, record.Request.ID)
+		}
+		if got := workflowProcessStringMetadata(record.Metadata, "interrupt_type"); got != "" && got != string(record.Request.Type) {
+			return fmt.Errorf("pending review interrupt_type = %q, want request type %q", got, record.Request.Type)
+		}
+		return nil
+	}
+
 	reviewStatus := workflowProcessStringMetadata(record.Metadata, "review_status")
 	status := ReviewStatus(reviewStatus)
 	switch status {
@@ -635,6 +671,16 @@ func workflowProcessFailedActionCount(tasks []gopact.TaskRecord) int {
 		}
 	}
 	return failed
+}
+
+func workflowProcessInterruptedActionCount(tasks []gopact.TaskRecord) int {
+	interrupted := 0
+	for _, task := range tasks {
+		if task.Status == gopact.TaskInterrupted {
+			interrupted++
+		}
+	}
+	return interrupted
 }
 
 func workflowProcessInputCountsByActionIndex(records []gopact.InputRecord) map[int]int {

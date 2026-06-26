@@ -55,6 +55,74 @@ func TestSelfBootstrapReleaseMatchesGoldenTrajectory(t *testing.T) {
 	}
 }
 
+func TestSelfBootstrapInterruptedReleaseMatchesGoldenTrajectory(t *testing.T) {
+	const goldenPath = "testdata/self_bootstrap_interrupted_release.golden.json"
+
+	export, workflow := selfBootstrapInterruptedReleaseTrajectoryFixture(t, goldenPath)
+
+	gopacttest.RequireRunExportGoldenTrajectoryFrames(t, goldenPath, export)
+	gopacttest.RequireTemplateTrajectoryConformance(t, gopacttest.TemplateTrajectoryConformanceHarness{
+		Name:      "devagent.self-bootstrap-interrupted-release",
+		RunExport: &export,
+		RequiredEventTypes: []gopact.EventType{
+			gopact.EventRunStarted,
+			gopact.EventNodeCompleted,
+			gopact.EventNodeCompleted,
+			gopact.EventInterrupted,
+			gopact.EventRunInterrupted,
+		},
+		RequiredFrames: []gopacttest.TrajectoryFramePattern{
+			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
+			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
+			{Type: gopact.EventInterrupted, Node: "devagent.release_gate", Step: intPtr(3)},
+			{Type: gopact.EventRunInterrupted, Node: "devagent.release_gate", Step: intPtr(3)},
+		},
+	})
+
+	if export.Outcome != gopact.RunInterrupted {
+		t.Fatalf("export outcome = %q, want interrupted", export.Outcome)
+	}
+	if len(export.Steps) != 3 ||
+		export.Steps[2].Phase != gopact.StepInterrupted ||
+		export.Steps[2].Pending == nil ||
+		export.Steps[2].Pending.ID != "approval-1" {
+		t.Fatalf("exported steps = %+v, want interrupted release gate step with approval pending", export.Steps)
+	}
+	if workflow.Task.Status != gopact.TaskInterrupted ||
+		workflow.Task.Metadata["interrupted_action_count"] != 1 {
+		t.Fatalf("workflow task = %+v, want interrupted workflow process summary", workflow.Task)
+	}
+	restored, err := WorkflowRecordsFromRunExport(export, "")
+	if err != nil {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v", err)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: restored,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionRelease,
+		},
+		RequiredInputSources: []string{"devagent.patch", "devagent.release_gate"},
+	})
+	release, err := WorkflowActionProcessRecordsFromRunExportByAction(export, "", ActionRelease)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecordsFromRunExportByAction(release) error = %v", err)
+	}
+	if release.Task.Status != gopact.TaskInterrupted ||
+		len(release.Interventions) != 1 ||
+		release.Interventions[0].Status != gopact.InterventionRequested ||
+		release.Interventions[0].Request == nil ||
+		release.Interventions[0].Request.ID != "approval-1" {
+		t.Fatalf("release process = %+v, want interrupted release with requested approval", release)
+	}
+	if len(export.VerificationReports) != 1 ||
+		export.VerificationReports[0].Status != gopact.VerificationStatusPartial ||
+		export.VerificationReports[0].SkippedCount != 1 {
+		t.Fatalf("verification reports = %+v, want partial report with skipped pending release gate", export.VerificationReports)
+	}
+}
+
 func TestSelfBootstrapApplyReleaseMatchesGoldenTrajectory(t *testing.T) {
 	const goldenPath = "testdata/self_bootstrap_apply_release.golden.json"
 
@@ -347,6 +415,100 @@ func selfBootstrapReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gop
 		t.Fatalf("BuildReleaseBundle() error = %v", err)
 	}
 	return export, bundle
+}
+
+func selfBootstrapInterruptedReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gopact.RunExport, WorkflowRecords) {
+	t.Helper()
+
+	createdAt := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	ids := selfBootstrapRuntimeIDs()
+	pending := selfBootstrapReleaseApprovalInterrupt(createdAt)
+	recorder := gopact.NewRunRecorder()
+	for _, event := range selfBootstrapInterruptedReleaseEvents(ids, createdAt, pending) {
+		if err := recorder.Record(event); err != nil {
+			t.Fatalf("Record(event) error = %v", err)
+		}
+	}
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+
+	reportRecorder := gopact.NewVerificationRecorder()
+	for _, check := range []gopact.VerificationCheck{
+		verificationCheck("unit-tests", gopact.VerificationStatusPassed, "command"),
+		verificationCheck("diff-check", gopact.VerificationStatusPassed, "diff"),
+	} {
+		if err := reportRecorder.Record(check); err != nil {
+			t.Fatalf("Record(check) error = %v", err)
+		}
+	}
+	if err := gopacttest.RecordRunExportGoldenTrajectoryCheck(reportRecorder, goldenPath, export); err != nil {
+		t.Fatalf("RecordRunExportGoldenTrajectoryCheck() error = %v", err)
+	}
+	gate := GateResult{
+		Status:       GatePending,
+		Mode:         ModeWrite,
+		ReportStatus: gopact.VerificationStatusPassed,
+		Reasons: []string{
+			"release approval is pending",
+		},
+	}
+	if err := RecordReleaseGateCheck(reportRecorder, gate); err != nil {
+		t.Fatalf("RecordReleaseGateCheck(pending) error = %v", err)
+	}
+	report, err := reportRecorder.Report(export)
+	if err != nil {
+		t.Fatalf("Report(interrupted export) error = %v", err)
+	}
+
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       ids,
+		Name:      "self-bootstrap interrupted release workflow",
+		CreatedAt: createdAt,
+		Metadata:  map[string]any{"scope": "m5-workflow"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: selfBootstrapPatchProposal("prepare self-bootstrap release while approval is pending"),
+			},
+			{
+				Action: ActionResult{
+					Status: ActionInterrupted,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+					Reasons: []string{
+						"release approval is pending",
+					},
+				},
+				Gate:    &gate,
+				Pending: &pending,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	recordWorkflowRecords(t, recorder, workflow)
+	if err := recorder.RecordVerificationReport(report); err != nil {
+		t.Fatalf("RecordVerificationReport() error = %v", err)
+	}
+	export, err = recorder.Export()
+	if err != nil {
+		t.Fatalf("Export(with process records) error = %v", err)
+	}
+	return export, workflow
 }
 
 func selfBootstrapApplyReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gopact.RunExport, ReleaseBundle) {
@@ -739,6 +901,30 @@ func selfBootstrapReleaseEvents(ids gopact.RuntimeIDs, createdAt time.Time) []go
 	}
 }
 
+func selfBootstrapInterruptedReleaseEvents(
+	ids gopact.RuntimeIDs,
+	createdAt time.Time,
+	pending gopact.InterruptRecord,
+) []gopact.Event {
+	return []gopact.Event{
+		{Type: gopact.EventRunStarted, IDs: ids, CreatedAt: createdAt},
+		devAgentStepEvent(ids, createdAt.Add(time.Second), gopact.EventNodeStarted, 1, "devagent.analyze", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(2*time.Second), gopact.EventNodeCompleted, 1, "devagent.analyze", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(3*time.Second), gopact.EventNodeStarted, 2, "devagent.plan", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(4*time.Second), gopact.EventNodeCompleted, 2, "devagent.plan", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(5*time.Second), gopact.EventNodeStarted, 3, "devagent.release_gate", gopact.StepRunning),
+		devAgentInterruptedStepEvent(ids, createdAt.Add(6*time.Second), 3, "devagent.release_gate", pending),
+		{
+			Type:      gopact.EventRunInterrupted,
+			IDs:       ids,
+			Node:      "devagent.release_gate",
+			Step:      3,
+			CreatedAt: createdAt.Add(7 * time.Second),
+			Err:       gopact.Interrupt(pending),
+		},
+	}
+}
+
 func selfBootstrapApplyReleaseEvents(ids gopact.RuntimeIDs, createdAt time.Time, applyEvents []gopact.Event) []gopact.Event {
 	events := []gopact.Event{
 		{Type: gopact.EventRunStarted, IDs: ids, CreatedAt: createdAt},
@@ -822,6 +1008,20 @@ func selfBootstrapPatchProposal(summary string) PatchProposal {
 	}
 }
 
+func selfBootstrapReleaseApprovalInterrupt(createdAt time.Time) gopact.InterruptRecord {
+	return gopact.InterruptRecord{
+		ID:         "approval-1",
+		Type:       gopact.InterruptApproval,
+		Reason:     "release approval is pending",
+		RequiredBy: "devagent.release_gate",
+		Prompt: gopact.Message{
+			Role:    gopact.RoleAssistant,
+			Content: "Review the proposed self-bootstrap release.",
+		},
+		CreatedAt: createdAt,
+	}
+}
+
 func devAgentFailedStepEvent(ids gopact.RuntimeIDs, at time.Time, step int, node string, errText string) gopact.Event {
 	return gopact.Event{
 		Type:      gopact.EventNodeFailed,
@@ -837,6 +1037,32 @@ func devAgentFailedStepEvent(ids gopact.RuntimeIDs, at time.Time, step int, node
 			Phase:       gopact.StepFailed,
 			IDs:         ids,
 			Error:       errText,
+			StartedAt:   at,
+			CompletedAt: at,
+		},
+	}
+}
+
+func devAgentInterruptedStepEvent(
+	ids gopact.RuntimeIDs,
+	at time.Time,
+	step int,
+	node string,
+	pending gopact.InterruptRecord,
+) gopact.Event {
+	return gopact.Event{
+		Type:      gopact.EventInterrupted,
+		IDs:       ids,
+		Node:      node,
+		Step:      step,
+		CreatedAt: at,
+		StepSnapshot: &gopact.StepSnapshot{
+			ID:          "devagent:" + ids.RunID + ":step:" + node,
+			Step:        step,
+			Node:        node,
+			Phase:       gopact.StepInterrupted,
+			IDs:         ids,
+			Pending:     &pending,
 			StartedAt:   at,
 			CompletedAt: at,
 		},

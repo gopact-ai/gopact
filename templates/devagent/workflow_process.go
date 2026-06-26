@@ -44,6 +44,7 @@ func BuildWorkflowProcessRecords(input WorkflowInput) (WorkflowRecords, error) {
 
 	childRecords := make([]ProcessRecords, 0, len(input.Actions))
 	failedActions := 0
+	interruptedActions := 0
 	for i, action := range input.Actions {
 		processInput, err := workflowProcessInput(input, action, createdAt, i+1, len(input.Actions))
 		if err != nil {
@@ -63,12 +64,18 @@ func BuildWorkflowProcessRecords(input WorkflowInput) (WorkflowRecords, error) {
 		if records.Task.Status == gopact.TaskFailed {
 			failedActions++
 		}
+		if records.Task.Status == gopact.TaskInterrupted {
+			interruptedActions++
+		}
 		childRecords = append(childRecords, records)
 	}
 
 	workflowStatus := gopact.TaskCompleted
-	if failedActions > 0 {
+	switch {
+	case failedActions > 0:
 		workflowStatus = gopact.TaskFailed
+	case interruptedActions > 0:
+		workflowStatus = gopact.TaskInterrupted
 	}
 	workflow := WorkflowRecords{
 		Task: gopact.TaskRecord{
@@ -78,10 +85,10 @@ func BuildWorkflowProcessRecords(input WorkflowInput) (WorkflowRecords, error) {
 			IDs:       input.IDs,
 			Input:     workflowProcessInputValue(len(input.Actions)),
 			CreatedAt: createdAt,
-			Metadata:  workflowProcessMetadata(input, failedActions),
+			Metadata:  workflowProcessMetadata(input, failedActions, interruptedActions),
 		},
 	}
-	workflow.Task.Output = workflowProcessOutputValue(workflow.Task.Status, childRecords, failedActions)
+	workflow.Task.Output = workflowProcessOutputValue(workflow.Task.Status, childRecords, failedActions, interruptedActions)
 	for _, records := range childRecords {
 		task := records.Task
 		task.ParentID = workflow.Task.ID
@@ -472,7 +479,12 @@ func workflowProcessInputValue(actionCount int) map[string]any {
 	}
 }
 
-func workflowProcessOutputValue(status gopact.TaskStatus, records []ProcessRecords, failedActions int) map[string]any {
+func workflowProcessOutputValue(
+	status gopact.TaskStatus,
+	records []ProcessRecords,
+	failedActions int,
+	interruptedActions int,
+) map[string]any {
 	inputCount := 0
 	interventionCount := 0
 	for _, record := range records {
@@ -480,12 +492,13 @@ func workflowProcessOutputValue(status gopact.TaskStatus, records []ProcessRecor
 		interventionCount += len(record.Interventions)
 	}
 	return map[string]any{
-		"status":              string(status),
-		"action_count":        len(records),
-		"failed_action_count": failedActions,
-		"input_count":         inputCount,
-		"intervention_count":  interventionCount,
-		"actions":             workflowActionSummaries(records),
+		"status":                   string(status),
+		"action_count":             len(records),
+		"failed_action_count":      failedActions,
+		"interrupted_action_count": interruptedActions,
+		"input_count":              inputCount,
+		"intervention_count":       interventionCount,
+		"actions":                  workflowActionSummaries(records),
 	}
 }
 
@@ -559,7 +572,7 @@ func workflowReviewInterventionID(records []gopact.InterventionRecord) string {
 	return ""
 }
 
-func workflowProcessMetadata(input WorkflowInput, failedActions int) map[string]any {
+func workflowProcessMetadata(input WorkflowInput, failedActions int, interruptedActions int) map[string]any {
 	metadata := copyDevAgentMetadata(input.Metadata)
 	if metadata == nil {
 		metadata = map[string]any{}
@@ -568,6 +581,7 @@ func workflowProcessMetadata(input WorkflowInput, failedActions int) map[string]
 	metadata["workflow"] = "devagent.workflow"
 	metadata["action_count"] = len(input.Actions)
 	metadata["failed_action_count"] = failedActions
+	metadata["interrupted_action_count"] = interruptedActions
 	return metadata
 }
 

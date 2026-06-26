@@ -103,6 +103,68 @@ func TestBuildProcessRecordsDescribesObservedWriteActionWithoutRawDiff(t *testin
 	}
 }
 
+func TestBuildProcessRecordsCreatesRequestedInterventionForInterruptedAction(t *testing.T) {
+	createdAt := time.Date(2026, 6, 25, 11, 0, 0, 0, time.UTC)
+	pending := gopact.InterruptRecord{
+		ID:         "approval-1",
+		Type:       gopact.InterruptApproval,
+		Reason:     "release approval is pending",
+		RequiredBy: "devagent.release_gate",
+		Prompt: gopact.Message{
+			Role:    gopact.RoleAssistant,
+			Content: "Review the proposed self-bootstrap release.",
+		},
+		CreatedAt: createdAt,
+	}
+
+	records, err := BuildProcessRecords(ProcessInput{
+		IDs:       gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		CreatedAt: createdAt,
+		Action: ActionResult{
+			Status: ActionInterrupted,
+			Mode:   ModeWrite,
+			Action: ActionRelease,
+			Reasons: []string{
+				"release approval is pending",
+			},
+		},
+		Gate: &GateResult{
+			Status:       GatePending,
+			Mode:         ModeWrite,
+			ReportStatus: gopact.VerificationStatusPassed,
+			Reasons: []string{
+				"release approval is pending",
+			},
+		},
+		Pending: &pending,
+	})
+	if err != nil {
+		t.Fatalf("BuildProcessRecords() error = %v", err)
+	}
+
+	if records.Task.Status != gopact.TaskInterrupted ||
+		records.Task.Metadata["action_status"] != string(ActionInterrupted) ||
+		records.Task.Metadata["gate_status"] != string(GatePending) {
+		t.Fatalf("task = %+v, want interrupted release task with pending gate metadata", records.Task)
+	}
+	if len(records.Inputs) != 1 || records.Inputs[0].Source != "devagent.release_gate" {
+		t.Fatalf("inputs = %+v, want pending release gate input", records.Inputs)
+	}
+	if len(records.Interventions) != 1 {
+		t.Fatalf("interventions = %+v, want one requested approval intervention", records.Interventions)
+	}
+	intervention := records.Interventions[0]
+	if intervention.ID != "devagent:run-1:review:approval-1" ||
+		intervention.Type != gopact.InterruptApproval ||
+		intervention.Status != gopact.InterventionRequested ||
+		intervention.Request == nil ||
+		intervention.Request.ID != "approval-1" ||
+		intervention.Metadata["interrupt_id"] != "approval-1" ||
+		intervention.Metadata["interrupt_type"] != string(gopact.InterruptApproval) {
+		t.Fatalf("intervention = %+v, want requested approval intervention with request", intervention)
+	}
+}
+
 func TestRecordProcessRecordsAppendsToRunRecorder(t *testing.T) {
 	recorder := gopact.NewRunRecorder()
 	if err := RecordProcessRecords(recorder, ProcessInput{

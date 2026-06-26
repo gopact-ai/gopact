@@ -39,6 +39,7 @@ const (
 	GatePassed   GateStatus = "passed"
 	GateRejected GateStatus = "rejected"
 	GateSkipped  GateStatus = "skipped"
+	GatePending  GateStatus = "pending"
 )
 
 // ReviewDecision records the reviewer state consumed by the release gate.

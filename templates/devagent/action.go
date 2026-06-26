@@ -24,8 +24,9 @@ const (
 type ActionStatus string
 
 const (
-	ActionAllowed  ActionStatus = "allowed"
-	ActionRejected ActionStatus = "rejected"
+	ActionAllowed     ActionStatus = "allowed"
+	ActionRejected    ActionStatus = "rejected"
+	ActionInterrupted ActionStatus = "interrupted"
 )
 
 // PatchFile describes one file touched by a proposed patch.
