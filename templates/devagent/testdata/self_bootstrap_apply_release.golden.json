@@ -1,0 +1,63 @@
+[
+  {
+    "type": "run_started"
+  },
+  {
+    "type": "node_started",
+    "node": "devagent.analyze",
+    "step": 1
+  },
+  {
+    "type": "node_completed",
+    "node": "devagent.analyze",
+    "step": 1
+  },
+  {
+    "type": "node_started",
+    "node": "devagent.plan",
+    "step": 2
+  },
+  {
+    "type": "node_completed",
+    "node": "devagent.plan",
+    "step": 2
+  },
+  {
+    "type": "node_started",
+    "node": "devagent.apply_patch",
+    "step": 3
+  },
+  {
+    "type": "policy_requested",
+    "node": "devagent.apply_patch",
+    "step": 3
+  },
+  {
+    "type": "policy_decided",
+    "node": "devagent.apply_patch",
+    "step": 3
+  },
+  {
+    "type": "sandbox_file_written",
+    "node": "devagent.apply_patch",
+    "step": 3
+  },
+  {
+    "type": "node_completed",
+    "node": "devagent.apply_patch",
+    "step": 3
+  },
+  {
+    "type": "node_started",
+    "node": "devagent.release_gate",
+    "step": 4
+  },
+  {
+    "type": "node_completed",
+    "node": "devagent.release_gate",
+    "step": 4
+  },
+  {
+    "type": "run_completed"
+  }
+]
