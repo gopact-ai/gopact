@@ -212,6 +212,65 @@ exit 2
 	}
 }
 
+func TestRunPrintsRemoteStatusRemediationJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	restore := installFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "repo" && "$2" == "view" ]]; then
+  repo="$3"
+  name="${repo#*/}"
+  printf '{"name":"%s","visibility":"PRIVATE","isPrivate":true,"url":"https://github.com/%s","defaultBranchRef":{"name":"main"}}' "${name}" "${repo}"
+  exit 0
+fi
+if [[ "$1" == "api" ]]; then
+  printf '{"path":".github/workflows/ci.yml"}'
+  exit 0
+fi
+if [[ "$1" == "secret" && "$2" == "list" ]]; then
+  printf '[]'
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "list" ]]; then
+  printf '[{"databaseId":123,"workflowName":"ci","status":"completed","conclusion":"failure","event":"push","headBranch":"main","url":"https://github.com/%s/actions/runs/123"}]' "$4"
+  exit 0
+fi
+exit 2
+`)
+	defer restore()
+
+	code := run(context.Background(), []string{"-root", "../..", "-remote-status-json"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	var report struct {
+		Repositories []struct {
+			Name             string   `json:"name"`
+			BlockingReasons  []string `json:"blocking_reasons"`
+			RequiredActions  []string `json:"required_actions"`
+			CIRunPassed      bool     `json:"ci_run_passed"`
+			PrivateSDKSecret bool     `json:"private_sdk_token_secret_present"`
+			Ready            bool     `json:"ready"`
+		} `json:"repositories"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("stdout is not remote status JSON: %v\n%s", err, stdout.String())
+	}
+	if len(report.Repositories) != expectedScaffoldRepositoryCount {
+		t.Fatalf("repositories = %d, want %d", len(report.Repositories), expectedScaffoldRepositoryCount)
+	}
+	first := report.Repositories[0]
+	if first.Ready || first.CIRunPassed || first.PrivateSDKSecret {
+		t.Fatalf("first repository status = %+v, want not ready due to failed CI and missing secret", first)
+	}
+	assertContainsString(t, first.BlockingReasons, "GOPACT_GITHUB_TOKEN secret is missing")
+	assertContainsString(t, first.BlockingReasons, "latest ci workflow run did not pass")
+	assertContainsString(t, first.RequiredActions, "configure GOPACT_GITHUB_TOKEN with sync-secrets.sh")
+	assertContainsString(t, first.RequiredActions, "rerun ci workflow with rerun-ci.sh after fixing blockers")
+}
+
 func TestRunWritesScaffoldWorkspace(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dir := t.TempDir()
@@ -381,6 +440,16 @@ func installFakeGH(t *testing.T, body string) func() {
 	return func() {
 		t.Setenv("PATH", oldPath)
 	}
+}
+
+func assertContainsString(t *testing.T, values []string, want string) {
+	t.Helper()
+	for _, value := range values {
+		if value == want {
+			return
+		}
+	}
+	t.Fatalf("values = %v, want to contain %q", values, want)
 }
 
 func TestRunRejectsConflictingPlanModes(t *testing.T) {
