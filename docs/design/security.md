@@ -73,10 +73,11 @@ Policy deny 必须返回结构化错误，并产生 `PolicyDecided` 事件。Pol
 规则：
 
 - redaction 在外部 sink 之前执行；
-- redaction 状态写入事件；
+- redaction 状态写入事件，trace span 只保留 `redaction.applied` / `redaction.field_count` 等低基数字段用于证明边界已执行；
 - 大 payload 记录 hash、size、schema、artifact ref；
 - debug 模式可以保留更多内容，但必须显式配置；
-- redaction 失败默认阻止外部 export。
+- redaction 失败默认阻止外部 export；
+- 非关键 exporter 可通过 PluginHost fallback 把失败写入 `plugin_subscriber_errors` metadata 并继续业务 run。
 
 ## Sandbox 安全
 

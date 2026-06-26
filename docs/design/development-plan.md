@@ -372,7 +372,7 @@
 
 交付：
 
-- `[done: first slice]` provider-neutral trace plugin：`adapters/observability/trace` 已提供 `gopact.Plugin`，通过 event subscriber 消费 runtime events，并把 run/turn/node/model/tool/policy/checkpoint/A2A/memory/sandbox event 投影成稳定 `SpanRecord`；当前提供 `MemoryExporter`、`ExporterFunc`、HTTP/JSON `HTTPExporter`、OTLP/HTTP JSON `OTLPHTTPExporter`、LangSmith-compatible `LangSmithHTTPExporter`、LangGraph-style `LangGraphHTTPExporter`、`PolicyExporter` 和 `CheckExporterConformance` / `RequireExporterConformance` trace exporter conformance helper，不引入具体 SaaS 或 OTel SDK 依赖；
+- `[done: first slice]` provider-neutral trace plugin：`adapters/observability/trace` 已提供 `gopact.Plugin`，通过 event subscriber 消费 runtime events，并把 run/turn/node/model/tool/policy/checkpoint/A2A/memory/sandbox event 投影成稳定 `SpanRecord`；当前提供 `MemoryExporter`、`ExporterFunc`、HTTP/JSON `HTTPExporter`、OTLP/HTTP JSON `OTLPHTTPExporter`、LangSmith-compatible `LangSmithHTTPExporter`、LangGraph-style `LangGraphHTTPExporter`、`PolicyExporter` 和 `CheckExporterConformance` / `RequireExporterConformance` trace exporter conformance helper；redacted event 对应 span 会保留 `redaction.applied` / `redaction.field_count` 低基数边界属性；不引入具体 SaaS 或 OTel SDK 依赖；
 - `[done: first slice]` OpenTelemetry OTLP/HTTP JSON exporter adapter；
 - `[done: first slice]` LangGraph-style HTTP event exporter adapter：把 `SpanRecord` 转成 thread/run/attempt/node/step/event/status/metadata envelope，供宿主 collector 或后续 LangGraph bridge 消费；
 - 真实 LangSmith SDK / LangGraph-style trace exporter policy/redaction 深化；
@@ -382,8 +382,8 @@
 验收：
 
 - `[done: first slice]` run/node/model/tool span record 对齐 runtime ids、node、step、event type、status 和低基数字段。
-- redaction 在外部 sink 前执行。
-- exporter 失败不改变业务执行结果。
+- `[done: first slice]` redaction 在外部 sink 前执行，trace span 会保留 `redaction.applied` / `redaction.field_count` 边界属性用于审计。
+- `[done: first slice]` exporter 失败可通过 `WithPluginFailureFallback()` 降级为事件 metadata 中的 `plugin_subscriber_errors`，不改变业务 run 结果。
 
 ## M6 Production Hardening Plan
 
