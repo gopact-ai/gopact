@@ -147,6 +147,84 @@ func TestBuildWorkflowProcessRecordsGroupsObservedActions(t *testing.T) {
 	}
 }
 
+func TestBuildWorkflowProcessRecordsDisambiguatesRepeatedActionTaskIDs(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare first patch",
+					Files: []PatchFile{
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-2",
+					Summary: "prepare second patch",
+					Files: []PatchFile{
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	if records.Tasks[1].ID == records.Tasks[2].ID {
+		t.Fatalf("repeated action task ids = %q, want stable disambiguated ids", records.Tasks[1].ID)
+	}
+
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	actionSummaries, ok := output["actions"].([]map[string]any)
+	if !ok {
+		t.Fatalf("workflow output actions = %T, want []map[string]any", output["actions"])
+	}
+	if actionSummaries[1]["task_id"] != records.Tasks[1].ID ||
+		actionSummaries[2]["task_id"] != records.Tasks[2].ID {
+		t.Fatalf("workflow action summaries = %+v, want disambiguated child task ids", actionSummaries)
+	}
+
+	process, err := WorkflowActionProcessRecordsByTaskID(records, records.Tasks[2].ID)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecordsByTaskID(second patch) error = %v", err)
+	}
+	if process.Task.ID != records.Tasks[2].ID {
+		t.Fatalf("process task = %+v, want second patch child task", process.Task)
+	}
+	if len(process.Inputs) != 1 || process.Inputs[0].Source != "devagent.patch" {
+		t.Fatalf("process inputs = %+v, want second patch input", process.Inputs)
+	}
+	patchValue, ok := process.Inputs[0].Value.(map[string]any)
+	if !ok {
+		t.Fatalf("patch input value = %T, want map", process.Inputs[0].Value)
+	}
+	if patchValue["id"] != "patch-2" {
+		t.Fatalf("patch input value = %+v, want second patch", patchValue)
+	}
+}
+
 func TestBuildWorkflowProcessRecordsPreservesActionMetadataOnChildBoundaries(t *testing.T) {
 	records, err := BuildWorkflowProcessRecords(WorkflowInput{
 		IDs:  gopact.RuntimeIDs{RunID: "run-1"},

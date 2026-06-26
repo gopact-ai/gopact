@@ -36,6 +36,7 @@ func BuildWorkflowProcessRecords(input WorkflowInput) (WorkflowRecords, error) {
 	if len(input.Actions) == 0 {
 		return WorkflowRecords{}, fmt.Errorf("%w: workflow actions are required", ErrInvalidActionResult)
 	}
+	actionCounts := workflowActionCounts(input.Actions)
 	createdAt := input.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now()
@@ -51,6 +52,13 @@ func BuildWorkflowProcessRecords(input WorkflowInput) (WorkflowRecords, error) {
 		records, err := BuildProcessRecords(processInput)
 		if err != nil {
 			return WorkflowRecords{}, fmt.Errorf("%w: workflow action %d: %w", ErrInvalidActionResult, i, err)
+		}
+		if actionCounts[processInput.Action.Action] > 1 {
+			records.Task.ID = processID(
+				processInput.IDs.RunID,
+				string(processInput.Action.Action),
+				fmt.Sprintf("%d", i+1),
+			)
 		}
 		if records.Task.Status == gopact.TaskFailed {
 			failedActions++
@@ -82,6 +90,14 @@ func BuildWorkflowProcessRecords(input WorkflowInput) (WorkflowRecords, error) {
 		workflow.Interventions = append(workflow.Interventions, records.Interventions...)
 	}
 	return workflow, nil
+}
+
+func workflowActionCounts(actions []ProcessInput) map[ActionKind]int {
+	counts := make(map[ActionKind]int, len(actions))
+	for _, action := range actions {
+		counts[action.Action.Action]++
+	}
+	return counts
 }
 
 // RecordWorkflowProcessRecords appends Dev Agent workflow process records to a RunRecorder.
