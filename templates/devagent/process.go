@@ -96,6 +96,21 @@ func RecordProcessRecords(recorder *gopact.RunRecorder, input ProcessInput) erro
 	if err != nil {
 		return err
 	}
+	return ImportProcessRecords(recorder, records)
+}
+
+// ImportProcessRecords appends already-observed Dev Agent process records to a RunRecorder.
+//
+// It validates the record set and stores defensive copies. It does not rebuild
+// the action, execute tools, call reviewers, or reinterpret the process.
+func ImportProcessRecords(recorder *gopact.RunRecorder, records ProcessRecords) error {
+	if recorder == nil {
+		return errors.New("devagent: run recorder is nil")
+	}
+	if err := validateProcessRecordsForImport(records); err != nil {
+		return err
+	}
+	records = copyReleaseProcessRecords(records)
 	if err := recorder.RecordTask(records.Task); err != nil {
 		return err
 	}
@@ -107,6 +122,29 @@ func RecordProcessRecords(recorder *gopact.RunRecorder, input ProcessInput) erro
 	for _, record := range records.Interventions {
 		if err := recorder.RecordIntervention(record); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateProcessRecordsForImport(records ProcessRecords) error {
+	if err := records.Task.Validate(); err != nil {
+		return fmt.Errorf("devagent: process task: %w", err)
+	}
+	for _, record := range records.Inputs {
+		if err := record.Validate(); err != nil {
+			return fmt.Errorf("devagent: process input %q: %w", record.ID, err)
+		}
+		if err := validateWorkflowActionRuntimeIDs(records.Task.IDs, record.IDs); err != nil {
+			return fmt.Errorf("devagent: process input %q: %w", record.ID, err)
+		}
+	}
+	for _, record := range records.Interventions {
+		if err := record.Validate(); err != nil {
+			return fmt.Errorf("devagent: process intervention %q: %w", record.ID, err)
+		}
+		if err := validateWorkflowActionRuntimeIDs(records.Task.IDs, record.IDs); err != nil {
+			return fmt.Errorf("devagent: process intervention %q: %w", record.ID, err)
 		}
 	}
 	return nil
