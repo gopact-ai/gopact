@@ -38,6 +38,7 @@ func CheckWorkflowProcessConformance(ctx context.Context, harness WorkflowProces
 
 	return []WorkflowProcessConformanceResult{
 		checkWorkflowProcessRecordsValid(harness.Records),
+		checkWorkflowProcessChildTaskIDs(harness.Records),
 		checkWorkflowProcessParentChildLinks(harness.Records),
 		checkWorkflowProcessParentTaskIO(harness.Records),
 		checkWorkflowProcessChildTaskIO(harness.Records),
@@ -87,6 +88,27 @@ func checkWorkflowProcessRecordsValid(records WorkflowRecords) WorkflowProcessCo
 		}
 	}
 	return passedWorkflowProcessConformance("valid-records")
+}
+
+func checkWorkflowProcessChildTaskIDs(records WorkflowRecords) WorkflowProcessConformanceResult {
+	seen := make(map[string]int, len(records.Tasks))
+	for i, task := range records.Tasks {
+		id := strings.TrimSpace(task.ID)
+		if id == "" {
+			return failedWorkflowProcessConformance(
+				"child-task-ids",
+				fmt.Errorf("child task %d id is required", i),
+			)
+		}
+		if first, ok := seen[id]; ok {
+			return failedWorkflowProcessConformance(
+				"child-task-ids",
+				fmt.Errorf("child task %d id %q duplicates child task %d", i, id, first),
+			)
+		}
+		seen[id] = i
+	}
+	return passedWorkflowProcessConformance("child-task-ids")
 }
 
 func checkWorkflowProcessParentChildLinks(records WorkflowRecords) WorkflowProcessConformanceResult {
