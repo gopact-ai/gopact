@@ -65,6 +65,7 @@ func CheckReleaseBundleConformance(ctx context.Context, harness ReleaseBundleCon
 		checkReleaseBundleRequiredValues("required-ci-gates", ciGateErr, func() []string {
 			return requiredCIGateReasons(harness.Bundle.VerificationReport, requiredCIGates)
 		}),
+		checkReleaseBundleWorkflowAlignment(harness.Bundle),
 		checkReleaseBundleEvidence(harness.Bundle, requiredCheckIDs, requiredEvidenceTypes, requiredCIGates),
 	}
 	return results
@@ -100,6 +101,36 @@ func checkReleaseBundleRequiredValues(
 		return failedReleaseBundleConformance(name, errors.New(strings.Join(missing, "; ")))
 	}
 	return passedReleaseBundleConformance(name)
+}
+
+func checkReleaseBundleWorkflowAlignment(bundle ReleaseBundle) ReleaseBundleConformanceResult {
+	workflowID := workflowProcessStringMetadata(bundle.Process.Task.Metadata, "workflow_id")
+	if workflowID == "" && bundle.Process.Task.ParentID == "" {
+		return passedReleaseBundleConformance("workflow-release-alignment")
+	}
+	if workflowID == "" {
+		return failedReleaseBundleConformance(
+			"workflow-release-alignment",
+			errors.New("bundle process task workflow_id is required when parent id is set"),
+		)
+	}
+	if bundle.Process.Task.ParentID != workflowID {
+		return failedReleaseBundleConformance(
+			"workflow-release-alignment",
+			fmt.Errorf("bundle process task parent id = %q, want workflow_id %q", bundle.Process.Task.ParentID, workflowID),
+		)
+	}
+	parent, ok := releaseBundleWorkflowParentTask(bundle.RunExport.Tasks, workflowID)
+	if !ok {
+		return failedReleaseBundleConformance(
+			"workflow-release-alignment",
+			fmt.Errorf("run export workflow parent task %q is required", workflowID),
+		)
+	}
+	if err := validateReleaseBundleWorkflowSummary(bundle, parent); err != nil {
+		return failedReleaseBundleConformance("workflow-release-alignment", err)
+	}
+	return passedReleaseBundleConformance("workflow-release-alignment")
 }
 
 func checkReleaseBundleEvidence(
@@ -138,6 +169,84 @@ func checkReleaseBundleEvidence(
 		}
 	}
 	return passedReleaseBundleConformance("release-bundle-evidence")
+}
+
+func releaseBundleWorkflowParentTask(records []gopact.TaskRecord, id string) (gopact.TaskRecord, bool) {
+	for _, record := range records {
+		if record.ID == id {
+			return record, true
+		}
+	}
+	return gopact.TaskRecord{}, false
+}
+
+func validateReleaseBundleWorkflowSummary(bundle ReleaseBundle, parent gopact.TaskRecord) error {
+	actionIndex, ok := workflowProcessIntMetadata(bundle.Process.Task.Metadata, "workflow_action_index")
+	if !ok {
+		return fmt.Errorf("bundle process task workflow_action_index = %v, want integer", bundle.Process.Task.Metadata["workflow_action_index"])
+	}
+	output, ok := parent.Output.(map[string]any)
+	if !ok {
+		return fmt.Errorf("workflow parent output = %T, want map", parent.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		return err
+	}
+	if actionIndex < 1 || actionIndex > len(summaries) {
+		return fmt.Errorf("workflow release action index = %d, want 1..%d", actionIndex, len(summaries))
+	}
+	summary := summaries[actionIndex-1]
+	for _, expected := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "task_id", got: workflowProcessStringMetadata(summary, "task_id"), want: bundle.Process.Task.ID},
+		{name: "mode", got: workflowProcessStringMetadata(summary, "mode"), want: workflowProcessStringMetadata(bundle.Process.Task.Metadata, "mode")},
+		{name: "action", got: workflowProcessStringMetadata(summary, "action"), want: workflowProcessStringMetadata(bundle.Process.Task.Metadata, "action")},
+		{name: "action_status", got: workflowProcessStringMetadata(summary, "action_status"), want: workflowProcessStringMetadata(bundle.Process.Task.Metadata, "action_status")},
+		{name: "release_gate_input_id", got: workflowProcessStringMetadata(summary, "release_gate_input_id"), want: releaseGateProcessInputID(bundle.Process.Inputs)},
+		{name: "review_intervention_id", got: workflowProcessStringMetadata(summary, "review_intervention_id"), want: reviewProcessInterventionID(bundle.Process.Interventions)},
+	} {
+		if expected.want != "" && expected.got != expected.want {
+			return fmt.Errorf("workflow release summary %s = %q, want %q", expected.name, expected.got, expected.want)
+		}
+	}
+	for _, expected := range []struct {
+		name string
+		got  any
+		want int
+	}{
+		{name: "input_count", got: summary["input_count"], want: releaseBundleWorkflowInputCount(bundle.Process.Inputs, actionIndex)},
+		{name: "intervention_count", got: summary["intervention_count"], want: releaseBundleWorkflowInterventionCount(bundle.Process.Interventions, actionIndex)},
+	} {
+		got, ok := workflowProcessIntMetadata(summary, expected.name)
+		if !ok || got != expected.want {
+			return fmt.Errorf("workflow release summary %s = %v, want %d", expected.name, expected.got, expected.want)
+		}
+	}
+	return nil
+}
+
+func releaseBundleWorkflowInputCount(records []gopact.InputRecord, actionIndex int) int {
+	count := 0
+	for _, record := range records {
+		if got, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok && got == actionIndex {
+			count++
+		}
+	}
+	return count
+}
+
+func releaseBundleWorkflowInterventionCount(records []gopact.InterventionRecord, actionIndex int) int {
+	count := 0
+	for _, record := range records {
+		if got, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok && got == actionIndex {
+			count++
+		}
+	}
+	return count
 }
 
 func releaseBundleConformanceRequiredValues(label string, explicit, bundled []string) ([]string, error) {
