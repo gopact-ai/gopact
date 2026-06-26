@@ -114,6 +114,60 @@ func TestDeferredMemoryWorkWorkerRunOnceRetriesFailedJobAndRecordsSchedule(t *te
 	}
 }
 
+func TestDeferredMemoryWorkWorkerRunOnceRecordsFailedPassBeforeRetrySchedule(t *testing.T) {
+	queue := &fakeDeferredMemoryWorkQueue{
+		job: DeferredMemoryWorkJob{
+			ID:          "job-1",
+			Export:      deferredMemoryWorkExport(twoPendingMemoryEffects()),
+			Attempt:     1,
+			MaxAttempts: 3,
+			Metadata:    map[string]any{"queue": "memory-default"},
+		},
+		hasJob: true,
+	}
+	recorder := gopact.NewVerificationRecorder()
+	worker, err := NewDeferredMemoryWorkWorker(queue, failingSecondMemoryEffectExecutor(),
+		WithDeferredMemoryWorkReportRecorder(recorder),
+		WithDeferredMemoryWorkScheduleRecorder(recorder),
+		WithDeferredMemoryWorkScheduleDecider(DeferredMemoryWorkScheduleDeciderFunc(func(_ context.Context, request DeferredMemoryWorkScheduleRequest) (DeferredMemoryWorkScheduleDecision, error) {
+			return DeferredMemoryWorkScheduleDecision{
+				Action:      DeferredMemoryWorkScheduleRetry,
+				NextAttempt: request.Attempt + 1,
+				Delay:       10 * time.Millisecond,
+				Reason:      "temporary store outage",
+			}, nil
+		})),
+	)
+	if err != nil {
+		t.Fatalf("NewDeferredMemoryWorkWorker() error = %v", err)
+	}
+
+	result, err := worker.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce() error = %v, want retry scheduled without terminal error", err)
+	}
+
+	if result.Report.Status != DeferredMemoryWorkFailed ||
+		result.Decision.Action != DeferredMemoryWorkScheduleRetry ||
+		queue.retriedJob.ID != "job-1" {
+		t.Fatalf("result=%+v retried=%+v, want failed pass with retry transition", result, queue.retriedJob)
+	}
+	checks := recorder.Checks()
+	if len(checks) != 2 {
+		t.Fatalf("recorded checks = %+v, want memory replay check then schedule check", checks)
+	}
+	if checks[0].Status != gopact.VerificationStatusFailed ||
+		len(checks[0].Evidence) != 1 ||
+		checks[0].Evidence[0].Type != memory.VerificationEvidenceTypeMemoryReplay {
+		t.Fatalf("first recorded check = %+v, want failed memory replay evidence", checks[0])
+	}
+	if checks[1].Status != gopact.VerificationStatusPassed ||
+		len(checks[1].Evidence) != 1 ||
+		checks[1].Evidence[0].Type != VerificationEvidenceTypeDeferredMemoryWorkSchedule {
+		t.Fatalf("second recorded check = %+v, want passed schedule evidence", checks[1])
+	}
+}
+
 func TestDeferredMemoryWorkWorkerRunOnceUsesDefaultRetryDecider(t *testing.T) {
 	queue := NewMemoryDeferredMemoryWorkQueue(DeferredMemoryWorkJob{
 		ID:          "job-1",
