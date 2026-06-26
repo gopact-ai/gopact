@@ -2,7 +2,7 @@
   "version": 1,
   "workflow_path": ".github/workflows/ci.yml",
   "go_versions": [
-    "1.25"
+    "1.25.11"
   ],
   "lint_config_path": ".golangci.yml",
   "coverage_profile_path": "coverage.out",

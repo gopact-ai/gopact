@@ -1,6 +1,6 @@
 module github.com/gopact-ai/gopact
 
-go 1.25.0
+go 1.25.11
 
 require (
 	cloud.google.com/go/storage v1.60.0

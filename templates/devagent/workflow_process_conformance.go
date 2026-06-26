@@ -289,17 +289,8 @@ func checkWorkflowProcessInputBoundaries(records WorkflowRecords, requiredSource
 				fmt.Errorf("input %d run id = %q, want %q", i, input.IDs.RunID, records.Task.IDs.RunID),
 			)
 		}
-		if got := workflowProcessStringMetadata(input.Metadata, "workflow_id"); got != records.Task.ID {
-			return failedWorkflowProcessConformance(
-				"input-boundaries",
-				fmt.Errorf("input %d workflow_id = %q, want %q", i, got, records.Task.ID),
-			)
-		}
-		if got, ok := workflowProcessIntMetadata(input.Metadata, "workflow_action_count"); !ok || got != len(records.Tasks) {
-			return failedWorkflowProcessConformance(
-				"input-boundaries",
-				fmt.Errorf("input %d workflow_action_count = %v, want %d", i, input.Metadata["workflow_action_count"], len(records.Tasks)),
-			)
+		if err := validateWorkflowProcessBoundaryMetadata(records, input.Metadata, "input", i); err != nil {
+			return failedWorkflowProcessConformance("input-boundaries", err)
 		}
 		if input.Source == "devagent.patch" && workflowProcessPatchInputLeaksRawDiff(input.Value) {
 			return failedWorkflowProcessConformance("input-boundaries", fmt.Errorf("patch input %q leaked raw diff", input.ID))
@@ -323,20 +314,36 @@ func checkWorkflowProcessInterventionBoundaries(records WorkflowRecords) Workflo
 				fmt.Errorf("intervention %d run id = %q, want %q", i, intervention.IDs.RunID, records.Task.IDs.RunID),
 			)
 		}
-		if got := workflowProcessStringMetadata(intervention.Metadata, "workflow_id"); got != records.Task.ID {
-			return failedWorkflowProcessConformance(
-				"intervention-boundaries",
-				fmt.Errorf("intervention %d workflow_id = %q, want %q", i, got, records.Task.ID),
-			)
-		}
-		if got, ok := workflowProcessIntMetadata(intervention.Metadata, "workflow_action_count"); !ok || got != len(records.Tasks) {
-			return failedWorkflowProcessConformance(
-				"intervention-boundaries",
-				fmt.Errorf("intervention %d workflow_action_count = %v, want %d", i, intervention.Metadata["workflow_action_count"], len(records.Tasks)),
-			)
+		if err := validateWorkflowProcessBoundaryMetadata(records, intervention.Metadata, "intervention", i); err != nil {
+			return failedWorkflowProcessConformance("intervention-boundaries", err)
 		}
 	}
 	return passedWorkflowProcessConformance("intervention-boundaries")
+}
+
+func validateWorkflowProcessBoundaryMetadata(records WorkflowRecords, metadata map[string]any, label string, index int) error {
+	if got := workflowProcessStringMetadata(metadata, "workflow_id"); got != records.Task.ID {
+		return fmt.Errorf("%s %d workflow_id = %q, want %q", label, index, got, records.Task.ID)
+	}
+	if got, ok := workflowProcessIntMetadata(metadata, "workflow_action_count"); !ok || got != len(records.Tasks) {
+		return fmt.Errorf("%s %d workflow_action_count = %v, want %d", label, index, metadata["workflow_action_count"], len(records.Tasks))
+	}
+	actionIndex, ok := workflowProcessIntMetadata(metadata, "workflow_action_index")
+	if !ok {
+		return fmt.Errorf("%s %d workflow_action_index = %v, want integer", label, index, metadata["workflow_action_index"])
+	}
+	if actionIndex < 1 || actionIndex > len(records.Tasks) {
+		return fmt.Errorf("%s %d workflow_action_index = %d, want 1..%d", label, index, actionIndex, len(records.Tasks))
+	}
+	task := records.Tasks[actionIndex-1]
+	for _, field := range []string{"mode", "action", "action_status"} {
+		got := workflowProcessStringMetadata(metadata, field)
+		want := workflowProcessStringMetadata(task.Metadata, field)
+		if want != "" && got != want {
+			return fmt.Errorf("%s %d %s = %q, want %q", label, index, field, got, want)
+		}
+	}
+	return nil
 }
 
 func workflowProcessActionSummaries(output map[string]any) ([]map[string]any, error) {

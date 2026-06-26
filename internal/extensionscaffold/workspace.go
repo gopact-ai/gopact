@@ -246,7 +246,7 @@ func commandShell(commandLine string) ([]string, error) {
 func renderGoWorkFile(root, _ string, scaffolds []RepositoryScaffold) (File, error) {
 	goVersion := goModVersion(root)
 	if strings.TrimSpace(goVersion) == "" {
-		goVersion = "1.25"
+		goVersion = "1.25.11"
 		if len(scaffolds) > 0 && strings.TrimSpace(scaffolds[0].Repository.GoVersion) != "" {
 			goVersion = scaffolds[0].Repository.GoVersion
 		}

@@ -104,7 +104,7 @@ func TestWriteRepositoryWritesRenderedFiles(t *testing.T) {
 func TestRenderRepositoryRejectsIncompleteInput(t *testing.T) {
 	_, err := RenderRepository(Repository{
 		Name:      "gopact-adapters-example",
-		GoVersion: "1.25",
+		GoVersion: "1.25.11",
 	})
 	if err == nil {
 		t.Fatal("RenderRepository() error = nil, want validation error")
@@ -128,7 +128,7 @@ func exampleRepository() Repository {
 		ModulePath:  "github.com/gopact-ai/gopact-adapters-example",
 		SDKModule:   "github.com/gopact-ai/gopact",
 		SDKVersion:  "v0.0.0",
-		GoVersion:   "1.25",
+		GoVersion:   "1.25.11",
 		SourcePaths: []string{"adapters/example"},
 		Targets: []Target{
 			{

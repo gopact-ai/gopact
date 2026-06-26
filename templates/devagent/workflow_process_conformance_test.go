@@ -152,6 +152,26 @@ func TestCheckWorkflowProcessConformanceReportsRawDiffLeak(t *testing.T) {
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsInputActionIndexDrift(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	records.Inputs[0].Metadata["workflow_action_index"] = len(records.Tasks) + 1
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "input-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report input action index drift: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsInterventionActionMetadataDrift(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	records.Interventions[0].Metadata["action"] = string(ActionApplyPatch)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "intervention-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report intervention action metadata drift: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

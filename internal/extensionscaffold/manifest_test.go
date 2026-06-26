@@ -36,8 +36,8 @@ func TestLoadRepositoriesFromDesignRendersConformantScaffolds(t *testing.T) {
 		if repo.SDKModule != "github.com/gopact-ai/gopact" {
 			t.Fatalf("repository %q SDKModule = %q, want github.com/gopact-ai/gopact", repo.Name, repo.SDKModule)
 		}
-		if repo.GoVersion != "1.25" {
-			t.Fatalf("repository %q GoVersion = %q, want 1.25", repo.Name, repo.GoVersion)
+		if repo.GoVersion != "1.25.11" {
+			t.Fatalf("repository %q GoVersion = %q, want 1.25.11", repo.Name, repo.GoVersion)
 		}
 		if repo.SDKVersion != DefaultSDKVersion {
 			t.Fatalf("repository %q SDKVersion = %q, want %q", repo.Name, repo.SDKVersion, DefaultSDKVersion)
@@ -485,7 +485,7 @@ func TestLoadRepositoriesFromDesignRejectsMissingTargetScaffoldSpec(t *testing.T
   "version": 1,
   "sdk_compatibility": {
     "module": "github.com/gopact-ai/gopact",
-    "go_versions": ["1.25"]
+    "go_versions": ["1.25.11"]
   },
   "targets": [{
     "name": "missing-target",

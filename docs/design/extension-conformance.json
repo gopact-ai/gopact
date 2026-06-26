@@ -3,7 +3,7 @@
   "sdk_compatibility": {
     "module": "github.com/gopact-ai/gopact",
     "go_versions": [
-      "1.25"
+      "1.25.11"
     ]
   },
   "readme_template_path": "docs/design/extension-repository-template.md",
