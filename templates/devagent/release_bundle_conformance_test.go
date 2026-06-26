@@ -23,6 +23,51 @@ func TestCheckReleaseBundleConformancePassesReleaseBundleWithRequiredCIGates(t *
 	RequireReleaseBundleConformance(t, harness)
 }
 
+func TestCheckReleaseBundleConformancePassesWorkflowReleaseBundle(t *testing.T) {
+	bundle := releaseBundleWithWorkflowFixture(t)
+
+	results := CheckReleaseBundleConformance(context.Background(), ReleaseBundleConformanceHarness{Bundle: bundle})
+	if failed := failedReleaseBundleConformanceCases(results); len(failed) > 0 {
+		t.Fatalf("CheckReleaseBundleConformance() failed cases: %v", failed)
+	}
+}
+
+func TestCheckReleaseBundleConformanceReportsWorkflowReleaseSummaryDrift(t *testing.T) {
+	bundle := releaseBundleWithWorkflowFixture(t)
+	output, ok := bundle.RunExport.Tasks[0].Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow parent output = %T, want map", bundle.RunExport.Tasks[0].Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[2]["release_gate_input_id"] = "devagent:run-1:release_gate:forged"
+
+	results := CheckReleaseBundleConformance(context.Background(), ReleaseBundleConformanceHarness{Bundle: bundle})
+	if !hasFailedReleaseBundleConformanceCase(results, "workflow-release-alignment") {
+		t.Fatalf("CheckReleaseBundleConformance() did not report workflow release summary drift: %+v", results)
+	}
+}
+
+func TestCheckReleaseBundleConformanceReportsWorkflowReleaseCountDrift(t *testing.T) {
+	bundle := releaseBundleWithWorkflowFixture(t)
+	output, ok := bundle.RunExport.Tasks[0].Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow parent output = %T, want map", bundle.RunExport.Tasks[0].Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[2]["input_count"] = 0
+
+	results := CheckReleaseBundleConformance(context.Background(), ReleaseBundleConformanceHarness{Bundle: bundle})
+	if !hasFailedReleaseBundleConformanceCase(results, "workflow-release-alignment") {
+		t.Fatalf("CheckReleaseBundleConformance() did not report workflow release count drift: %+v", results)
+	}
+}
+
 func TestCheckReleaseBundleConformanceReportsMissingRequiredCIGate(t *testing.T) {
 	bundle := releaseBundleFixture(t)
 	harness := ReleaseBundleConformanceHarness{
@@ -118,4 +163,64 @@ func TestCheckReleaseBundleConformanceReportsReleaseBundleEvidenceMetadataDrift(
 	if !hasFailedReleaseBundleConformanceCase(results, "release-bundle-evidence") {
 		t.Fatalf("CheckReleaseBundleConformance() did not report required gate metadata drift: %+v", results)
 	}
+}
+
+func releaseBundleWithWorkflowFixture(t *testing.T) ReleaseBundle {
+	t.Helper()
+
+	input := validReleaseBundleInput(t)
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  input.Export.IDs,
+		Name: "release workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare release",
+					Diff:    "diff --git a/private b/private\n+raw diff must not enter release conformance\n",
+					Files: []PatchFile{
+						{Path: "templates/devagent/release_bundle_conformance_test.go", Intent: "cover workflow release conformance"},
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Review: input.Review,
+				Gate:   &input.Gate,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	input.Process = ProcessRecords{
+		Task:          workflow.Tasks[2],
+		Inputs:        workflow.Inputs,
+		Interventions: workflow.Interventions,
+	}
+	input.Export.Tasks = append([]gopact.TaskRecord{workflow.Task}, workflow.Tasks...)
+	input.Export.Inputs = workflow.Inputs
+	input.Export.Interventions = workflow.Interventions
+
+	bundle, err := BuildReleaseBundle(input)
+	if err != nil {
+		t.Fatalf("BuildReleaseBundle() error = %v", err)
+	}
+	return bundle
 }
