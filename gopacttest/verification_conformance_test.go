@@ -36,6 +36,30 @@ func TestCheckVerificationEvidenceConformanceReportsMissingEvidenceType(t *testi
 	}
 }
 
+func TestCheckVerificationEvidenceConformanceReportsRequiredEvidenceTypeThatDidNotPass(t *testing.T) {
+	report := verificationConformanceReport(t)
+	report.Checks = append(report.Checks, gopact.VerificationCheck{
+		ID:      "checkpoint-check",
+		Name:    "checkpoint check",
+		Status:  gopact.VerificationStatusFailed,
+		Summary: "checkpoint failed",
+		Evidence: []gopact.VerificationEvidence{
+			{Type: "checkpoint", Ref: "checkpoint:run-1", Summary: "checkpoint rejected"},
+		},
+	})
+	report.Status = gopact.VerificationStatusFailed
+	report.FailedCount++
+	harness := VerificationEvidenceConformanceHarness{
+		Report:                report,
+		RequiredEvidenceTypes: []string{"checkpoint"},
+	}
+
+	results := CheckVerificationEvidenceConformance(context.Background(), harness)
+	if !hasFailedVerificationEvidenceConformanceCase(results, "required-evidence-types") {
+		t.Fatalf("CheckVerificationEvidenceConformance() did not report failed required evidence type: %+v", results)
+	}
+}
+
 func TestCheckVerificationEvidenceConformanceReportsRequiredCheckIDThatDidNotPass(t *testing.T) {
 	report := verificationConformanceReport(t)
 	report.Checks = append(report.Checks, gopact.VerificationCheck{

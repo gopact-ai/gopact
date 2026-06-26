@@ -133,6 +133,9 @@ func verificationReportEvidenceTypes(report gopact.VerificationReport) []string 
 	seen := map[string]bool{}
 	var out []string
 	for _, check := range report.Checks {
+		if check.Status != gopact.VerificationStatusPassed {
+			continue
+		}
 		for _, evidence := range check.Evidence {
 			if evidence.Type == "" || seen[evidence.Type] {
 				continue
