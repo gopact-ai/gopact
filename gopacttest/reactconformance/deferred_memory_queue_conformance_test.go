@@ -55,6 +55,31 @@ func TestCheckDeferredMemoryWorkQueueConformanceReportsRetryWithoutRequeue(t *te
 	}
 }
 
+func TestCheckDeferredMemoryWorkQueueConformanceReportsRetryMetadataLoss(t *testing.T) {
+	harness := DeferredMemoryWorkQueueConformanceHarness{
+		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
+			return newConformanceMemoryQueue(jobs, map[string]bool{"retry_drops_job_metadata": true}), nil
+		},
+		Jobs: []react.DeferredMemoryWorkJob{
+			{
+				ID:          "job-1",
+				Export:      defaultDeferredMemoryWorkQueueConformanceRunExport(),
+				Attempt:     1,
+				MaxAttempts: 3,
+				Metadata:    map[string]any{"host_metadata": "must-survive-retry"},
+			},
+		},
+	}
+
+	results := CheckDeferredMemoryWorkQueueConformance(context.Background(), harness)
+	if !hasFailedDeferredMemoryWorkQueueConformanceCase(results, "retry-preserves-job-metadata") {
+		t.Fatalf("CheckDeferredMemoryWorkQueueConformance() did not report retry metadata loss: %+v", results)
+	}
+	if err := deferredMemoryWorkQueueConformanceError(results); !errors.Is(err, ErrDeferredMemoryWorkQueueConformanceFailed) {
+		t.Fatalf("conformance error = %v, want ErrDeferredMemoryWorkQueueConformanceFailed", err)
+	}
+}
+
 func TestCheckDeferredMemoryWorkQueueConformanceReportsDuplicateConcurrentDequeue(t *testing.T) {
 	harness := DeferredMemoryWorkQueueConformanceHarness{
 		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
@@ -230,7 +255,11 @@ func (q *conformanceMemoryQueue) Retry(ctx context.Context, job react.DeferredMe
 	next := copyConformanceMemoryJob(job)
 	next.Attempt = decision.NextAttempt
 	next.MaxAttempts = decision.MaxAttempts
-	next.Metadata = copyConformanceMemoryMetadata(decision.Metadata)
+	if q.fault["retry_drops_job_metadata"] {
+		next.Metadata = copyConformanceMemoryMetadata(decision.Metadata)
+	} else {
+		next.Metadata = mergeConformanceMemoryMetadata(job.Metadata, decision.Metadata)
+	}
 	q.mu.Lock()
 	q.jobs = append(q.jobs, next)
 	q.mu.Unlock()
@@ -273,6 +302,7 @@ func (q *duplicateConcurrentDequeueQueue) Retry(ctx context.Context, job react.D
 	next := copyConformanceMemoryJob(job)
 	next.Attempt = decision.NextAttempt
 	next.MaxAttempts = decision.MaxAttempts
+	next.Metadata = mergeConformanceMemoryMetadata(job.Metadata, decision.Metadata)
 	q.mu.Lock()
 	q.jobs = append(q.jobs, next)
 	q.mu.Unlock()
@@ -428,6 +458,17 @@ func copyConformanceMemoryMetadata(in map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(in))
 	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func mergeConformanceMemoryMetadata(jobMetadata map[string]any, decisionMetadata map[string]any) map[string]any {
+	out := copyConformanceMemoryMetadata(jobMetadata)
+	for key, value := range decisionMetadata {
+		if out == nil {
+			out = map[string]any{}
+		}
 		out[key] = value
 	}
 	return out
