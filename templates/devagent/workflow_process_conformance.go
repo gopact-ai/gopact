@@ -211,6 +211,14 @@ func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConform
 				fmt.Errorf("workflow action summary %d action_status = %q, want %q", i, got, want),
 			)
 		}
+		if wantReasonCount, ok := workflowProcessOutputReasonCount(task.Output); ok {
+			if got, ok := workflowProcessIntMetadata(summary, "reason_count"); !ok || got != wantReasonCount {
+				return failedWorkflowProcessConformance(
+					"workflow-summary",
+					fmt.Errorf("workflow action summary %d reason_count = %v, want %d", i, summary["reason_count"], wantReasonCount),
+				)
+			}
+		}
 		if got, ok := workflowProcessIntMetadata(summary, "input_count"); !ok || got != inputCounts[i+1] {
 			return failedWorkflowProcessConformance(
 				"workflow-summary",
