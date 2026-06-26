@@ -55,6 +55,7 @@ func CheckDeferredMemoryWorkQueueConformance(ctx context.Context, harness Deferr
 		checkDeferredMemoryWorkQueueDequeuesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueCompleteRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueRetryRequeuesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueRetryPreservesJobMetadata(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueDeadLetterRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueStopRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueCompleteDoesNotMutateInput(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
@@ -256,6 +257,48 @@ func checkDeferredMemoryWorkQueueRetryRequeuesJob(ctx context.Context, newQueue 
 		return failedDeferredMemoryWorkQueueConformance("retry-requeues-job", fmt.Errorf("retry job = %s/attempt-%d, want %s/attempt-%d", again.ID, again.Attempt, got.ID, decision.NextAttempt))
 	}
 	return passedDeferredMemoryWorkQueueConformance("retry-requeues-job")
+}
+
+func checkDeferredMemoryWorkQueueRetryPreservesJobMetadata(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	job = copyDeferredMemoryWorkQueueConformanceJob(job)
+	if job.Metadata == nil {
+		job.Metadata = map[string]any{}
+	}
+	job.Metadata["gopact_conformance_retry_host_metadata"] = "must-survive-retry"
+
+	queue, got, err := dequeueDeferredMemoryWorkQueueConformanceJob(ctx, newQueue, job)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("retry-preserves-job-metadata", err)
+	}
+	decision := defaultDeferredMemoryWorkQueueConformanceRetryDecision(got)
+	if decision.Metadata == nil {
+		decision.Metadata = map[string]any{}
+	}
+	decision.Metadata["gopact_conformance_retry_decision_metadata"] = "must-merge-into-retry"
+	wantJobMetadata := copyDeferredMemoryWorkQueueConformanceAnyMap(got.Metadata)
+	wantDecisionMetadata := copyDeferredMemoryWorkQueueConformanceAnyMap(decision.Metadata)
+
+	if err := queue.Retry(ctx, got, decision); err != nil {
+		return failedDeferredMemoryWorkQueueConformance("retry-preserves-job-metadata", err)
+	}
+	again, ok, err := queue.Dequeue(ctx)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("retry-preserves-job-metadata", err)
+	}
+	if !ok {
+		return failedDeferredMemoryWorkQueueConformance("retry-preserves-job-metadata", errors.New("Dequeue after Retry returned ok=false"))
+	}
+	for key, want := range wantJobMetadata {
+		if got := again.Metadata[key]; !reflect.DeepEqual(got, want) {
+			return failedDeferredMemoryWorkQueueConformance("retry-preserves-job-metadata", fmt.Errorf("retry metadata[%q] = %#v, want preserved %#v", key, got, want))
+		}
+	}
+	for key, want := range wantDecisionMetadata {
+		if got := again.Metadata[key]; !reflect.DeepEqual(got, want) {
+			return failedDeferredMemoryWorkQueueConformance("retry-preserves-job-metadata", fmt.Errorf("retry decision metadata[%q] = %#v, want merged %#v", key, got, want))
+		}
+	}
+	return passedDeferredMemoryWorkQueueConformance("retry-preserves-job-metadata")
 }
 
 func checkDeferredMemoryWorkQueueDeadLetterRemovesJob(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
