@@ -209,9 +209,35 @@ func workflowActionSummaries(records []ProcessRecords) []map[string]any {
 		if actionStatus, ok := record.Task.Metadata["action_status"].(string); ok && actionStatus != "" {
 			summary["action_status"] = actionStatus
 		}
+		if action, ok := summary["action"].(string); ok && ActionKind(action) == ActionRelease {
+			if id := workflowReleaseGateInputID(record.Inputs); id != "" {
+				summary["release_gate_input_id"] = id
+			}
+			if id := workflowReviewInterventionID(record.Interventions); id != "" {
+				summary["review_intervention_id"] = id
+			}
+		}
 		out = append(out, summary)
 	}
 	return out
+}
+
+func workflowReleaseGateInputID(records []gopact.InputRecord) string {
+	for _, record := range records {
+		if record.Source == "devagent.release_gate" {
+			return record.ID
+		}
+	}
+	return ""
+}
+
+func workflowReviewInterventionID(records []gopact.InterventionRecord) string {
+	for _, record := range records {
+		if record.Type == gopact.InterruptApproval {
+			return record.ID
+		}
+	}
+	return ""
 }
 
 func workflowProcessMetadata(input WorkflowInput, failedActions int) map[string]any {
