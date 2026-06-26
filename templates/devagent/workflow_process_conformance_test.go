@@ -156,6 +156,34 @@ func TestCheckWorkflowProcessConformanceReportsChildSummaryReasonCountDrift(t *t
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsChildTaskInputDrift(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	input, ok := records.Tasks[1].Input.(map[string]any)
+	if !ok {
+		t.Fatalf("child task input = %T, want map", records.Tasks[1].Input)
+	}
+	input["mode"] = string(ModeAnalyze)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "child-task-io") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report child task input drift: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsChildTaskOutputDrift(t *testing.T) {
+	records := workflowProcessConformanceRejectedFixture(t)
+	output, ok := records.Tasks[1].Output.(map[string]any)
+	if !ok {
+		t.Fatalf("child task output = %T, want map", records.Tasks[1].Output)
+	}
+	output["status"] = string(ActionAllowed)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "child-task-io") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report child task output drift: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsReleaseSummaryBoundaryDrift(t *testing.T) {
 	for _, tt := range []struct {
 		name string

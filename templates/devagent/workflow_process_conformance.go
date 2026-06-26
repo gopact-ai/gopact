@@ -39,6 +39,7 @@ func CheckWorkflowProcessConformance(ctx context.Context, harness WorkflowProces
 	return []WorkflowProcessConformanceResult{
 		checkWorkflowProcessRecordsValid(harness.Records),
 		checkWorkflowProcessParentChildLinks(harness.Records),
+		checkWorkflowProcessChildTaskIO(harness.Records),
 		checkWorkflowProcessSummary(harness.Records),
 		checkWorkflowProcessFailureSummary(harness.Records),
 		checkWorkflowProcessRequiredActions(harness.Records, harness.RequiredActions),
@@ -124,6 +125,42 @@ func checkWorkflowProcessParentChildLinks(records WorkflowRecords) WorkflowProce
 		}
 	}
 	return passedWorkflowProcessConformance("parent-child-links")
+}
+
+func checkWorkflowProcessChildTaskIO(records WorkflowRecords) WorkflowProcessConformanceResult {
+	for i, task := range records.Tasks {
+		input, ok := task.Input.(map[string]any)
+		if !ok {
+			return failedWorkflowProcessConformance(
+				"child-task-io",
+				fmt.Errorf("child task %d input = %T, want map", i, task.Input),
+			)
+		}
+		output, ok := task.Output.(map[string]any)
+		if !ok {
+			return failedWorkflowProcessConformance(
+				"child-task-io",
+				fmt.Errorf("child task %d output = %T, want map", i, task.Output),
+			)
+		}
+		for _, field := range []string{"mode", "action"} {
+			got := workflowProcessStringMetadata(input, field)
+			want := workflowProcessStringMetadata(task.Metadata, field)
+			if want != "" && got != want {
+				return failedWorkflowProcessConformance(
+					"child-task-io",
+					fmt.Errorf("child task %d input %s = %q, want %q", i, field, got, want),
+				)
+			}
+		}
+		if got, want := workflowProcessStringMetadata(output, "status"), workflowProcessStringMetadata(task.Metadata, "action_status"); want != "" && got != want {
+			return failedWorkflowProcessConformance(
+				"child-task-io",
+				fmt.Errorf("child task %d output status = %q, want %q", i, got, want),
+			)
+		}
+	}
+	return passedWorkflowProcessConformance("child-task-io")
 }
 
 func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConformanceResult {
