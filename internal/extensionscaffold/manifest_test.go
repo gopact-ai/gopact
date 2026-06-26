@@ -183,6 +183,9 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	if workspace.SecretScript.Path != "sync-secrets.sh" {
 		t.Fatalf("secret script path = %q, want sync-secrets.sh", workspace.SecretScript.Path)
 	}
+	if workspace.RerunScript.Path != "rerun-ci.sh" {
+		t.Fatalf("rerun script path = %q, want rerun-ci.sh", workspace.RerunScript.Path)
+	}
 	if len(workspace.Scaffolds) != expectedScaffoldRepositoryCount {
 		t.Fatalf("workspace scaffolds = %d, want %d", len(workspace.Scaffolds), expectedScaffoldRepositoryCount)
 	}
@@ -203,6 +206,10 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read sync-secrets.sh: %v", err)
 	}
+	rerunScriptBody, err := os.ReadFile(filepath.Join(dir, "rerun-ci.sh"))
+	if err != nil {
+		t.Fatalf("read rerun-ci.sh: %v", err)
+	}
 	syncScriptInfo, err := os.Stat(filepath.Join(dir, "sync-repos.sh"))
 	if err != nil {
 		t.Fatalf("stat sync-repos.sh: %v", err)
@@ -211,11 +218,18 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat sync-secrets.sh: %v", err)
 	}
+	rerunScriptInfo, err := os.Stat(filepath.Join(dir, "rerun-ci.sh"))
+	if err != nil {
+		t.Fatalf("stat rerun-ci.sh: %v", err)
+	}
 	if syncScriptInfo.Mode().Perm()&0o111 == 0 {
 		t.Fatalf("sync-repos.sh mode = %s, want executable bit", syncScriptInfo.Mode())
 	}
 	if secretScriptInfo.Mode().Perm()&0o111 == 0 {
 		t.Fatalf("sync-secrets.sh mode = %s, want executable bit", secretScriptInfo.Mode())
+	}
+	if rerunScriptInfo.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("rerun-ci.sh mode = %s, want executable bit", rerunScriptInfo.Mode())
 	}
 	if !strings.Contains(string(syncPlanBody), `"create_command": "gh repo create gopact-ai/gopact-adapters-model --private --source <generated>/gopact-adapters-model --remote origin --push"`) {
 		t.Fatalf("sync-plan.json missing unescaped create command:\n%s", string(syncPlanBody))
@@ -242,6 +256,16 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	} {
 		if !strings.Contains(string(secretScriptBody), want) {
 			t.Fatalf("sync-secrets.sh missing %q:\n%s", want, string(secretScriptBody))
+		}
+	}
+	for _, want := range []string{
+		"#!/usr/bin/env bash",
+		"rerun_ci 'gopact-ai/gopact-adapters-model' 'ci' 'main'",
+		"rerun_ci 'gopact-ai/gopact-templates-agenttool' 'ci' 'main'",
+		"gh run rerun -R \"${repo}\" \"${latest_id}\"",
+	} {
+		if !strings.Contains(string(rerunScriptBody), want) {
+			t.Fatalf("rerun-ci.sh missing %q:\n%s", want, string(rerunScriptBody))
 		}
 	}
 	for _, want := range []string{
@@ -398,6 +422,9 @@ func TestRenderSyncPlanFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 	if model.CreateCommand != "gh repo create gopact-ai/gopact-adapters-model --private --source <generated>/gopact-adapters-model --remote origin --push" {
 		t.Fatalf("model CreateCommand = %q", model.CreateCommand)
 	}
+	if model.RerunCommand != "gh run rerun -R gopact-ai/gopact-adapters-model <latest-ci-run-id>" {
+		t.Fatalf("model RerunCommand = %q", model.RerunCommand)
+	}
 	if model.Directory != "gopact-adapters-model" {
 		t.Fatalf("model Directory = %q, want gopact-adapters-model", model.Directory)
 	}
@@ -465,6 +492,29 @@ func TestRenderSecretScriptFromDesignCapturesRemoteSecretSteps(t *testing.T) {
 		"gh secret set GOPACT_GITHUB_TOKEN",
 		"set_secret 'gopact-ai/gopact-adapters-model'",
 		"set_secret 'gopact-ai/gopact-templates-devagent'",
+	} {
+		if !strings.Contains(file.Body, want) {
+			t.Fatalf("script missing %q:\n%s", want, file.Body)
+		}
+	}
+}
+
+func TestRenderRerunScriptFromDesignCapturesRemoteCIRerunSteps(t *testing.T) {
+	file, err := RenderRerunScriptFromDesign(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("RenderRerunScriptFromDesign() error = %v", err)
+	}
+	if file.Path != "rerun-ci.sh" {
+		t.Fatalf("script path = %q, want rerun-ci.sh", file.Path)
+	}
+	for _, want := range []string{
+		"set -euo pipefail",
+		"require_secret 'gopact-ai/gopact-adapters-model'",
+		"gh run list -R \"${repo}\" --workflow \"${workflow}\" --branch \"${branch}\"",
+		"gh run rerun -R \"${repo}\" \"${latest_id}\"",
+		"gh workflow run \"${workflow}\" -R \"${repo}\" --ref \"${branch}\"",
+		"rerun_ci 'gopact-ai/gopact-adapters-model' 'ci' 'main'",
+		"rerun_ci 'gopact-ai/gopact-templates-devagent' 'ci' 'main'",
 	} {
 		if !strings.Contains(file.Body, want) {
 			t.Fatalf("script missing %q:\n%s", want, file.Body)

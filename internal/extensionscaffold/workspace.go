@@ -24,6 +24,7 @@ type BootstrapWorkspace struct {
 	SyncPlan     File
 	SyncScript   File
 	SecretScript File
+	RerunScript  File
 }
 
 // VerificationReport summarizes local conformance verification for a bootstrap workspace.
@@ -149,12 +150,18 @@ func WriteBootstrapWorkspace(ctx context.Context, root, dir string) (BootstrapWo
 	if err := os.WriteFile(path, []byte(secretScript.Body), 0o755); err != nil {
 		return BootstrapWorkspace{}, fmt.Errorf("extensionscaffold: write %q: %w", secretScript.Path, err)
 	}
+	rerunScript := renderRerunScriptFile(plan)
+	path = filepath.Join(dir, filepath.FromSlash(rerunScript.Path))
+	if err := os.WriteFile(path, []byte(rerunScript.Body), 0o755); err != nil {
+		return BootstrapWorkspace{}, fmt.Errorf("extensionscaffold: write %q: %w", rerunScript.Path, err)
+	}
 	return BootstrapWorkspace{
 		Scaffolds:    scaffolds,
 		GoWork:       goWork,
 		SyncPlan:     syncPlan,
 		SyncScript:   syncScript,
 		SecretScript: secretScript,
+		RerunScript:  rerunScript,
 	}, nil
 }
 

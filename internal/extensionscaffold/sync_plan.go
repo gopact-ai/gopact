@@ -29,6 +29,7 @@ type SyncRepositoryPlan struct {
 	CICommands       []string `json:"ci_commands"`
 	VerifyCommands   []string `json:"verify_commands"`
 	CreateCommand    string   `json:"create_command"`
+	RerunCommand     string   `json:"rerun_command"`
 }
 
 // RenderSyncPlanFromDesign renders the remote bootstrap dry-run plan from design manifests.
@@ -79,6 +80,7 @@ func RenderSyncPlanFromDesign(root string) (SyncPlan, error) {
 			CICommands:       append([]string(nil), scaffold.Repository.RequiredCICommands...),
 			VerifyCommands:   append([]string(nil), scaffold.Repository.RequiredCICommands...),
 			CreateCommand:    renderCreateCommand(manifest.Organization, scaffold.Directory, visibility),
+			RerunCommand:     renderRerunCommand(manifest.Organization, scaffold.Repository.Name),
 		})
 	}
 	return plan, nil
@@ -90,6 +92,10 @@ func renderCreateCommand(organization, directory, visibility string) string {
 		visibilityFlag = "--public"
 	}
 	return fmt.Sprintf("gh repo create %s/%s %s --source <generated>/%s --remote origin --push", organization, directory, visibilityFlag, directory)
+}
+
+func renderRerunCommand(organization, name string) string {
+	return fmt.Sprintf("gh run rerun -R %s/%s <latest-ci-run-id>", organization, name)
 }
 
 func renderSyncPlanFile(plan SyncPlan) (File, error) {
@@ -119,6 +125,15 @@ func RenderSecretScriptFromDesign(root string) (File, error) {
 		return File{}, err
 	}
 	return renderSecretScriptFile(plan), nil
+}
+
+// RenderRerunScriptFromDesign renders a reviewable shell script for rerunning external repository CI.
+func RenderRerunScriptFromDesign(root string) (File, error) {
+	plan, err := RenderSyncPlanFromDesign(root)
+	if err != nil {
+		return File{}, err
+	}
+	return renderRerunScriptFile(plan), nil
 }
 
 func renderSyncScriptFile(plan SyncPlan) File {
@@ -244,6 +259,57 @@ func renderSecretScriptFile(plan SyncPlan) File {
 		fmt.Fprintf(&b, "set_secret %s\n", shellQuote(plan.Organization+"/"+repo.Name))
 	}
 	return File{Path: "sync-secrets.sh", Body: b.String()}
+}
+
+func renderRerunScriptFile(plan SyncPlan) File {
+	var b strings.Builder
+	b.WriteString("#!/usr/bin/env bash\n")
+	b.WriteString("set -euo pipefail\n\n")
+	b.WriteString("if ! command -v gh >/dev/null 2>&1; then\n")
+	b.WriteString("  echo \"gh CLI is required to rerun external repository CI\" >&2\n")
+	b.WriteString("  exit 127\n")
+	b.WriteString("fi\n\n")
+	b.WriteString("require_secret() {\n")
+	b.WriteString("  local repo=\"$1\"\n")
+	b.WriteString("  local found\n")
+	b.WriteString("  found=\"$(gh secret list -R \"${repo}\" --json name --jq '.[] | select(.name == \"GOPACT_GITHUB_TOKEN\") | .name')\"\n")
+	b.WriteString("  if [[ \"${found}\" != \"GOPACT_GITHUB_TOKEN\" ]]; then\n")
+	b.WriteString("    echo \"${repo} is missing GOPACT_GITHUB_TOKEN; run sync-secrets.sh before rerunning CI\" >&2\n")
+	b.WriteString("    exit 1\n")
+	b.WriteString("  fi\n")
+	b.WriteString("}\n\n")
+	b.WriteString("latest_ci_run_id() {\n")
+	b.WriteString("  local repo=\"$1\"\n")
+	b.WriteString("  local workflow=\"$2\"\n")
+	b.WriteString("  local branch=\"$3\"\n")
+	b.WriteString("  gh run list -R \"${repo}\" --workflow \"${workflow}\" --branch \"${branch}\" --limit 1 --json databaseId --jq '.[0].databaseId // \"\"'\n")
+	b.WriteString("}\n\n")
+	b.WriteString("rerun_ci() {\n")
+	b.WriteString("  local repo=\"$1\"\n")
+	b.WriteString("  local workflow=\"$2\"\n")
+	b.WriteString("  local branch=\"$3\"\n")
+	b.WriteString("  local latest_id\n\n")
+	b.WriteString("  echo \"==> ${repo}\"\n")
+	b.WriteString("  require_secret \"${repo}\"\n")
+	b.WriteString("  latest_id=\"$(latest_ci_run_id \"${repo}\" \"${workflow}\" \"${branch}\")\"\n")
+	b.WriteString("  if [[ -n \"${latest_id}\" ]]; then\n")
+	b.WriteString("    gh run rerun -R \"${repo}\" \"${latest_id}\"\n")
+	b.WriteString("    if [[ \"${WATCH:-0}\" == \"1\" ]]; then\n")
+	b.WriteString("      gh run watch -R \"${repo}\" \"${latest_id}\" --exit-status\n")
+	b.WriteString("    fi\n")
+	b.WriteString("    return 0\n")
+	b.WriteString("  fi\n\n")
+	b.WriteString("  gh workflow run \"${workflow}\" -R \"${repo}\" --ref \"${branch}\"\n")
+	b.WriteString("}\n\n")
+	b.WriteString("# Check every required secret before triggering any CI run.\n")
+	for _, repo := range plan.Repositories {
+		fmt.Fprintf(&b, "require_secret %s\n", shellQuote(plan.Organization+"/"+repo.Name))
+	}
+	b.WriteByte('\n')
+	for _, repo := range plan.Repositories {
+		fmt.Fprintf(&b, "rerun_ci %s 'ci' 'main'\n", shellQuote(plan.Organization+"/"+repo.Name))
+	}
+	return File{Path: "rerun-ci.sh", Body: b.String()}
 }
 
 func shellQuote(value string) string {
