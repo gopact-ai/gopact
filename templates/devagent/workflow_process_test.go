@@ -345,6 +345,84 @@ func TestRecordWorkflowProcessRecordsAppendsParentAndChildren(t *testing.T) {
 	}
 }
 
+func TestWorkflowRecordsFromRunExportRestoresWorkflowProcessRecords(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		Name:      "self-bootstrap export workflow",
+		CreatedAt: time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC),
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "restore workflow records from run export",
+					Diff:    "diff --git a/private b/private\n+raw diff must not be copied\n",
+					Files: []PatchFile{
+						{Path: "templates/devagent/workflow_process_test.go", Intent: "cover export restore"},
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionRejected,
+					Mode:   ModeWrite,
+					Action: ActionApplyPatch,
+					Reasons: []string{
+						"policy allow decision is required",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	export := gopact.RunExport{
+		Version: gopact.RunExportVersion,
+		IDs:     gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		Tasks: []gopact.TaskRecord{
+			records.Tasks[2],
+			records.Task,
+			records.Tasks[0],
+			records.Tasks[1],
+		},
+		Inputs:        records.Inputs,
+		Interventions: records.Interventions,
+	}
+
+	restored, err := WorkflowRecordsFromRunExport(export, "")
+	if err != nil {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v", err)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records:              restored,
+		RequiredActions:      []ActionKind{ActionAnalyze, ActionProposePatch, ActionApplyPatch},
+		RequiredInputSources: []string{"devagent.patch"},
+	})
+	if restored.Tasks[0].Metadata["action"] != string(ActionAnalyze) ||
+		restored.Tasks[1].Metadata["action"] != string(ActionProposePatch) ||
+		restored.Tasks[2].Metadata["action"] != string(ActionApplyPatch) {
+		t.Fatalf("restored tasks = %+v, want workflow action order", restored.Tasks)
+	}
+
+	restored.Task.Metadata["mutated"] = true
+	if _, ok := export.Tasks[1].Metadata["mutated"]; ok {
+		t.Fatalf("WorkflowRecordsFromRunExport returned records sharing export metadata")
+	}
+}
+
 func TestBuildWorkflowProcessRecordsRejectsInvalidInput(t *testing.T) {
 	_, err := BuildWorkflowProcessRecords(WorkflowInput{})
 	if !errors.Is(err, ErrInvalidActionResult) {
