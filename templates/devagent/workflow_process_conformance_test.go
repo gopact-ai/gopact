@@ -138,6 +138,34 @@ func TestCheckWorkflowProcessConformanceReportsChildSummaryActionStatusDrift(t *
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsReleaseSummaryBoundaryDrift(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		key  string
+	}{
+		{name: "release gate input id", key: "release_gate_input_id"},
+		{name: "review intervention id", key: "review_intervention_id"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			records := workflowProcessConformanceFixture(t)
+			output, ok := records.Task.Output.(map[string]any)
+			if !ok {
+				t.Fatalf("workflow output = %T, want map", records.Task.Output)
+			}
+			summaries, err := workflowProcessActionSummaries(output)
+			if err != nil {
+				t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+			}
+			delete(summaries[2], tt.key)
+
+			results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+			if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+				t.Fatalf("CheckWorkflowProcessConformance() did not report release summary boundary drift: %+v", results)
+			}
+		})
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsReleaseWithoutGateInput(t *testing.T) {
 	records := workflowProcessConformanceReleaseWithoutGateFixture(t)
 

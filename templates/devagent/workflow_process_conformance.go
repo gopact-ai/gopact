@@ -223,6 +223,9 @@ func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConform
 				fmt.Errorf("workflow action summary %d intervention_count = %v, want %d", i, summary["intervention_count"], interventionCounts[i+1]),
 			)
 		}
+		if err := validateWorkflowProcessReleaseSummaryBoundary(records, task, summary, i+1); err != nil {
+			return failedWorkflowProcessConformance("workflow-summary", err)
+		}
 	}
 	return passedWorkflowProcessConformance("workflow-summary")
 }
@@ -361,6 +364,28 @@ func checkWorkflowProcessReleaseBoundaries(records WorkflowRecords) WorkflowProc
 		}
 	}
 	return passedWorkflowProcessConformance("release-boundaries")
+}
+
+func validateWorkflowProcessReleaseSummaryBoundary(
+	records WorkflowRecords,
+	task gopact.TaskRecord,
+	summary map[string]any,
+	actionIndex int,
+) error {
+	if ActionKind(workflowProcessStringMetadata(task.Metadata, "action")) != ActionRelease {
+		return nil
+	}
+	if gateInput, ok := workflowProcessReleaseGateInput(records.Inputs, actionIndex); ok {
+		if got := workflowProcessStringMetadata(summary, "release_gate_input_id"); got != gateInput.ID {
+			return fmt.Errorf("release action summary %d release_gate_input_id = %q, want %q", actionIndex, got, gateInput.ID)
+		}
+	}
+	if review, ok := workflowProcessResolvedReviewIntervention(records.Interventions, actionIndex); ok {
+		if got := workflowProcessStringMetadata(summary, "review_intervention_id"); got != review.ID {
+			return fmt.Errorf("release action summary %d review_intervention_id = %q, want %q", actionIndex, got, review.ID)
+		}
+	}
+	return nil
 }
 
 func workflowProcessReleaseGateInput(records []gopact.InputRecord, actionIndex int) (gopact.InputRecord, bool) {

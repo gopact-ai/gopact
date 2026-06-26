@@ -99,6 +99,10 @@ func TestBuildWorkflowProcessRecordsGroupsObservedActions(t *testing.T) {
 		actionSummaries[2]["action"] != string(ActionRelease) {
 		t.Fatalf("workflow output actions = %+v, want observed action order", actionSummaries)
 	}
+	if actionSummaries[2]["release_gate_input_id"] != "devagent:run-1:release_gate" ||
+		actionSummaries[2]["review_intervention_id"] != "devagent:run-1:review:human" {
+		t.Fatalf("release action summary = %+v, want gate input and review intervention ids", actionSummaries[2])
+	}
 	if len(records.Tasks) != 3 {
 		t.Fatalf("child tasks = %+v, want 3 child tasks", records.Tasks)
 	}
