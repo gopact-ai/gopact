@@ -423,6 +423,36 @@ func TestWorkflowRecordsFromRunExportRestoresWorkflowProcessRecords(t *testing.T
 	}
 }
 
+func TestWorkflowRecordsFromRunExportRejectsWorkflowWithoutChildren(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	_, err = WorkflowRecordsFromRunExport(gopact.RunExport{
+		Version: gopact.RunExportVersion,
+		IDs:     gopact.RuntimeIDs{RunID: "run-1"},
+		Tasks:   []gopact.TaskRecord{records.Task},
+	}, "")
+	if err == nil {
+		t.Fatal("WorkflowRecordsFromRunExport() error = nil, want missing child task error")
+	}
+	if !strings.Contains(err.Error(), `workflow task "devagent:run-1:workflow" has no child tasks`) {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v, want missing child task error", err)
+	}
+}
+
 func TestBuildWorkflowProcessRecordsRejectsInvalidInput(t *testing.T) {
 	_, err := BuildWorkflowProcessRecords(WorkflowInput{})
 	if !errors.Is(err, ErrInvalidActionResult) {
