@@ -132,7 +132,10 @@ func TestSelfBootstrapRejectedReleaseMatchesGoldenTrajectory(t *testing.T) {
 	if report.Status != gopact.VerificationStatusFailed {
 		t.Fatalf("report status = %q, want failed", report.Status)
 	}
-	workflow := selfBootstrapWorkflowRecordsFromExport(t, export)
+	workflow, err := WorkflowRecordsFromRunExport(export, "")
+	if err != nil {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v", err)
+	}
 	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
 		Records: workflow,
 		RequiredActions: []ActionKind{
@@ -890,31 +893,6 @@ func recordWorkflowRecords(t *testing.T, recorder *gopact.RunRecorder, records W
 			t.Fatalf("RecordIntervention() error = %v", err)
 		}
 	}
-}
-
-func selfBootstrapWorkflowRecordsFromExport(t *testing.T, export gopact.RunExport) WorkflowRecords {
-	t.Helper()
-
-	workflowID := "devagent:" + export.IDs.RunID + ":workflow"
-	workflow := WorkflowRecords{
-		Inputs:        export.Inputs,
-		Interventions: export.Interventions,
-	}
-	for _, task := range export.Tasks {
-		switch {
-		case task.ID == workflowID:
-			workflow.Task = task
-		case task.ParentID == workflowID:
-			workflow.Tasks = append(workflow.Tasks, task)
-		}
-	}
-	if workflow.Task.ID == "" {
-		t.Fatalf("export tasks = %+v, want workflow parent task %q", export.Tasks, workflowID)
-	}
-	if len(workflow.Tasks) == 0 {
-		t.Fatalf("export tasks = %+v, want workflow child tasks", export.Tasks)
-	}
-	return workflow
 }
 
 func intPtr(v int) *int {

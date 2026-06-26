@@ -3,6 +3,7 @@ package devagent
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -110,6 +111,82 @@ func RecordWorkflowProcessRecords(recorder *gopact.RunRecorder, input WorkflowIn
 		}
 	}
 	return nil
+}
+
+// WorkflowRecordsFromRunExport restores one Dev Agent workflow process from a run export.
+//
+// If workflowID is empty, the default "devagent:<runID>:workflow" id is used.
+// The function only rehydrates already-recorded process records; it does not
+// validate, schedule, execute, or reinterpret the workflow.
+func WorkflowRecordsFromRunExport(export gopact.RunExport, workflowID string) (WorkflowRecords, error) {
+	workflowID = strings.TrimSpace(workflowID)
+	if workflowID == "" {
+		if strings.TrimSpace(export.IDs.RunID) == "" {
+			return WorkflowRecords{}, errors.New("devagent: workflow id or run id is required")
+		}
+		workflowID = processID(export.IDs.RunID, "workflow")
+	}
+
+	var records WorkflowRecords
+	for _, task := range export.Tasks {
+		switch {
+		case task.ID == workflowID:
+			if records.Task.ID != "" {
+				return WorkflowRecords{}, fmt.Errorf("devagent: duplicate workflow task %q in run export", workflowID)
+			}
+			records.Task = copyReleaseTaskRecord(task)
+		case task.ParentID == workflowID:
+			records.Tasks = append(records.Tasks, copyReleaseTaskRecord(task))
+		}
+	}
+	if records.Task.ID == "" {
+		return WorkflowRecords{}, fmt.Errorf("devagent: workflow task %q not found in run export", workflowID)
+	}
+	for _, input := range export.Inputs {
+		if workflowProcessStringMetadata(input.Metadata, "workflow_id") == workflowID {
+			records.Inputs = append(records.Inputs, copyReleaseInputRecord(input))
+		}
+	}
+	for _, intervention := range export.Interventions {
+		if workflowProcessStringMetadata(intervention.Metadata, "workflow_id") == workflowID {
+			records.Interventions = append(records.Interventions, copyReleaseInterventionRecord(intervention))
+		}
+	}
+	sortWorkflowProcessBoundaries(records.Tasks, records.Inputs, records.Interventions)
+	return records, nil
+}
+
+func sortWorkflowProcessBoundaries(
+	tasks []gopact.TaskRecord,
+	inputs []gopact.InputRecord,
+	interventions []gopact.InterventionRecord,
+) {
+	slices.SortStableFunc(tasks, func(a, b gopact.TaskRecord) int {
+		return compareWorkflowActionIndex(a.Metadata, b.Metadata)
+	})
+	slices.SortStableFunc(inputs, func(a, b gopact.InputRecord) int {
+		return compareWorkflowActionIndex(a.Metadata, b.Metadata)
+	})
+	slices.SortStableFunc(interventions, func(a, b gopact.InterventionRecord) int {
+		return compareWorkflowActionIndex(a.Metadata, b.Metadata)
+	})
+}
+
+func compareWorkflowActionIndex(a, b map[string]any) int {
+	left, leftOK := workflowProcessIntMetadata(a, "workflow_action_index")
+	right, rightOK := workflowProcessIntMetadata(b, "workflow_action_index")
+	switch {
+	case leftOK && rightOK && left < right:
+		return -1
+	case leftOK && rightOK && left > right:
+		return 1
+	case leftOK && !rightOK:
+		return -1
+	case !leftOK && rightOK:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func workflowProcessInput(input WorkflowInput, action ProcessInput, createdAt time.Time, index, count int) (ProcessInput, error) {
