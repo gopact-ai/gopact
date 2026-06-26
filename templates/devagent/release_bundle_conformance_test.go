@@ -209,11 +209,11 @@ func releaseBundleWithWorkflowFixture(t *testing.T) ReleaseBundle {
 	if err != nil {
 		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
 	}
-	input.Process = ProcessRecords{
-		Task:          workflow.Tasks[2],
-		Inputs:        workflow.Inputs,
-		Interventions: workflow.Interventions,
+	process, err := WorkflowActionProcessRecords(workflow, 3)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
 	}
+	input.Process = process
 	input.Export.Tasks = append([]gopact.TaskRecord{workflow.Task}, workflow.Tasks...)
 	input.Export.Inputs = workflow.Inputs
 	input.Export.Interventions = workflow.Interventions

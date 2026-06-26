@@ -321,6 +321,10 @@ func selfBootstrapReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gop
 	if err != nil {
 		t.Fatalf("Export() error = %v", err)
 	}
+	process, err := WorkflowActionProcessRecords(workflow, 3)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
+	}
 
 	bundle, err := BuildReleaseBundle(ReleaseBundleInput{
 		Export:                export,
@@ -333,13 +337,9 @@ func selfBootstrapReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gop
 			Mode:   ModeWrite,
 			Action: ActionRelease,
 		},
-		Review: review,
-		Gate:   gate,
-		Process: ProcessRecords{
-			Task:          workflow.Tasks[2],
-			Inputs:        workflow.Inputs,
-			Interventions: workflow.Interventions,
-		},
+		Review:    review,
+		Gate:      gate,
+		Process:   process,
 		CreatedAt: createdAt,
 		Metadata:  map[string]any{"release": "self-bootstrap"},
 	})
@@ -485,6 +485,10 @@ func selfBootstrapApplyReleaseTrajectoryFixture(t *testing.T, goldenPath string)
 	if err != nil {
 		t.Fatalf("Export() error = %v", err)
 	}
+	process, err := WorkflowActionProcessRecords(workflow, 4)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
+	}
 
 	bundle, err := BuildReleaseBundle(ReleaseBundleInput{
 		Export:                export,
@@ -497,13 +501,9 @@ func selfBootstrapApplyReleaseTrajectoryFixture(t *testing.T, goldenPath string)
 			Mode:   ModeWrite,
 			Action: ActionRelease,
 		},
-		Review: review,
-		Gate:   gate,
-		Process: ProcessRecords{
-			Task:          workflow.Tasks[3],
-			Inputs:        workflow.Inputs,
-			Interventions: workflow.Interventions,
-		},
+		Review:    review,
+		Gate:      gate,
+		Process:   process,
 		CreatedAt: createdAt,
 		Metadata:  map[string]any{"release": "self-bootstrap"},
 	})

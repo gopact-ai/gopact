@@ -158,17 +158,49 @@ func WorkflowRecordsFromRunExport(export gopact.RunExport, workflowID string) (W
 		}
 	}
 	sortWorkflowProcessBoundaries(records.Tasks, records.Inputs, records.Interventions)
-	if err := validateWorkflowRecordsFromRunExport(records); err != nil {
+	if err := validateWorkflowRecordsConformance(records); err != nil {
 		return WorkflowRecords{}, err
 	}
 	return records, nil
 }
 
-func validateWorkflowRecordsFromRunExport(records WorkflowRecords) error {
+// WorkflowActionProcessRecords extracts one child action's process records from a workflow.
+//
+// actionIndex is 1-based and must match workflow_action_index. The returned
+// records are defensive copies and include only input/intervention boundaries
+// attached to the same action index.
+func WorkflowActionProcessRecords(records WorkflowRecords, actionIndex int) (ProcessRecords, error) {
+	if err := validateWorkflowRecordsConformance(records); err != nil {
+		return ProcessRecords{}, err
+	}
+	if actionIndex < 1 || actionIndex > len(records.Tasks) {
+		return ProcessRecords{}, fmt.Errorf(
+			"devagent: workflow action index %d out of range 1..%d",
+			actionIndex,
+			len(records.Tasks),
+		)
+	}
+	process := ProcessRecords{
+		Task: copyReleaseTaskRecord(records.Tasks[actionIndex-1]),
+	}
+	for _, input := range records.Inputs {
+		if got, ok := workflowProcessIntMetadata(input.Metadata, "workflow_action_index"); ok && got == actionIndex {
+			process.Inputs = append(process.Inputs, copyReleaseInputRecord(input))
+		}
+	}
+	for _, intervention := range records.Interventions {
+		if got, ok := workflowProcessIntMetadata(intervention.Metadata, "workflow_action_index"); ok && got == actionIndex {
+			process.Interventions = append(process.Interventions, copyReleaseInterventionRecord(intervention))
+		}
+	}
+	return process, nil
+}
+
+func validateWorkflowRecordsConformance(records WorkflowRecords) error {
 	for _, result := range CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records}) {
 		if !result.Passed {
 			return fmt.Errorf(
-				"devagent: workflow process records from run export failed conformance case %q: %w",
+				"devagent: workflow process records failed conformance case %q: %w",
 				result.Case,
 				result.Err,
 			)

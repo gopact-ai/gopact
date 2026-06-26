@@ -437,6 +437,10 @@ func validateReleaseProcessRecords(
 	if err := validateReleaseProcessTask(records.Task, action); err != nil {
 		return err
 	}
+	workflowActionIndex, hasWorkflowActionIndex := workflowProcessIntMetadata(
+		records.Task.Metadata,
+		"workflow_action_index",
+	)
 	hasReleaseGateInput := false
 	for i, record := range records.Inputs {
 		if err := record.Validate(); err != nil {
@@ -447,6 +451,15 @@ func validateReleaseProcessRecords(
 		}
 		if err := validateRuntimeIDFields(fmt.Sprintf("process input %d", i), record.IDs, ids, true); err != nil {
 			return err
+		}
+		if hasWorkflowActionIndex {
+			if err := validateReleaseProcessWorkflowActionBoundary(
+				record.Metadata,
+				fmt.Sprintf("process input %d", i),
+				workflowActionIndex,
+			); err != nil {
+				return err
+			}
 		}
 		if record.Source == "devagent.release_gate" {
 			hasReleaseGateInput = true
@@ -469,6 +482,15 @@ func validateReleaseProcessRecords(
 		if err := validateRuntimeIDFields(fmt.Sprintf("process intervention %d", i), record.IDs, ids, true); err != nil {
 			return err
 		}
+		if hasWorkflowActionIndex {
+			if err := validateReleaseProcessWorkflowActionBoundary(
+				record.Metadata,
+				fmt.Sprintf("process intervention %d", i),
+				workflowActionIndex,
+			); err != nil {
+				return err
+			}
+		}
 		if record.Type != gopact.InterruptApproval {
 			continue
 		}
@@ -482,6 +504,29 @@ func validateReleaseProcessRecords(
 	}
 	if !hasResolvedReviewIntervention {
 		return fmt.Errorf("%w: process resolved review intervention is required", ErrInvalidReleaseBundle)
+	}
+	return nil
+}
+
+func validateReleaseProcessWorkflowActionBoundary(metadata map[string]any, label string, actionIndex int) error {
+	got, ok := workflowProcessIntMetadata(metadata, "workflow_action_index")
+	if !ok {
+		return fmt.Errorf(
+			"%w: %s workflow_action_index = %v, want %d",
+			ErrInvalidReleaseBundle,
+			label,
+			metadata["workflow_action_index"],
+			actionIndex,
+		)
+	}
+	if got != actionIndex {
+		return fmt.Errorf(
+			"%w: %s workflow_action_index = %d does not match process task workflow_action_index %d",
+			ErrInvalidReleaseBundle,
+			label,
+			got,
+			actionIndex,
+		)
 	}
 	return nil
 }

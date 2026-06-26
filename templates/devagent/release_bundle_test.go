@@ -174,11 +174,11 @@ func TestBuildReleaseBundleUsesObservedWorkflowProcessRecords(t *testing.T) {
 	if len(workflow.Tasks) != 2 || len(workflow.Inputs) != 1 || len(workflow.Interventions) != 1 {
 		t.Fatalf("workflow records = %+v, want release child task/input/intervention", workflow)
 	}
-	input.Process = ProcessRecords{
-		Task:          workflow.Tasks[1],
-		Inputs:        workflow.Inputs,
-		Interventions: workflow.Interventions,
+	process, err := WorkflowActionProcessRecords(workflow, 2)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
 	}
+	input.Process = process
 	input.Export.Tasks = append([]gopact.TaskRecord{workflow.Task}, workflow.Tasks...)
 	input.Export.Inputs = workflow.Inputs
 	input.Export.Interventions = workflow.Interventions
@@ -195,6 +195,66 @@ func TestBuildReleaseBundleUsesObservedWorkflowProcessRecords(t *testing.T) {
 	}
 	if bundle.RunExport.Tasks[0].ID != workflow.Task.ID || bundle.RunExport.Tasks[1].ParentID != workflow.Task.ID {
 		t.Fatalf("bundle run export tasks = %+v, want workflow parent and children preserved", bundle.RunExport.Tasks)
+	}
+}
+
+func TestBuildReleaseBundleRejectsWorkflowProcessRecordsWithOtherActionBoundaries(t *testing.T) {
+	input := validReleaseBundleInput(t)
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  input.Export.IDs,
+		Name: "release workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare release",
+					Diff:    "diff --git a/private b/private\n+raw diff must not enter release bundle\n",
+					Files: []PatchFile{
+						{Path: "templates/devagent/release_bundle_test.go", Intent: "cover action boundary filtering"},
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Review: input.Review,
+				Gate:   &input.Gate,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	input.Process = ProcessRecords{
+		Task:          workflow.Tasks[2],
+		Inputs:        workflow.Inputs,
+		Interventions: workflow.Interventions,
+	}
+	input.Export.Tasks = append([]gopact.TaskRecord{workflow.Task}, workflow.Tasks...)
+	input.Export.Inputs = workflow.Inputs
+	input.Export.Interventions = workflow.Interventions
+
+	_, err = BuildReleaseBundle(input)
+	if !errors.Is(err, ErrInvalidReleaseBundle) {
+		t.Fatalf("BuildReleaseBundle() error = %v, want ErrInvalidReleaseBundle", err)
+	}
+	if !strings.Contains(err.Error(), "process input 0 workflow_action_index = 2 does not match process task workflow_action_index 3") {
+		t.Fatalf("BuildReleaseBundle() error = %v, want workflow action boundary mismatch", err)
 	}
 }
 
