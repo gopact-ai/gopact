@@ -138,6 +138,24 @@ func TestCheckWorkflowProcessConformanceReportsChildSummaryActionStatusDrift(t *
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsReleaseWithoutGateInput(t *testing.T) {
+	records := workflowProcessConformanceReleaseWithoutGateFixture(t)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "release-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report release without gate input: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsReleaseWithoutResolvedReview(t *testing.T) {
+	records := workflowProcessConformanceReleaseWithoutReviewFixture(t)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "release-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report release without resolved review: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsRawDiffLeak(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	value, ok := records.Inputs[0].Value.(map[string]any)
@@ -228,6 +246,70 @@ func workflowProcessConformanceFixture(t *testing.T) WorkflowRecords {
 					Status:   ReviewApproved,
 					Reviewer: "human",
 					Summary:  "workflow process is complete",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	return records
+}
+
+func workflowProcessConformanceReleaseWithoutGateFixture(t *testing.T) WorkflowRecords {
+	t.Helper()
+
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		Name: "self-bootstrap release without gate",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	return records
+}
+
+func workflowProcessConformanceReleaseWithoutReviewFixture(t *testing.T) WorkflowRecords {
+	t.Helper()
+
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		Name: "self-bootstrap release without review",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
 				},
 			},
 		},
