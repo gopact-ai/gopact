@@ -258,6 +258,53 @@ func TestCheckWorkflowProcessConformanceReportsReleaseWithoutResolvedReview(t *t
 	}
 }
 
+func TestCheckWorkflowProcessConformancePassesRejectedReleaseReviewBoundary(t *testing.T) {
+	records := workflowProcessConformanceRejectedReleaseFixture(t)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if failed := failedWorkflowProcessConformanceCases(results); len(failed) > 0 {
+		t.Fatalf("CheckWorkflowProcessConformance() failed cases: %v", failed)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{Records: records})
+}
+
+func TestCheckWorkflowProcessConformanceReportsRejectedReleaseWithoutReview(t *testing.T) {
+	records := workflowProcessConformanceRejectedReleaseWithoutReviewFixture(t)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "release-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report rejected release without review: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsRejectedReleaseReviewStatusDrift(t *testing.T) {
+	records := workflowProcessConformanceRejectedReleaseFixture(t)
+	records.Interventions[0].Metadata["review_status"] = string(ReviewApproved)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "release-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report rejected release review status drift: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsRejectedReleaseSummaryBoundaryDrift(t *testing.T) {
+	records := workflowProcessConformanceRejectedReleaseFixture(t)
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[1]["review_intervention_id"] = "devagent:run-1:review:forged"
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report rejected release summary boundary drift: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsRawDiffLeak(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	value, ok := records.Inputs[0].Value.(map[string]any)
@@ -412,6 +459,87 @@ func workflowProcessConformanceReleaseWithoutReviewFixture(t *testing.T) Workflo
 					Mode:         ModeWrite,
 					ReportStatus: gopact.VerificationStatusPassed,
 					ReviewStatus: ReviewApproved,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	return records
+}
+
+func workflowProcessConformanceRejectedReleaseFixture(t *testing.T) WorkflowRecords {
+	t.Helper()
+
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		Name: "self-bootstrap rejected release workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionRejected,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+					Reasons: []string{
+						"release gate rejected: review status rejected",
+					},
+				},
+				Gate: &GateResult{
+					Status:       GateRejected,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewRejected,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewRejected,
+					Reviewer: "human",
+					Summary:  "release needs another plan pass",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	return records
+}
+
+func workflowProcessConformanceRejectedReleaseWithoutReviewFixture(t *testing.T) WorkflowRecords {
+	t.Helper()
+
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"},
+		Name: "self-bootstrap rejected release without review",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionRejected,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+					Reasons: []string{
+						"release gate rejected: review status rejected",
+					},
+				},
+				Gate: &GateResult{
+					Status:       GateRejected,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewRejected,
 				},
 			},
 		},
