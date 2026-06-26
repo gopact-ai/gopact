@@ -420,14 +420,19 @@ func checkWorkflowProcessReleaseBoundaries(records WorkflowRecords) WorkflowProc
 			return failedWorkflowProcessConformance("release-boundaries", fmt.Errorf("release action %d: %w", i, err))
 		}
 
-		if ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status")) != ActionAllowed {
+		actionStatus := ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status"))
+		if actionStatus != ActionAllowed && !workflowProcessReleaseRequiresReview(task, gateValue) {
 			continue
 		}
-		review, ok := workflowProcessResolvedReviewIntervention(records.Interventions, actionIndex)
+		review, ok := workflowProcessReviewIntervention(records.Interventions, actionIndex)
 		if !ok {
+			status := "resolved"
+			if actionStatus != ActionAllowed {
+				status = "recorded"
+			}
 			return failedWorkflowProcessConformance(
 				"release-boundaries",
-				fmt.Errorf("release action %d resolved review intervention is required", i),
+				fmt.Errorf("release action %d %s review intervention is required", i, status),
 			)
 		}
 		if err := validateWorkflowProcessReleaseReview(task, gateValue, review); err != nil {
@@ -451,7 +456,7 @@ func validateWorkflowProcessReleaseSummaryBoundary(
 			return fmt.Errorf("release action summary %d release_gate_input_id = %q, want %q", actionIndex, got, gateInput.ID)
 		}
 	}
-	if review, ok := workflowProcessResolvedReviewIntervention(records.Interventions, actionIndex); ok {
+	if review, ok := workflowProcessReviewIntervention(records.Interventions, actionIndex); ok {
 		if got := workflowProcessStringMetadata(summary, "review_intervention_id"); got != review.ID {
 			return fmt.Errorf("release action summary %d review_intervention_id = %q, want %q", actionIndex, got, review.ID)
 		}
@@ -471,9 +476,9 @@ func workflowProcessReleaseGateInput(records []gopact.InputRecord, actionIndex i
 	return gopact.InputRecord{}, false
 }
 
-func workflowProcessResolvedReviewIntervention(records []gopact.InterventionRecord, actionIndex int) (gopact.InterventionRecord, bool) {
+func workflowProcessReviewIntervention(records []gopact.InterventionRecord, actionIndex int) (gopact.InterventionRecord, bool) {
 	for _, record := range records {
-		if record.Type != gopact.InterruptApproval || record.Status != gopact.InterventionResolved {
+		if record.Type != gopact.InterruptApproval {
 			continue
 		}
 		if got, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok && got == actionIndex {
@@ -481,6 +486,11 @@ func workflowProcessResolvedReviewIntervention(records []gopact.InterventionReco
 		}
 	}
 	return gopact.InterventionRecord{}, false
+}
+
+func workflowProcessReleaseRequiresReview(task gopact.TaskRecord, gateValue map[string]any) bool {
+	return workflowProcessStringMetadata(task.Metadata, "review_status") != "" ||
+		workflowProcessStringMetadata(gateValue, "review_status") != ""
 }
 
 func validateWorkflowProcessReleaseGateInput(
@@ -510,8 +520,18 @@ func validateWorkflowProcessReleaseReview(
 	record gopact.InterventionRecord,
 ) error {
 	reviewStatus := workflowProcessStringMetadata(record.Metadata, "review_status")
-	if reviewStatus != string(ReviewApproved) {
-		return fmt.Errorf("review intervention review_status = %q, want %q", reviewStatus, ReviewApproved)
+	status := ReviewStatus(reviewStatus)
+	switch status {
+	case ReviewApproved:
+		if record.Status != gopact.InterventionResolved {
+			return fmt.Errorf("approved review intervention status = %q, want %q", record.Status, gopact.InterventionResolved)
+		}
+	case ReviewRejected:
+		if record.Status != gopact.InterventionRejected {
+			return fmt.Errorf("rejected review intervention status = %q, want %q", record.Status, gopact.InterventionRejected)
+		}
+	default:
+		return fmt.Errorf("review intervention review_status = %q, want valid status", reviewStatus)
 	}
 	if reviewer := workflowProcessStringMetadata(record.Metadata, "reviewer"); reviewer == "" {
 		return errors.New("review intervention reviewer is required")
