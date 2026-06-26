@@ -125,6 +125,30 @@ func TestRunPrintsSecretSyncShellScript(t *testing.T) {
 	}
 }
 
+func TestRunPrintsCIRerunShellScript(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"-root", "../..", "-plan-rerun-sh"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	for _, want := range []string{
+		"#!/usr/bin/env bash",
+		"require_secret 'gopact-ai/gopact-adapters-model'",
+		"gh run list -R \"${repo}\" --workflow \"${workflow}\" --branch \"${branch}\"",
+		"gh run rerun -R \"${repo}\" \"${latest_id}\"",
+		"rerun_ci 'gopact-ai/gopact-adapters-model' 'ci' 'main'",
+		"rerun_ci 'gopact-ai/gopact-templates-agenttool' 'ci' 'main'",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunPrintsRemoteStatusJSON(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	restore := installFakeGH(t, `#!/usr/bin/env bash
@@ -214,12 +238,16 @@ func TestRunWritesScaffoldWorkspace(t *testing.T) {
 	if !strings.Contains(stdout.String(), "sync-secrets.sh") {
 		t.Fatalf("stdout = %q, want sync-secrets.sh summary", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "rerun-ci.sh") {
+		t.Fatalf("stdout = %q, want rerun-ci.sh summary", stdout.String())
+	}
 
 	for _, path := range []string{
 		"go.work",
 		"sync-plan.json",
 		"sync-repos.sh",
 		"sync-secrets.sh",
+		"rerun-ci.sh",
 		"gopact-adapters-model/go.mod",
 		"gopact-adapters-model/README.md",
 		"gopact-adapters-model/CONFORMANCE.md",
@@ -360,7 +388,9 @@ func TestRunRejectsConflictingPlanModes(t *testing.T) {
 		{"-root", "../..", "-dry-run", "-plan-sh"},
 		{"-root", "../..", "-plan-json", "-plan-sh"},
 		{"-root", "../..", "-plan-json", "-plan-secrets-sh"},
+		{"-root", "../..", "-plan-secrets-sh", "-plan-rerun-sh"},
 		{"-root", "../..", "-remote-status-json", "-plan-secrets-sh"},
+		{"-root", "../..", "-remote-status-json", "-plan-rerun-sh"},
 	}
 	for _, args := range tests {
 		var stdout, stderr bytes.Buffer

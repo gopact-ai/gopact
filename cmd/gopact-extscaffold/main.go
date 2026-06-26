@@ -35,6 +35,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var planJSON bool
 	var planSH bool
 	var planSecretsSH bool
+	var planRerunSH bool
 	var remoteStatusJSON bool
 	var verify bool
 
@@ -46,6 +47,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&planJSON, "plan-json", false, "print remote bootstrap sync plan as JSON without writing files")
 	fs.BoolVar(&planSH, "plan-sh", false, "print remote bootstrap sync shell script without writing files")
 	fs.BoolVar(&planSecretsSH, "plan-secrets-sh", false, "print repository secret sync shell script without writing files")
+	fs.BoolVar(&planRerunSH, "plan-rerun-sh", false, "print repository CI rerun shell script without writing files")
 	fs.BoolVar(&remoteStatusJSON, "remote-status-json", false, "print GitHub remote repository status as JSON without writing files")
 	fs.BoolVar(&verify, "verify", false, "run required CI commands in each generated repository after writing")
 	if err := fs.Parse(args); err != nil {
@@ -71,12 +73,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "-plan-secrets-sh cannot be used with -dry-run, -plan-json, or -plan-sh")
 		return exitUsage
 	}
-	if remoteStatusJSON && (dryRun || planJSON || planSH || planSecretsSH) {
-		_, _ = fmt.Fprintln(stderr, "-remote-status-json cannot be used with -dry-run, -plan-json, -plan-sh, or -plan-secrets-sh")
+	if planRerunSH && (dryRun || planJSON || planSH || planSecretsSH) {
+		_, _ = fmt.Fprintln(stderr, "-plan-rerun-sh cannot be used with -dry-run, -plan-json, -plan-sh, or -plan-secrets-sh")
 		return exitUsage
 	}
-	if !dryRun && !planJSON && !planSH && !planSecretsSH && !remoteStatusJSON && strings.TrimSpace(out) == "" {
-		_, _ = fmt.Fprintln(stderr, "-out is required unless -dry-run, -plan-json, -plan-sh, -plan-secrets-sh, or -remote-status-json is set")
+	if remoteStatusJSON && (dryRun || planJSON || planSH || planSecretsSH || planRerunSH) {
+		_, _ = fmt.Fprintln(stderr, "-remote-status-json cannot be used with -dry-run, -plan-json, -plan-sh, -plan-secrets-sh, or -plan-rerun-sh")
+		return exitUsage
+	}
+	if !dryRun && !planJSON && !planSH && !planSecretsSH && !planRerunSH && !remoteStatusJSON && strings.TrimSpace(out) == "" {
+		_, _ = fmt.Fprintln(stderr, "-out is required unless -dry-run, -plan-json, -plan-sh, -plan-secrets-sh, -plan-rerun-sh, or -remote-status-json is set")
 		return exitUsage
 	}
 
@@ -129,6 +135,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = io.WriteString(stdout, file.Body)
 		return exitOK
 	}
+	if planRerunSH {
+		file, err := extensionscaffold.RenderRerunScriptFromDesign(root)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "render CI rerun script: %v\n", err)
+			return exitError
+		}
+		_, _ = io.WriteString(stdout, file.Body)
+		return exitOK
+	}
 
 	if dryRun {
 		scaffolds, err := extensionscaffold.RenderRepositoriesFromDesign(root)
@@ -148,7 +163,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "write scaffold workspace: %v\n", err)
 		return exitError
 	}
-	_, _ = fmt.Fprintf(stdout, "wrote %d repositories, %s, %s, %s, and %s to %s\n", len(workspace.Scaffolds), workspace.GoWork.Path, workspace.SyncPlan.Path, workspace.SyncScript.Path, workspace.SecretScript.Path, out)
+	_, _ = fmt.Fprintf(stdout, "wrote %d repositories, %s, %s, %s, %s, and %s to %s\n", len(workspace.Scaffolds), workspace.GoWork.Path, workspace.SyncPlan.Path, workspace.SyncScript.Path, workspace.SecretScript.Path, workspace.RerunScript.Path, out)
 	for _, scaffold := range workspace.Scaffolds {
 		_, _ = fmt.Fprintf(stdout, "%s\t%d files\n", scaffold.Directory, len(scaffold.Files))
 	}
