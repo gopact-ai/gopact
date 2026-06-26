@@ -54,6 +54,45 @@ func TestSelfBootstrapReleaseMatchesGoldenTrajectory(t *testing.T) {
 	}
 }
 
+func TestSelfBootstrapApplyReleaseMatchesGoldenTrajectory(t *testing.T) {
+	const goldenPath = "testdata/self_bootstrap_apply_release.golden.json"
+
+	export, bundle := selfBootstrapApplyReleaseTrajectoryFixture(t, goldenPath)
+
+	gopacttest.RequireRunExportGoldenTrajectoryFrames(t, goldenPath, export)
+	gopacttest.RequireTemplateTrajectoryConformance(t, gopacttest.TemplateTrajectoryConformanceHarness{
+		Name:      "devagent.self-bootstrap-apply-release",
+		RunExport: &export,
+		RequiredEventTypes: []gopact.EventType{
+			gopact.EventRunStarted,
+			gopact.EventNodeCompleted,
+			gopact.EventNodeCompleted,
+			gopact.EventPolicyDecided,
+			gopact.EventSandboxFileWritten,
+			gopact.EventNodeCompleted,
+			gopact.EventNodeCompleted,
+			gopact.EventRunCompleted,
+		},
+		RequiredFrames: []gopacttest.TrajectoryFramePattern{
+			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
+			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
+			{Type: gopact.EventNodeCompleted, Node: "devagent.apply_patch", Step: intPtr(3)},
+			{Type: gopact.EventNodeCompleted, Node: "devagent.release_gate", Step: intPtr(4)},
+		},
+	})
+
+	if len(export.Steps) != 4 {
+		t.Fatalf("exported steps = %d, want 4", len(export.Steps))
+	}
+	if bundle.Process.Task.ID != "devagent:run-self-bootstrap-1:release" ||
+		bundle.Process.Task.ParentID != "devagent:run-self-bootstrap-1:workflow" {
+		t.Fatalf("bundle process task = %+v, want workflow child release task", bundle.Process.Task)
+	}
+	if len(export.Tasks) < 5 || export.Tasks[3].Metadata["action"] != string(ActionApplyPatch) {
+		t.Fatalf("export tasks = %+v, want workflow apply_patch child task", export.Tasks)
+	}
+}
+
 func TestSelfBootstrapRejectedReleaseMatchesGoldenTrajectory(t *testing.T) {
 	const goldenPath = "testdata/self_bootstrap_rejected_release.golden.json"
 
@@ -240,6 +279,170 @@ func selfBootstrapReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gop
 	return export, bundle
 }
 
+func selfBootstrapApplyReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gopact.RunExport, ReleaseBundle) {
+	t.Helper()
+
+	createdAt := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	ids := selfBootstrapRuntimeIDs()
+	patch := selfBootstrapPatchProposal("apply self-bootstrap release trajectory evidence")
+	applyEvents := selfBootstrapApplyPatchEvents(ids, createdAt)
+	applyAction, err := EvaluateAction(ActionInput{
+		Mode:                  ModeWrite,
+		Action:                ActionApplyPatch,
+		Patch:                 patch,
+		ObservedDiff:          "diff --git a/templates/devagent/self_bootstrap_trajectory_test.go b/templates/devagent/self_bootstrap_trajectory_test.go\n",
+		ObservedCheckpointRef: "checkpoint:thread-1:apply-patch",
+		PolicyDecision: &gopact.PolicyDecision{
+			Action: gopact.PolicyAllow,
+		},
+		Events: applyEvents,
+		Metadata: map[string]any{
+			"policy_ref": "policy:self-bootstrap-apply",
+		},
+	})
+	if err != nil {
+		t.Fatalf("EvaluateAction(apply) error = %v", err)
+	}
+
+	recorder := gopact.NewRunRecorder()
+	for _, event := range selfBootstrapApplyReleaseEvents(ids, createdAt, applyEvents) {
+		if err := recorder.Record(event); err != nil {
+			t.Fatalf("Record(event) error = %v", err)
+		}
+	}
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+
+	reportRecorder := gopact.NewVerificationRecorder()
+	for _, check := range []gopact.VerificationCheck{
+		verificationCheck("unit-tests", gopact.VerificationStatusPassed, "command"),
+		verificationCheck("diff-check", gopact.VerificationStatusPassed, "diff"),
+		verificationCheck("checkpoint-check", gopact.VerificationStatusPassed, "checkpoint"),
+	} {
+		if err := reportRecorder.Record(check); err != nil {
+			t.Fatalf("Record(check) error = %v", err)
+		}
+	}
+	if err := gopacttest.RecordRunExportGoldenTrajectoryCheck(reportRecorder, goldenPath, export); err != nil {
+		t.Fatalf("RecordRunExportGoldenTrajectoryCheck() error = %v", err)
+	}
+	report, err := reportRecorder.Report(export)
+	if err != nil {
+		t.Fatalf("Report() error = %v", err)
+	}
+
+	review := ReviewDecision{
+		Status:   ReviewApproved,
+		Reviewer: "human",
+		Summary:  "self-bootstrap apply and release evidence approved",
+	}
+	entropy := gopact.EntropyAudit{
+		ID:        "entropy-1",
+		Status:    gopact.VerificationStatusPassed,
+		IDs:       ids,
+		CreatedAt: createdAt,
+		Findings: []gopact.EntropyFinding{
+			{
+				ID:        "finding-1",
+				Category:  gopact.EntropyProcess,
+				Severity:  gopact.EntropySeverityLow,
+				Summary:   "apply patch trajectory has policy, sandbox, diff, checkpoint, and release gate evidence",
+				CreatedAt: createdAt,
+			},
+		},
+	}
+	gate, err := EvaluateReleaseGate(GateInput{
+		Mode:          ModeWrite,
+		Report:        report,
+		Review:        review,
+		EntropyAudits: []gopact.EntropyAudit{entropy},
+	},
+		RequireCheckIDs("unit-tests", "diff-check", "checkpoint-check", gopacttest.VerificationCheckTrajectoryGolden),
+		RequireEvidenceTypes("command", "diff", "checkpoint", gopacttest.VerificationEvidenceTypeTrajectoryGolden),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateReleaseGate() error = %v", err)
+	}
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       ids,
+		Name:      "self-bootstrap apply release workflow",
+		CreatedAt: createdAt,
+		Metadata:  map[string]any{"scope": "m5-workflow"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: patch,
+			},
+			{
+				Action: applyAction,
+				Patch:  patch,
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Review: review,
+				Gate:   &gate,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	recordWorkflowRecords(t, recorder, workflow)
+	if err := recorder.RecordEntropyAudit(entropy); err != nil {
+		t.Fatalf("RecordEntropyAudit() error = %v", err)
+	}
+	if err := recorder.RecordVerificationReport(report); err != nil {
+		t.Fatalf("RecordVerificationReport() error = %v", err)
+	}
+	export, err = recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+
+	bundle, err := BuildReleaseBundle(ReleaseBundleInput{
+		Export:                export,
+		Report:                report,
+		EntropyAudits:         []gopact.EntropyAudit{entropy},
+		RequiredCheckIDs:      []string{"unit-tests", "diff-check", "checkpoint-check", gopacttest.VerificationCheckTrajectoryGolden},
+		RequiredEvidenceTypes: []string{"command", "diff", "checkpoint", gopacttest.VerificationEvidenceTypeTrajectoryGolden},
+		Action: ActionResult{
+			Status: ActionAllowed,
+			Mode:   ModeWrite,
+			Action: ActionRelease,
+		},
+		Review: review,
+		Gate:   gate,
+		Process: ProcessRecords{
+			Task:          workflow.Tasks[3],
+			Inputs:        workflow.Inputs,
+			Interventions: workflow.Interventions,
+		},
+		CreatedAt: createdAt,
+		Metadata:  map[string]any{"release": "self-bootstrap"},
+	})
+	if err != nil {
+		t.Fatalf("BuildReleaseBundle() error = %v", err)
+	}
+	return export, bundle
+}
+
 func selfBootstrapRejectedReleaseTrajectoryFixture(t *testing.T) (gopact.RunExport, gopact.VerificationReport) {
 	t.Helper()
 
@@ -360,6 +563,65 @@ func selfBootstrapReleaseEvents(ids gopact.RuntimeIDs, createdAt time.Time) []go
 		devAgentStepEvent(ids, createdAt.Add(5*time.Second), gopact.EventNodeStarted, 3, "devagent.release_gate", gopact.StepRunning),
 		devAgentStepEvent(ids, createdAt.Add(6*time.Second), gopact.EventNodeCompleted, 3, "devagent.release_gate", gopact.StepCompleted),
 		{Type: gopact.EventRunCompleted, IDs: ids, CreatedAt: createdAt.Add(7 * time.Second)},
+	}
+}
+
+func selfBootstrapApplyReleaseEvents(ids gopact.RuntimeIDs, createdAt time.Time, applyEvents []gopact.Event) []gopact.Event {
+	events := []gopact.Event{
+		{Type: gopact.EventRunStarted, IDs: ids, CreatedAt: createdAt},
+		devAgentStepEvent(ids, createdAt.Add(time.Second), gopact.EventNodeStarted, 1, "devagent.analyze", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(2*time.Second), gopact.EventNodeCompleted, 1, "devagent.analyze", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(3*time.Second), gopact.EventNodeStarted, 2, "devagent.plan", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(4*time.Second), gopact.EventNodeCompleted, 2, "devagent.plan", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(5*time.Second), gopact.EventNodeStarted, 3, "devagent.apply_patch", gopact.StepRunning),
+	}
+	events = append(events, applyEvents...)
+	events = append(events,
+		devAgentStepEvent(ids, createdAt.Add(9*time.Second), gopact.EventNodeCompleted, 3, "devagent.apply_patch", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(10*time.Second), gopact.EventNodeStarted, 4, "devagent.release_gate", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(11*time.Second), gopact.EventNodeCompleted, 4, "devagent.release_gate", gopact.StepCompleted),
+		gopact.Event{Type: gopact.EventRunCompleted, IDs: ids, CreatedAt: createdAt.Add(12 * time.Second)},
+	)
+	return events
+}
+
+func selfBootstrapApplyPatchEvents(ids gopact.RuntimeIDs, createdAt time.Time) []gopact.Event {
+	return []gopact.Event{
+		{
+			Type:      gopact.EventPolicyRequested,
+			IDs:       ids,
+			Node:      "devagent.apply_patch",
+			Step:      3,
+			CreatedAt: createdAt.Add(6 * time.Second),
+		},
+		{
+			Type: gopact.EventPolicyDecided,
+			IDs:  ids,
+			Node: "devagent.apply_patch",
+			Step: 3,
+			PolicyDecision: &gopact.PolicyDecision{
+				Action: gopact.PolicyAllow,
+			},
+			CreatedAt: createdAt.Add(7 * time.Second),
+		},
+		{
+			Type:      gopact.EventSandboxFileWritten,
+			IDs:       ids,
+			Node:      "devagent.apply_patch",
+			Step:      3,
+			CreatedAt: createdAt.Add(8 * time.Second),
+		},
+	}
+}
+
+func selfBootstrapPatchProposal(summary string) PatchProposal {
+	return PatchProposal{
+		ID:      "patch-1",
+		Summary: summary,
+		Diff:    "diff --git a/private b/private\n+raw diff must not enter release evidence\n",
+		Files: []PatchFile{
+			{Path: "templates/devagent/self_bootstrap_trajectory_test.go", Intent: "cover workflow trajectory evidence"},
+		},
 	}
 }
 
