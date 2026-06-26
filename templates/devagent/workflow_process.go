@@ -526,12 +526,15 @@ func workflowActionSummaries(records []ProcessRecords) []map[string]any {
 		if reasonCount, ok := workflowProcessOutputReasonCount(record.Task.Output); ok {
 			summary["reason_count"] = reasonCount
 		}
+		if id := workflowResumeInputID(record.Inputs); id != "" {
+			summary["resume_input_id"] = id
+		}
+		if id := workflowReviewInterventionID(record.Interventions); id != "" {
+			summary["review_intervention_id"] = id
+		}
 		if action, ok := summary["action"].(string); ok && ActionKind(action) == ActionRelease {
 			if id := workflowReleaseGateInputID(record.Inputs); id != "" {
 				summary["release_gate_input_id"] = id
-			}
-			if id := workflowReviewInterventionID(record.Interventions); id != "" {
-				summary["review_intervention_id"] = id
 			}
 		}
 		out = append(out, summary)
@@ -557,6 +560,15 @@ func workflowProcessOutputReasonCount(output any) (int, bool) {
 func workflowReleaseGateInputID(records []gopact.InputRecord) string {
 	for _, record := range records {
 		if record.Source == "devagent.release_gate" {
+			return record.ID
+		}
+	}
+	return ""
+}
+
+func workflowResumeInputID(records []gopact.InputRecord) string {
+	for _, record := range records {
+		if record.Kind == gopact.InputResume && record.Source == "devagent.review_resume" {
 			return record.ID
 		}
 	}

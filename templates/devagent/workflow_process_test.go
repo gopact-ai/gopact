@@ -385,6 +385,90 @@ func TestBuildWorkflowProcessRecordsCarriesReviewResumeInput(t *testing.T) {
 	}
 }
 
+func TestBuildWorkflowProcessRecordsSummarizesApplyResumeBoundary(t *testing.T) {
+	createdAt := time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)
+	ids := gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"}
+
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       ids,
+		Name:      "self-bootstrap resumed apply workflow",
+		CreatedAt: createdAt,
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: selfBootstrapPatchProposal("resume apply after policy approval"),
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionApplyPatch,
+				},
+				Patch: selfBootstrapPatchProposal("resume apply after policy approval"),
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+					Summary:  "apply approved through policy review",
+				},
+				Resume: &gopact.ResumeRequest{
+					CheckpointID: "checkpoint-apply-1",
+					StepID:       "devagent:run-1:step:devagent.apply_patch",
+					InterruptID:  "approval-1",
+					IDs:          ids,
+					Payload: map[string]any{
+						"decision": "approved",
+					},
+					PayloadCodec: "application/json",
+					CreatedAt:    createdAt.Add(time.Minute),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	actionSummaries, ok := output["actions"].([]map[string]any)
+	if !ok {
+		t.Fatalf("workflow output actions = %T, want []map[string]any", output["actions"])
+	}
+	apply := actionSummaries[2]
+	if apply["action"] != string(ActionApplyPatch) ||
+		apply["input_count"] != 2 ||
+		apply["intervention_count"] != 1 ||
+		apply["resume_input_id"] != "devagent:run-1:resume:approval-1" ||
+		apply["review_intervention_id"] != "devagent:run-1:review:human" {
+		t.Fatalf("apply action summary = %+v, want patch, resume, and review boundary ids", apply)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: records,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionApplyPatch,
+		},
+		RequiredInputSources: []string{
+			"devagent.patch",
+			"devagent.review_resume",
+		},
+	})
+}
+
 func TestBuildWorkflowProcessRecordsSummarizesRejectedChildAction(t *testing.T) {
 	records, err := BuildWorkflowProcessRecords(WorkflowInput{
 		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
