@@ -290,7 +290,7 @@ func writeScaffoldFixture(t *testing.T) string {
   "version": 1,
   "sdk_compatibility": {
     "module": "github.com/gopact-ai/gopact",
-    "go_versions": ["1.25"]
+    "go_versions": ["1.25.11"]
   },
   "targets": [{
     "name": "gopact-adapters-example-target",
