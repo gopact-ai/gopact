@@ -35,31 +35,33 @@ func (report RemoteStatusReport) Repository(name string) *RemoteRepositoryStatus
 
 // RemoteRepositoryStatus records the observed GitHub state of one external repository.
 type RemoteRepositoryStatus struct {
-	Name                    string `json:"name"`
-	Remote                  string `json:"remote"`
-	ExpectedVisibility      string `json:"expected_visibility"`
-	Visibility              string `json:"visibility,omitempty"`
-	URL                     string `json:"url,omitempty"`
-	DefaultBranch           string `json:"default_branch,omitempty"`
-	CIWorkflowPath          string `json:"ci_workflow_path,omitempty"`
-	CIRunWorkflowName       string `json:"ci_run_workflow_name,omitempty"`
-	CIRunStatus             string `json:"ci_run_status,omitempty"`
-	CIRunConclusion         string `json:"ci_run_conclusion,omitempty"`
-	CIRunEvent              string `json:"ci_run_event,omitempty"`
-	CIRunHeadBranch         string `json:"ci_run_head_branch,omitempty"`
-	CIRunURL                string `json:"ci_run_url,omitempty"`
-	PrivateSDKSecretName    string `json:"private_sdk_token_secret_name,omitempty"`
-	Error                   string `json:"error,omitempty"`
-	CIWorkflowError         string `json:"ci_workflow_error,omitempty"`
-	CIRunError              string `json:"ci_run_error,omitempty"`
-	PrivateSDKSecretError   string `json:"private_sdk_token_secret_error,omitempty"`
-	Exists                  bool   `json:"exists"`
-	Private                 bool   `json:"private"`
-	CIWorkflowPresent       bool   `json:"ci_workflow_present"`
-	CIWorkflowRunSeen       bool   `json:"ci_workflow_run_seen"`
-	CIRunPassed             bool   `json:"ci_run_passed"`
-	PrivateSDKSecretPresent bool   `json:"private_sdk_token_secret_present"`
-	Ready                   bool   `json:"ready"`
+	Name                    string   `json:"name"`
+	Remote                  string   `json:"remote"`
+	ExpectedVisibility      string   `json:"expected_visibility"`
+	Visibility              string   `json:"visibility,omitempty"`
+	URL                     string   `json:"url,omitempty"`
+	DefaultBranch           string   `json:"default_branch,omitempty"`
+	CIWorkflowPath          string   `json:"ci_workflow_path,omitempty"`
+	CIRunWorkflowName       string   `json:"ci_run_workflow_name,omitempty"`
+	CIRunStatus             string   `json:"ci_run_status,omitempty"`
+	CIRunConclusion         string   `json:"ci_run_conclusion,omitempty"`
+	CIRunEvent              string   `json:"ci_run_event,omitempty"`
+	CIRunHeadBranch         string   `json:"ci_run_head_branch,omitempty"`
+	CIRunURL                string   `json:"ci_run_url,omitempty"`
+	PrivateSDKSecretName    string   `json:"private_sdk_token_secret_name,omitempty"`
+	BlockingReasons         []string `json:"blocking_reasons,omitempty"`
+	RequiredActions         []string `json:"required_actions,omitempty"`
+	Error                   string   `json:"error,omitempty"`
+	CIWorkflowError         string   `json:"ci_workflow_error,omitempty"`
+	CIRunError              string   `json:"ci_run_error,omitempty"`
+	PrivateSDKSecretError   string   `json:"private_sdk_token_secret_error,omitempty"`
+	Exists                  bool     `json:"exists"`
+	Private                 bool     `json:"private"`
+	CIWorkflowPresent       bool     `json:"ci_workflow_present"`
+	CIWorkflowRunSeen       bool     `json:"ci_workflow_run_seen"`
+	CIRunPassed             bool     `json:"ci_run_passed"`
+	PrivateSDKSecretPresent bool     `json:"private_sdk_token_secret_present"`
+	Ready                   bool     `json:"ready"`
 }
 
 // CheckRemoteRepositories checks GitHub repository existence and CI workflow presence.
@@ -101,7 +103,9 @@ func CheckRemoteRepositories(ctx context.Context, root string, options RemoteSta
 		status.Ready = status.Exists &&
 			status.CIWorkflowPresent &&
 			status.CIRunPassed &&
+			status.PrivateSDKSecretPresent &&
 			visibilityMatches(status.ExpectedVisibility, status.Private)
+		annotateRemoteReadiness(&status)
 		if status.Ready {
 			report.ReadyCount++
 		} else {
@@ -110,6 +114,52 @@ func CheckRemoteRepositories(ctx context.Context, root string, options RemoteSta
 		report.Repositories = append(report.Repositories, status)
 	}
 	return report, nil
+}
+
+func annotateRemoteReadiness(status *RemoteRepositoryStatus) {
+	if status.Ready {
+		return
+	}
+	if !status.Exists {
+		status.BlockingReasons = append(status.BlockingReasons, "repository does not exist")
+		status.RequiredActions = append(status.RequiredActions, "create repository with sync-repos.sh")
+		return
+	}
+	if !visibilityMatches(status.ExpectedVisibility, status.Private) {
+		reason, action := visibilityRemediation(status.ExpectedVisibility)
+		status.BlockingReasons = append(status.BlockingReasons, reason)
+		status.RequiredActions = append(status.RequiredActions, action)
+	}
+	if !status.CIWorkflowPresent {
+		status.BlockingReasons = append(status.BlockingReasons, "ci workflow is missing")
+		status.RequiredActions = append(status.RequiredActions, "push .github/workflows/ci.yml with sync-repos.sh")
+	}
+	if !status.PrivateSDKSecretPresent {
+		if status.PrivateSDKSecretError != "" {
+			status.BlockingReasons = append(status.BlockingReasons, "GOPACT_GITHUB_TOKEN secret could not be verified")
+			status.RequiredActions = append(status.RequiredActions, "verify repository secret access and configure GOPACT_GITHUB_TOKEN with sync-secrets.sh")
+		} else {
+			status.BlockingReasons = append(status.BlockingReasons, "GOPACT_GITHUB_TOKEN secret is missing")
+			status.RequiredActions = append(status.RequiredActions, "configure GOPACT_GITHUB_TOKEN with sync-secrets.sh")
+		}
+	}
+	if !status.CIWorkflowPresent {
+		return
+	}
+	if !status.CIWorkflowRunSeen {
+		if status.CIRunError != "" && status.CIRunError != "no workflow runs observed" {
+			status.BlockingReasons = append(status.BlockingReasons, "ci workflow run status could not be verified")
+			status.RequiredActions = append(status.RequiredActions, "verify GitHub Actions access and rerun ci workflow with rerun-ci.sh")
+			return
+		}
+		status.BlockingReasons = append(status.BlockingReasons, "ci workflow has not run")
+		status.RequiredActions = append(status.RequiredActions, "trigger ci workflow with rerun-ci.sh")
+		return
+	}
+	if !status.CIRunPassed {
+		status.BlockingReasons = append(status.BlockingReasons, "latest ci workflow run did not pass")
+		status.RequiredActions = append(status.RequiredActions, "rerun ci workflow with rerun-ci.sh after fixing blockers")
+	}
 }
 
 func fillRepositoryView(ctx context.Context, ghPath string, status *RemoteRepositoryStatus) {
@@ -236,5 +286,16 @@ func visibilityMatches(expected string, private bool) bool {
 		return !private
 	default:
 		return false
+	}
+}
+
+func visibilityRemediation(expected string) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(expected)) {
+	case "", "private":
+		return "repository visibility is not private", "set repository visibility to private"
+	case "public":
+		return "repository visibility is not public", "set repository visibility to public"
+	default:
+		return "repository visibility expectation is invalid", "fix repository visibility in docs/design/external-repositories.json"
 	}
 }
