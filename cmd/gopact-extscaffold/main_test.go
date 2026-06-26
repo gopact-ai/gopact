@@ -437,6 +437,20 @@ func TestRunWritesAndVerifiesScaffoldWorkspace(t *testing.T) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout.String())
 		}
 	}
+	readme := readFixtureOutputFile(t, dir, "gopact-adapters-example/README.md")
+	conformance := readFixtureOutputFile(t, dir, "gopact-adapters-example/CONFORMANCE.md")
+	for _, content := range []string{readme, conformance} {
+		for _, want := range []string{
+			"V1 Migration Ownership",
+			"adapters/example",
+			"move-to-adapter-repo",
+			"Example adapter leaves core after the external repository owns the source path.",
+		} {
+			if !strings.Contains(content, want) {
+				t.Fatalf("generated scaffold document missing %q:\n%s", want, content)
+			}
+		}
+	}
 }
 
 func writeScaffoldFixture(t *testing.T) string {
@@ -490,9 +504,27 @@ func writeScaffoldFixture(t *testing.T) string {
       "package_path": "example",
       "minimal_example_path": "examples/minimal_test.go"
     }]
+	}]
+}`)
+  "version": 1,
+  "repository_migrations": [{
+    "source_path": "adapters/example",
+    "action": "move-to-adapter-repo",
+    "extension_target": "gopact-adapters-example-target",
+    "v1_condition": "Example adapter leaves core after the external repository owns the source path."
   }]
 }`)
 	return root
+}
+
+func readFixtureOutputFile(t *testing.T, root, path string) string {
+	t.Helper()
+
+	body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatalf("read fixture output %s: %v", path, err)
+	}
+	return string(body)
 }
 
 func writeFixtureFile(t *testing.T, root, path, body string) {

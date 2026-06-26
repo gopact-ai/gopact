@@ -38,6 +38,9 @@ func TestRenderRepositoryProducesConformantScaffoldFiles(t *testing.T) {
 	if !strings.Contains(byPath["README.md"], "host-owned config") {
 		t.Fatalf("README.md = %q, want host-owned config boundary", byPath["README.md"])
 	}
+	if !strings.Contains(byPath["README.md"], "V1 Migration Ownership") {
+		t.Fatalf("README.md = %q, want v1 migration ownership section", byPath["README.md"])
+	}
 	workflow := byPath[".github/workflows/ci.yml"]
 	for _, want := range []string{
 		"Configure private SDK access",
@@ -50,6 +53,10 @@ func TestRenderRepositoryProducesConformantScaffoldFiles(t *testing.T) {
 	}
 	conformance := byPath["CONFORMANCE.md"]
 	for _, want := range []string{
+		"## V1 Migration Ownership",
+		"adapters/example",
+		"move-to-adapter-repo",
+		"External repository owns adapters/example before v1.",
 		"gopacttest/providerconformance.RequireProviderConformance",
 		"gopacttest/reactconformance.RequireDeferredMemoryWorkQueueConformance",
 	} {
@@ -137,6 +144,13 @@ func exampleRepository() Repository {
 				PackagePath:        "example",
 				MinimalExamplePath: "examples/minimal_test.go",
 				SourcePaths:        []string{"adapters/example"},
+				Migrations: []Migration{
+					{
+						SourcePath:  "adapters/example",
+						Action:      "move-to-adapter-repo",
+						V1Condition: "External repository owns adapters/example before v1.",
+					},
+				},
 				ConformanceSuites: []string{
 					"gopacttest-extension-scaffold-conformance",
 					"gopacttest-provider-conformance",

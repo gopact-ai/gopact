@@ -33,8 +33,17 @@ type Target struct {
 	PackagePath        string
 	MinimalExamplePath string
 	SourcePaths        []string
+	Migrations         []Migration
 	ConformanceSuites  []string
 	RequiredExamples   []string
+}
+
+// Migration records a v1 ownership obligation for a source path that moves out
+// of the core repository.
+type Migration struct {
+	SourcePath  string
+	Action      string
+	V1Condition string
 }
 
 type conformanceHelperReference struct {
@@ -185,6 +194,20 @@ func validateRepository(repo Repository) error {
 		if err := validateRelativePath(target.MinimalExamplePath); err != nil {
 			return err
 		}
+		for _, migration := range target.Migrations {
+			if strings.TrimSpace(migration.SourcePath) == "" {
+				return fmt.Errorf("%w: target %q migration source path is required", errInvalidRepository, target.Name)
+			}
+			if err := validateRelativePath(migration.SourcePath); err != nil {
+				return err
+			}
+			if strings.TrimSpace(migration.Action) == "" {
+				return fmt.Errorf("%w: target %q migration action is required", errInvalidRepository, target.Name)
+			}
+			if strings.TrimSpace(migration.V1Condition) == "" {
+				return fmt.Errorf("%w: target %q migration v1 condition is required", errInvalidRepository, target.Name)
+			}
+		}
 	}
 	return nil
 }
@@ -218,6 +241,15 @@ func renderReadme(repo Repository) string {
 	b.WriteString("## Usage\n\n")
 	b.WriteString("Keep credentials, endpoints, clients, stores, loggers, and policies host-owned and pass them through typed constructors or options.\n\n")
 	b.WriteString("```go\n// Replace this block with the smallest constructor-based setup for this extension.\n```\n\n")
+	if repositoryHasMigrations(repo) {
+		b.WriteString("## V1 Migration Ownership\n\n")
+		for _, target := range repo.Targets {
+			for _, migration := range target.Migrations {
+				fmt.Fprintf(&b, "- `%s` -> `%s` (`%s`): %s\n", migration.SourcePath, target.Name, migration.Action, migration.V1Condition)
+			}
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("## Conformance\n\n")
 	b.WriteString("Run the offline conformance suite:\n\n```bash\n")
 	for _, command := range repo.RequiredCICommands {
@@ -246,6 +278,12 @@ func renderConformance(repo Repository) string {
 		fmt.Fprintf(&b, "- Module path: `%s`\n", repo.ModulePath)
 		fmt.Fprintf(&b, "- Package path: `%s`\n", target.PackagePath)
 		fmt.Fprintf(&b, "- Core paths replaced or extended: `%s`\n", strings.Join(target.SourcePaths, "`, `"))
+		if len(target.Migrations) > 0 {
+			b.WriteString("- V1 migration ownership:\n")
+			for _, migration := range target.Migrations {
+				fmt.Fprintf(&b, "  - `%s` (`%s`): %s\n", migration.SourcePath, migration.Action, migration.V1Condition)
+			}
+		}
 		b.WriteString("- Required suites:\n")
 		for _, suite := range target.ConformanceSuites {
 			fmt.Fprintf(&b, "  - `%s`\n", suite)
@@ -255,6 +293,15 @@ func renderConformance(repo Repository) string {
 			b.WriteString("- Available helper references:\n")
 			for _, reference := range helperReferences {
 				fmt.Fprintf(&b, "  - `%s`\n", reference.String())
+			}
+		}
+		b.WriteString("\n")
+	}
+	if repositoryHasMigrations(repo) {
+		b.WriteString("## V1 Migration Ownership\n\n")
+		for _, target := range repo.Targets {
+			for _, migration := range target.Migrations {
+				fmt.Fprintf(&b, "- `%s` -> `%s` (`%s`): %s\n", migration.SourcePath, target.Name, migration.Action, migration.V1Condition)
 			}
 		}
 		b.WriteString("\n")
@@ -274,6 +321,15 @@ func renderConformance(repo Repository) string {
 	b.WriteString("## Security Boundary\n\n")
 	b.WriteString("The SDK core remains configuration-file free. Host applications inject configuration through typed constructors, options, clients, providers, adapters, or plugins.\n")
 	return b.String()
+}
+
+func repositoryHasMigrations(repo Repository) bool {
+	for _, target := range repo.Targets {
+		if len(target.Migrations) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func renderMinimalTest(repo Repository) string {
