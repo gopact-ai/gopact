@@ -356,6 +356,9 @@ func ensureDeferredMemoryWorkLease(ctx context.Context, session *deferredMemoryW
 	if session == nil {
 		return nil
 	}
+	session.renewMu.Lock()
+	defer session.renewMu.Unlock()
+
 	if err := session.err(); err != nil {
 		return err
 	}
@@ -384,6 +387,7 @@ type deferredMemoryWorkLeaseSession struct {
 	errVal  error
 	cancel  context.CancelFunc
 	done    chan struct{}
+	renewMu sync.Mutex
 }
 
 func (s *deferredMemoryWorkLeaseSession) start(ctx context.Context) {
@@ -416,6 +420,9 @@ func (s *deferredMemoryWorkLeaseSession) renewLoop(ctx context.Context, done cha
 }
 
 func (s *deferredMemoryWorkLeaseSession) renewOnce(ctx context.Context) bool {
+	s.renewMu.Lock()
+	defer s.renewMu.Unlock()
+
 	lease := s.record()
 	if lease.Token == "" {
 		return false
@@ -447,11 +454,15 @@ func (s *deferredMemoryWorkLeaseSession) release(ctx context.Context) error {
 	if lease.Token == "" {
 		return nil
 	}
-	return s.leases.ReleaseLease(ctx, gopact.LeaseReleaseRequest{
+	err := s.leases.ReleaseLease(ctx, gopact.LeaseReleaseRequest{
 		Key:   lease.Key,
 		Owner: lease.Owner,
 		Token: lease.Token,
 	})
+	if errors.Is(err, gopact.ErrLeaseNotHeld) {
+		return nil
+	}
+	return err
 }
 
 func (s *deferredMemoryWorkLeaseSession) stop(ctx context.Context) error {
