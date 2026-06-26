@@ -23,6 +23,44 @@ func TestCheckVerificationEvidenceConformancePassesReport(t *testing.T) {
 	RequireVerificationEvidenceConformance(t, harness)
 }
 
+func TestCheckVerificationEvidenceRequirementsPassesMultipleRequirements(t *testing.T) {
+	report := verificationConformanceReport(t)
+	requirements := []VerificationEvidenceRequirement{
+		{
+			Name:                  "core-ci-gates",
+			RequiredCheckIDs:      []string{"core-ci"},
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
+			RequiredCIGates:       []string{"unit", "vet"},
+		},
+		{
+			Name:                  "run-export",
+			RequiredCheckIDs:      []string{"run-export"},
+			RequiredEvidenceTypes: []string{"run_export"},
+		},
+	}
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, requirements)
+	if failed := failedVerificationEvidenceConformanceCases(results); len(failed) > 0 {
+		t.Fatalf("CheckVerificationEvidenceRequirements() failed cases: %v", failed)
+	}
+	RequireVerificationEvidenceRequirements(t, report, requirements)
+}
+
+func TestCheckVerificationEvidenceRequirementsPrefixesFailedRequirementName(t *testing.T) {
+	report := verificationConformanceReport(t)
+	requirements := []VerificationEvidenceRequirement{
+		{
+			Name:             "external-repository-readiness",
+			RequiredCheckIDs: []string{"external-repositories:gopact-ai"},
+		},
+	}
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, requirements)
+	if !hasFailedVerificationEvidenceConformanceCase(results, "external-repository-readiness/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report named failed requirement: %+v", results)
+	}
+}
+
 func TestCheckVerificationEvidenceConformanceReportsMissingEvidenceType(t *testing.T) {
 	report := verificationConformanceReport(t)
 	harness := VerificationEvidenceConformanceHarness{
