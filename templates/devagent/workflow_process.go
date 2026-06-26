@@ -142,6 +142,9 @@ func WorkflowRecordsFromRunExport(export gopact.RunExport, workflowID string) (W
 	if records.Task.ID == "" {
 		return WorkflowRecords{}, fmt.Errorf("devagent: workflow task %q not found in run export", workflowID)
 	}
+	if len(records.Tasks) == 0 {
+		return WorkflowRecords{}, fmt.Errorf("devagent: workflow task %q has no child tasks in run export", workflowID)
+	}
 	for _, input := range export.Inputs {
 		if workflowProcessStringMetadata(input.Metadata, "workflow_id") == workflowID {
 			records.Inputs = append(records.Inputs, copyReleaseInputRecord(input))
