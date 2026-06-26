@@ -224,6 +224,24 @@ func WorkflowActionProcessRecordsFromRunExportByTaskID(
 	return WorkflowActionProcessRecordsByTaskID(records, taskID)
 }
 
+// WorkflowActionProcessRecordsFromRunExportByAction restores one workflow from
+// a run export and extracts one child action's process records by action kind.
+//
+// The action must match exactly one workflow child task. Duplicate matching
+// actions are ambiguous and must be resolved by the caller with action index or
+// task id.
+func WorkflowActionProcessRecordsFromRunExportByAction(
+	export gopact.RunExport,
+	workflowID string,
+	action ActionKind,
+) (ProcessRecords, error) {
+	records, err := WorkflowRecordsFromRunExport(export, workflowID)
+	if err != nil {
+		return ProcessRecords{}, err
+	}
+	return WorkflowActionProcessRecordsByAction(records, action)
+}
+
 // WorkflowActionProcessRecordsByTaskID extracts one child action's process records by task id.
 //
 // The target task must be a workflow child task. The returned records are
@@ -257,6 +275,46 @@ func WorkflowActionProcessRecordsByTaskID(records WorkflowRecords, taskID string
 	}
 	if actionIndex == 0 {
 		return ProcessRecords{}, fmt.Errorf("devagent: workflow action task %q not found", taskID)
+	}
+	return WorkflowActionProcessRecords(records, actionIndex)
+}
+
+// WorkflowActionProcessRecordsByAction extracts one child action's process records by action kind.
+//
+// The action must match exactly one workflow child task. Duplicate matching
+// actions are ambiguous and must be resolved by the caller with action index or
+// task id.
+func WorkflowActionProcessRecordsByAction(records WorkflowRecords, action ActionKind) (ProcessRecords, error) {
+	if err := validateWorkflowRecordsConformance(records); err != nil {
+		return ProcessRecords{}, err
+	}
+	if !action.valid() {
+		return ProcessRecords{}, fmt.Errorf("devagent: invalid workflow action %q", action)
+	}
+	actionIndex := 0
+	for _, task := range records.Tasks {
+		if ActionKind(workflowProcessStringMetadata(task.Metadata, "action")) != action {
+			continue
+		}
+		if actionIndex != 0 {
+			return ProcessRecords{}, fmt.Errorf(
+				"devagent: duplicate workflow action %q; use action index or task id",
+				action,
+			)
+		}
+		got, ok := workflowProcessIntMetadata(task.Metadata, "workflow_action_index")
+		if !ok {
+			return ProcessRecords{}, fmt.Errorf(
+				"devagent: workflow action %q task %q workflow_action_index = %v, want integer",
+				action,
+				task.ID,
+				task.Metadata["workflow_action_index"],
+			)
+		}
+		actionIndex = got
+	}
+	if actionIndex == 0 {
+		return ProcessRecords{}, fmt.Errorf("devagent: workflow action %q not found", action)
 	}
 	return WorkflowActionProcessRecords(records, actionIndex)
 }
