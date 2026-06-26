@@ -102,6 +102,42 @@ func TestCheckWorkflowProcessConformanceReportsChildSummaryCountDrift(t *testing
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsChildSummaryActionDrift(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[1]["action"] = string(ActionRelease)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report child summary action drift: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsChildSummaryActionStatusDrift(t *testing.T) {
+	records := workflowProcessConformanceRejectedFixture(t)
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[1]["action_status"] = string(ActionAllowed)
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report child summary action status drift: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsRawDiffLeak(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	value, ok := records.Inputs[0].Value.(map[string]any)
