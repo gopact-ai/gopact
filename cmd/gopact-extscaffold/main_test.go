@@ -271,6 +271,100 @@ exit 2
 	assertContainsString(t, first.RequiredActions, "rerun ci workflow with rerun-ci.sh after fixing blockers")
 }
 
+func TestRunPrintsRemoteStatusEvidenceJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	restore := installFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "repo" && "$2" == "view" ]]; then
+  repo="$3"
+  name="${repo#*/}"
+  printf '{"name":"%s","visibility":"PRIVATE","isPrivate":true,"url":"https://github.com/%s","defaultBranchRef":{"name":"main"}}' "${name}" "${repo}"
+  exit 0
+fi
+if [[ "$1" == "api" ]]; then
+  printf '{"path":".github/workflows/ci.yml"}'
+  exit 0
+fi
+if [[ "$1" == "secret" && "$2" == "list" ]]; then
+  printf '[]'
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "list" ]]; then
+  printf '[{"databaseId":123,"workflowName":"ci","status":"completed","conclusion":"failure","event":"push","headBranch":"main","url":"https://github.com/%s/actions/runs/123"}]' "$4"
+  exit 0
+fi
+exit 2
+`)
+	defer restore()
+
+	code := run(context.Background(), []string{"-root", "../..", "-remote-status-evidence-json"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	var check struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Status   string `json:"status"`
+		Metadata struct {
+			Organization        string `json:"organization"`
+			RepositoryCount     int    `json:"repository_count"`
+			ReadyCount          int    `json:"ready_count"`
+			MissingCount        int    `json:"missing_count"`
+			BlockingReasonCount int    `json:"blocking_reason_count"`
+			RequiredActionCount int    `json:"required_action_count"`
+		} `json:"metadata"`
+		Evidence []struct {
+			Type     string `json:"type"`
+			Ref      string `json:"ref"`
+			Metadata struct {
+				Repository                   string   `json:"repository"`
+				Remote                       string   `json:"remote"`
+				Status                       string   `json:"status"`
+				PrivateSDKTokenSecretPresent bool     `json:"private_sdk_token_secret_present"`
+				CIRunPassed                  bool     `json:"ci_run_passed"`
+				Ready                        bool     `json:"ready"`
+				BlockingReasons              []string `json:"blocking_reasons"`
+				RequiredActions              []string `json:"required_actions"`
+			} `json:"metadata"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &check); err != nil {
+		t.Fatalf("stdout is not remote status evidence JSON: %v\n%s", err, stdout.String())
+	}
+	if check.ID != "external-repositories:gopact-ai" ||
+		check.Name != "external repository readiness" ||
+		check.Status != "failed" {
+		t.Fatalf("check = %+v, want failed external repository readiness check", check)
+	}
+	if check.Metadata.Organization != "gopact-ai" ||
+		check.Metadata.RepositoryCount != expectedScaffoldRepositoryCount ||
+		check.Metadata.ReadyCount != 0 ||
+		check.Metadata.MissingCount != expectedScaffoldRepositoryCount ||
+		check.Metadata.BlockingReasonCount != expectedScaffoldRepositoryCount*2 ||
+		check.Metadata.RequiredActionCount != expectedScaffoldRepositoryCount*2 {
+		t.Fatalf("metadata = %+v, want remote readiness counts", check.Metadata)
+	}
+	if len(check.Evidence) != expectedScaffoldRepositoryCount {
+		t.Fatalf("evidence count = %d, want %d", len(check.Evidence), expectedScaffoldRepositoryCount)
+	}
+	first := check.Evidence[0]
+	if first.Type != "external_repository_readiness" ||
+		first.Ref != "external-repository:gopact-ai/gopact-adapters-model" ||
+		first.Metadata.Repository != "gopact-adapters-model" ||
+		first.Metadata.Remote != "gopact-ai/gopact-adapters-model" ||
+		first.Metadata.Status != "failed" ||
+		first.Metadata.PrivateSDKTokenSecretPresent ||
+		first.Metadata.CIRunPassed ||
+		first.Metadata.Ready {
+		t.Fatalf("first evidence = %+v, want failed repository readiness evidence", first)
+	}
+	assertContainsString(t, first.Metadata.BlockingReasons, "GOPACT_GITHUB_TOKEN secret is missing")
+	assertContainsString(t, first.Metadata.RequiredActions, "configure GOPACT_GITHUB_TOKEN with sync-secrets.sh")
+}
+
 func TestRunWritesScaffoldWorkspace(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dir := t.TempDir()
@@ -460,6 +554,8 @@ func TestRunRejectsConflictingPlanModes(t *testing.T) {
 		{"-root", "../..", "-plan-secrets-sh", "-plan-rerun-sh"},
 		{"-root", "../..", "-remote-status-json", "-plan-secrets-sh"},
 		{"-root", "../..", "-remote-status-json", "-plan-rerun-sh"},
+		{"-root", "../..", "-remote-status-json", "-remote-status-evidence-json"},
+		{"-root", "../..", "-remote-status-evidence-json", "-plan-rerun-sh"},
 	}
 	for _, args := range tests {
 		var stdout, stderr bytes.Buffer
