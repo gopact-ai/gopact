@@ -318,6 +318,7 @@
         "react-template",
         "gopacttest-template-trajectory-conformance",
         "gopacttest-react-deferred-memory-queue-conformance",
+        "gopacttest-react-deferred-memory-queue-visibility-conformance",
         "memory-replay",
         "trajectory-golden"
       ],

@@ -446,6 +446,7 @@
         "gopacttest-template-trajectory-conformance",
         "deferred-memory-work-queue",
         "gopacttest-react-deferred-memory-queue-conformance",
+        "gopacttest-react-deferred-memory-queue-visibility-conformance",
         "memory-replay"
       ],
       "required_examples": [

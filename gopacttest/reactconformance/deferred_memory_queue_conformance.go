@@ -22,6 +22,13 @@ type DeferredMemoryWorkQueueConformanceHarness struct {
 	Jobs     []react.DeferredMemoryWorkJob
 }
 
+// DeferredMemoryWorkQueueVisibilityConformanceHarness describes a queue with delivery receipt and visibility semantics.
+type DeferredMemoryWorkQueueVisibilityConformanceHarness struct {
+	NewQueue                 func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error)
+	Jobs                     []react.DeferredMemoryWorkJob
+	AdvanceVisibilityTimeout func(context.Context) error
+}
+
 // DeferredMemoryWorkQueueConformanceResult is the observed result for one deferred memory queue contract case.
 type DeferredMemoryWorkQueueConformanceResult struct {
 	Case   string
@@ -50,6 +57,39 @@ func CheckDeferredMemoryWorkQueueConformance(ctx context.Context, harness Deferr
 		checkDeferredMemoryWorkQueueDeadLetterRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueStopRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueCompleteDoesNotMutateInput(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+	}
+}
+
+// CheckDeferredMemoryWorkQueueVisibilityConformance runs reusable visibility timeout contract cases.
+//
+// The harness factory must return a queue configured with visibility semantics.
+// AdvanceVisibilityTimeout must move that queue past its visibility timeout,
+// either by advancing a test clock or by waiting for the adapter's configured
+// timeout. The helper does not sleep on behalf of adapters.
+func CheckDeferredMemoryWorkQueueVisibilityConformance(ctx context.Context, harness DeferredMemoryWorkQueueVisibilityConformanceHarness) []DeferredMemoryWorkQueueConformanceResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	jobs := normalizeDeferredMemoryWorkQueueConformanceJobs(harness.Jobs)
+
+	return []DeferredMemoryWorkQueueConformanceResult{
+		checkDeferredMemoryWorkQueueFactory(harness.NewQueue),
+		checkDeferredMemoryWorkQueueVisibilityAdvance(harness.AdvanceVisibilityTimeout),
+		checkDeferredMemoryWorkQueueVisibilityDequeueSetsDeliveryReceipt(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueVisibilityHidesInFlightBeforeTimeout(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueVisibilityRedeliversAfterTimeoutAndRejectsStale(ctx, harness.NewQueue, harness.AdvanceVisibilityTimeout, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueVisibilityRejectsExpiredTransitionBeforeRedelivery(ctx, harness.NewQueue, harness.AdvanceVisibilityTimeout, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+	}
+}
+
+// RequireDeferredMemoryWorkQueueVisibilityConformance fails the test unless queue satisfies visibility semantics.
+func RequireDeferredMemoryWorkQueueVisibilityConformance(t testing.TB, harness DeferredMemoryWorkQueueVisibilityConformanceHarness) {
+	t.Helper()
+
+	for _, result := range CheckDeferredMemoryWorkQueueVisibilityConformance(context.Background(), harness) {
+		if !result.Passed {
+			t.Fatalf("deferred memory work queue visibility conformance case %q failed: %v", result.Case, result.Err)
+		}
 	}
 }
 
@@ -88,6 +128,13 @@ func checkDeferredMemoryWorkQueueDequeueEmpty(ctx context.Context, newQueue func
 		return failedDeferredMemoryWorkQueueConformance("dequeue-empty", errors.New("Dequeue on empty queue returned ok=true"))
 	}
 	return passedDeferredMemoryWorkQueueConformance("dequeue-empty")
+}
+
+func checkDeferredMemoryWorkQueueVisibilityAdvance(advance func(context.Context) error) DeferredMemoryWorkQueueConformanceResult {
+	if advance == nil {
+		return failedDeferredMemoryWorkQueueConformance("has-visibility-timeout-advance", errors.New("visibility timeout advance function is nil"))
+	}
+	return passedDeferredMemoryWorkQueueConformance("has-visibility-timeout-advance")
 }
 
 func checkDeferredMemoryWorkQueueDequeueCanceledContext(newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), jobs []react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
@@ -255,6 +302,103 @@ func checkDeferredMemoryWorkQueueCompleteDoesNotMutateInput(ctx context.Context,
 		return failedDeferredMemoryWorkQueueConformance("complete-does-not-mutate-input", errors.New("Complete mutated input report"))
 	}
 	return passedDeferredMemoryWorkQueueConformance("complete-does-not-mutate-input")
+}
+
+func checkDeferredMemoryWorkQueueVisibilityDequeueSetsDeliveryReceipt(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	job.DeliveryID = "stale-input-delivery"
+	queue, err := newDeferredMemoryWorkQueueConformanceQueue(newQueue, []react.DeferredMemoryWorkJob{job})
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-dequeue-sets-delivery-receipt", err)
+	}
+	got, ok, err := queue.Dequeue(ctx)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-dequeue-sets-delivery-receipt", err)
+	}
+	if !ok {
+		return failedDeferredMemoryWorkQueueConformance("visibility-dequeue-sets-delivery-receipt", errors.New("Dequeue returned ok=false for seeded job"))
+	}
+	if got.DeliveryID == "" {
+		return failedDeferredMemoryWorkQueueConformance("visibility-dequeue-sets-delivery-receipt", errors.New("Dequeue did not set DeliveryID"))
+	}
+	if got.DeliveryID == job.DeliveryID {
+		return failedDeferredMemoryWorkQueueConformance("visibility-dequeue-sets-delivery-receipt", errors.New("Dequeue reused input DeliveryID"))
+	}
+	if got.Metadata["conformance"] != job.Metadata["conformance"] || len(got.Metadata) != len(job.Metadata) {
+		return failedDeferredMemoryWorkQueueConformance("visibility-dequeue-sets-delivery-receipt", fmt.Errorf("Dequeue metadata = %+v, want host metadata only", got.Metadata))
+	}
+	return passedDeferredMemoryWorkQueueConformance("visibility-dequeue-sets-delivery-receipt")
+}
+
+func checkDeferredMemoryWorkQueueVisibilityHidesInFlightBeforeTimeout(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	queue, _, err := dequeueDeferredMemoryWorkQueueConformanceJob(ctx, newQueue, job)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-hides-in-flight-before-timeout", err)
+	}
+	_, ok, err := queue.Dequeue(ctx)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-hides-in-flight-before-timeout", err)
+	}
+	if ok {
+		return failedDeferredMemoryWorkQueueConformance("visibility-hides-in-flight-before-timeout", errors.New("Dequeue returned in-flight job before visibility timeout"))
+	}
+	return passedDeferredMemoryWorkQueueConformance("visibility-hides-in-flight-before-timeout")
+}
+
+func checkDeferredMemoryWorkQueueVisibilityRedeliversAfterTimeoutAndRejectsStale(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), advance func(context.Context) error, job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	if advance == nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", errors.New("visibility timeout advance function is nil"))
+	}
+	queue, first, err := dequeueDeferredMemoryWorkQueueConformanceJob(ctx, newQueue, job)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", err)
+	}
+	if err := advance(ctx); err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", err)
+	}
+	second, ok, err := queue.Dequeue(ctx)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", err)
+	}
+	if !ok {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", errors.New("Dequeue after visibility timeout returned ok=false"))
+	}
+	if second.ID != first.ID {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", fmt.Errorf("redelivery ID = %q, want %q", second.ID, first.ID))
+	}
+	if second.DeliveryID == "" || second.DeliveryID == first.DeliveryID {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", fmt.Errorf("redelivery DeliveryID = %q, first %q", second.DeliveryID, first.DeliveryID))
+	}
+	if err := queue.Complete(ctx, first, defaultDeferredMemoryWorkQueueConformanceReport()); !errors.Is(err, react.ErrDeferredMemoryWorkDeliveryNotFound) {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", fmt.Errorf("Complete stale delivery error = %v, want ErrDeferredMemoryWorkDeliveryNotFound", err))
+	}
+	if err := queue.Complete(ctx, second, defaultDeferredMemoryWorkQueueConformanceReport()); err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale", fmt.Errorf("Complete current delivery error = %w", err))
+	}
+	return passedDeferredMemoryWorkQueueConformance("visibility-redelivers-after-timeout-and-rejects-stale")
+}
+
+func checkDeferredMemoryWorkQueueVisibilityRejectsExpiredTransitionBeforeRedelivery(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), advance func(context.Context) error, job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	if advance == nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-rejects-expired-transition-before-redelivery", errors.New("visibility timeout advance function is nil"))
+	}
+	queue, first, err := dequeueDeferredMemoryWorkQueueConformanceJob(ctx, newQueue, job)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-rejects-expired-transition-before-redelivery", err)
+	}
+	if err := advance(ctx); err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-rejects-expired-transition-before-redelivery", err)
+	}
+	if err := queue.Complete(ctx, first, defaultDeferredMemoryWorkQueueConformanceReport()); !errors.Is(err, react.ErrDeferredMemoryWorkDeliveryNotFound) {
+		return failedDeferredMemoryWorkQueueConformance("visibility-rejects-expired-transition-before-redelivery", fmt.Errorf("Complete expired delivery error = %v, want ErrDeferredMemoryWorkDeliveryNotFound", err))
+	}
+	again, ok, err := queue.Dequeue(ctx)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("visibility-rejects-expired-transition-before-redelivery", err)
+	}
+	if !ok || again.ID != first.ID {
+		return failedDeferredMemoryWorkQueueConformance("visibility-rejects-expired-transition-before-redelivery", fmt.Errorf("Dequeue after expired transition = %+v/%v, want redelivery", again, ok))
+	}
+	return passedDeferredMemoryWorkQueueConformance("visibility-rejects-expired-transition-before-redelivery")
 }
 
 func dequeueDeferredMemoryWorkQueueConformanceJob(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, react.DeferredMemoryWorkJob, error) {

@@ -3,6 +3,7 @@ package reactconformance
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -53,15 +54,99 @@ func TestCheckDeferredMemoryWorkQueueConformanceReportsInputMutation(t *testing.
 	}
 }
 
+func TestCheckDeferredMemoryWorkQueueVisibilityConformancePassesWellBehavedQueue(t *testing.T) {
+	clock := time.Unix(100, 0)
+	harness := DeferredMemoryWorkQueueVisibilityConformanceHarness{
+		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
+			return newConformanceVisibilityQueue(jobs, &clock, nil), nil
+		},
+		AdvanceVisibilityTimeout: func(context.Context) error {
+			clock = clock.Add(time.Minute + time.Nanosecond)
+			return nil
+		},
+	}
+
+	results := CheckDeferredMemoryWorkQueueVisibilityConformance(context.Background(), harness)
+	if failed := failedDeferredMemoryWorkQueueConformanceCases(results); len(failed) > 0 {
+		t.Fatalf("CheckDeferredMemoryWorkQueueVisibilityConformance() failed cases: %v", failed)
+	}
+	RequireDeferredMemoryWorkQueueVisibilityConformance(t, harness)
+}
+
+func TestCheckDeferredMemoryWorkQueueVisibilityConformancePassesMemoryQueue(t *testing.T) {
+	const timeout = 2 * time.Millisecond
+	harness := DeferredMemoryWorkQueueVisibilityConformanceHarness{
+		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
+			return react.NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout(timeout, jobs...)
+		},
+		AdvanceVisibilityTimeout: func(ctx context.Context) error {
+			timer := time.NewTimer(timeout + 5*time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				return nil
+			}
+		},
+	}
+
+	results := CheckDeferredMemoryWorkQueueVisibilityConformance(context.Background(), harness)
+	if failed := failedDeferredMemoryWorkQueueConformanceCases(results); len(failed) > 0 {
+		t.Fatalf("CheckDeferredMemoryWorkQueueVisibilityConformance(memory queue) failed cases: %v", failed)
+	}
+}
+
+func TestCheckDeferredMemoryWorkQueueVisibilityConformanceReportsMissingDeliveryReceipt(t *testing.T) {
+	clock := time.Unix(100, 0)
+	harness := DeferredMemoryWorkQueueVisibilityConformanceHarness{
+		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
+			return newConformanceVisibilityQueue(jobs, &clock, map[string]bool{"missing_delivery_id": true}), nil
+		},
+		AdvanceVisibilityTimeout: func(context.Context) error {
+			clock = clock.Add(time.Minute + time.Nanosecond)
+			return nil
+		},
+	}
+
+	results := CheckDeferredMemoryWorkQueueVisibilityConformance(context.Background(), harness)
+	if !hasFailedDeferredMemoryWorkQueueConformanceCase(results, "visibility-dequeue-sets-delivery-receipt") {
+		t.Fatalf("CheckDeferredMemoryWorkQueueVisibilityConformance() did not report missing receipt: %+v", results)
+	}
+}
+
 type conformanceMemoryQueue struct {
 	jobs  []react.DeferredMemoryWorkJob
 	fault map[string]bool
+}
+
+type conformanceVisibilityInFlight struct {
+	job       react.DeferredMemoryWorkJob
+	visibleAt time.Time
+}
+
+type conformanceVisibilityQueue struct {
+	pending      []react.DeferredMemoryWorkJob
+	inFlight     []conformanceVisibilityInFlight
+	now          *time.Time
+	nextDelivery int
+	fault        map[string]bool
 }
 
 func newConformanceMemoryQueue(jobs []react.DeferredMemoryWorkJob, fault map[string]bool) *conformanceMemoryQueue {
 	out := &conformanceMemoryQueue{fault: fault}
 	for _, job := range jobs {
 		out.jobs = append(out.jobs, copyConformanceMemoryJob(job))
+	}
+	return out
+}
+
+func newConformanceVisibilityQueue(jobs []react.DeferredMemoryWorkJob, now *time.Time, fault map[string]bool) *conformanceVisibilityQueue {
+	out := &conformanceVisibilityQueue{now: now, fault: fault}
+	for _, job := range jobs {
+		job = copyConformanceMemoryJob(job)
+		job.DeliveryID = ""
+		out.pending = append(out.pending, job)
 	}
 	return out
 }
@@ -109,6 +194,103 @@ func (q *conformanceMemoryQueue) DeadLetter(ctx context.Context, job react.Defer
 
 func (q *conformanceMemoryQueue) Stop(ctx context.Context, job react.DeferredMemoryWorkJob, report react.DeferredMemoryWorkReport, decision react.DeferredMemoryWorkScheduleDecision) error {
 	return ctx.Err()
+}
+
+func (q *conformanceVisibilityQueue) Dequeue(ctx context.Context) (react.DeferredMemoryWorkJob, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return react.DeferredMemoryWorkJob{}, false, err
+	}
+	q.requeueExpired()
+	if len(q.pending) == 0 {
+		return react.DeferredMemoryWorkJob{}, false, nil
+	}
+	job := copyConformanceMemoryJob(q.pending[0])
+	q.pending = q.pending[1:]
+	q.nextDelivery++
+	if !q.fault["missing_delivery_id"] {
+		job.DeliveryID = "delivery-" + strconv.Itoa(q.nextDelivery)
+	}
+	q.inFlight = append(q.inFlight, conformanceVisibilityInFlight{
+		job:       copyConformanceMemoryJob(job),
+		visibleAt: q.now.Add(time.Minute),
+	})
+	return job, true, nil
+}
+
+func (q *conformanceVisibilityQueue) Complete(ctx context.Context, job react.DeferredMemoryWorkJob, report react.DeferredMemoryWorkReport) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	q.requeueExpired()
+	if !q.removeInFlight(job) {
+		return react.ErrDeferredMemoryWorkDeliveryNotFound
+	}
+	return nil
+}
+
+func (q *conformanceVisibilityQueue) Retry(ctx context.Context, job react.DeferredMemoryWorkJob, decision react.DeferredMemoryWorkScheduleDecision) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	q.requeueExpired()
+	if !q.removeInFlight(job) {
+		return react.ErrDeferredMemoryWorkDeliveryNotFound
+	}
+	job = copyConformanceMemoryJob(job)
+	job.DeliveryID = ""
+	job.Attempt = decision.NextAttempt
+	q.pending = append(q.pending, job)
+	return nil
+}
+
+func (q *conformanceVisibilityQueue) DeadLetter(ctx context.Context, job react.DeferredMemoryWorkJob, decision react.DeferredMemoryWorkScheduleDecision) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	q.requeueExpired()
+	if !q.removeInFlight(job) {
+		return react.ErrDeferredMemoryWorkDeliveryNotFound
+	}
+	return nil
+}
+
+func (q *conformanceVisibilityQueue) Stop(ctx context.Context, job react.DeferredMemoryWorkJob, report react.DeferredMemoryWorkReport, decision react.DeferredMemoryWorkScheduleDecision) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	q.requeueExpired()
+	if !q.removeInFlight(job) {
+		return react.ErrDeferredMemoryWorkDeliveryNotFound
+	}
+	return nil
+}
+
+func (q *conformanceVisibilityQueue) requeueExpired() {
+	if q.now == nil {
+		return
+	}
+	kept := q.inFlight[:0]
+	for _, inFlight := range q.inFlight {
+		if !inFlight.visibleAt.After(*q.now) {
+			job := copyConformanceMemoryJob(inFlight.job)
+			job.DeliveryID = ""
+			q.pending = append([]react.DeferredMemoryWorkJob{job}, q.pending...)
+			continue
+		}
+		kept = append(kept, inFlight)
+	}
+	q.inFlight = kept
+}
+
+func (q *conformanceVisibilityQueue) removeInFlight(job react.DeferredMemoryWorkJob) bool {
+	for i, inFlight := range q.inFlight {
+		if inFlight.job.DeliveryID == "" || inFlight.job.DeliveryID != job.DeliveryID {
+			continue
+		}
+		q.inFlight = append(q.inFlight[:i], q.inFlight[i+1:]...)
+		return true
+	}
+	return false
 }
 
 func failedDeferredMemoryWorkQueueConformanceCases(results []DeferredMemoryWorkQueueConformanceResult) []string {
