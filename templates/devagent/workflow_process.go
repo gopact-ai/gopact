@@ -164,6 +164,24 @@ func WorkflowRecordsFromRunExport(export gopact.RunExport, workflowID string) (W
 	return records, nil
 }
 
+// WorkflowActionProcessRecordsFromRunExport restores one workflow from a run export
+// and extracts one child action's process records.
+//
+// actionIndex is 1-based and must match workflow_action_index. The returned
+// records are defensive copies and include only input/intervention boundaries
+// attached to the same action index.
+func WorkflowActionProcessRecordsFromRunExport(
+	export gopact.RunExport,
+	workflowID string,
+	actionIndex int,
+) (ProcessRecords, error) {
+	records, err := WorkflowRecordsFromRunExport(export, workflowID)
+	if err != nil {
+		return ProcessRecords{}, err
+	}
+	return WorkflowActionProcessRecords(records, actionIndex)
+}
+
 // WorkflowActionProcessRecords extracts one child action's process records from a workflow.
 //
 // actionIndex is 1-based and must match workflow_action_index. The returned
