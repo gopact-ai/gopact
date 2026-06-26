@@ -453,6 +453,41 @@ func TestWorkflowRecordsFromRunExportRejectsWorkflowWithoutChildren(t *testing.T
 	}
 }
 
+func TestWorkflowRecordsFromRunExportRejectsNonConformantWorkflowRecords(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	child := records.Tasks[0]
+	child.Metadata["workflow_id"] = "devagent:other-run:workflow"
+	_, err = WorkflowRecordsFromRunExport(gopact.RunExport{
+		Version: gopact.RunExportVersion,
+		IDs:     gopact.RuntimeIDs{RunID: "run-1"},
+		Tasks: []gopact.TaskRecord{
+			records.Task,
+			child,
+		},
+	}, "")
+	if !errors.Is(err, ErrWorkflowProcessConformanceFailed) {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v, want ErrWorkflowProcessConformanceFailed", err)
+	}
+	if !strings.Contains(err.Error(), `workflow process records from run export failed conformance case "parent-child-links"`) {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v, want parent-child conformance error", err)
+	}
+}
+
 func TestBuildWorkflowProcessRecordsRejectsInvalidInput(t *testing.T) {
 	_, err := BuildWorkflowProcessRecords(WorkflowInput{})
 	if !errors.Is(err, ErrInvalidActionResult) {

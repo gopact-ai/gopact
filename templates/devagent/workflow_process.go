@@ -1,6 +1,7 @@
 package devagent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -116,8 +117,9 @@ func RecordWorkflowProcessRecords(recorder *gopact.RunRecorder, input WorkflowIn
 // WorkflowRecordsFromRunExport restores one Dev Agent workflow process from a run export.
 //
 // If workflowID is empty, the default "devagent:<runID>:workflow" id is used.
-// The function only rehydrates already-recorded process records; it does not
-// validate, schedule, execute, or reinterpret the workflow.
+// The function rehydrates already-recorded process records and validates their
+// workflow process conformance; it does not schedule, execute, or reinterpret
+// the workflow.
 func WorkflowRecordsFromRunExport(export gopact.RunExport, workflowID string) (WorkflowRecords, error) {
 	workflowID = strings.TrimSpace(workflowID)
 	if workflowID == "" {
@@ -156,7 +158,23 @@ func WorkflowRecordsFromRunExport(export gopact.RunExport, workflowID string) (W
 		}
 	}
 	sortWorkflowProcessBoundaries(records.Tasks, records.Inputs, records.Interventions)
+	if err := validateWorkflowRecordsFromRunExport(records); err != nil {
+		return WorkflowRecords{}, err
+	}
 	return records, nil
+}
+
+func validateWorkflowRecordsFromRunExport(records WorkflowRecords) error {
+	for _, result := range CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records}) {
+		if !result.Passed {
+			return fmt.Errorf(
+				"devagent: workflow process records from run export failed conformance case %q: %w",
+				result.Case,
+				result.Err,
+			)
+		}
+	}
+	return nil
 }
 
 func sortWorkflowProcessBoundaries(
