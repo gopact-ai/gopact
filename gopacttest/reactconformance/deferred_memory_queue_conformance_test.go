@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,19 @@ func TestCheckDeferredMemoryWorkQueueConformancePassesWellBehavedQueue(t *testin
 	RequireDeferredMemoryWorkQueueConformance(t, harness)
 }
 
+func TestCheckDeferredMemoryWorkQueueConformancePassesMemoryQueue(t *testing.T) {
+	harness := DeferredMemoryWorkQueueConformanceHarness{
+		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
+			return react.NewMemoryDeferredMemoryWorkQueue(jobs...), nil
+		},
+	}
+
+	results := CheckDeferredMemoryWorkQueueConformance(context.Background(), harness)
+	if failed := failedDeferredMemoryWorkQueueConformanceCases(results); len(failed) > 0 {
+		t.Fatalf("CheckDeferredMemoryWorkQueueConformance(memory queue) failed cases: %v", failed)
+	}
+}
+
 func TestCheckDeferredMemoryWorkQueueConformanceReportsRetryWithoutRequeue(t *testing.T) {
 	harness := DeferredMemoryWorkQueueConformanceHarness{
 		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
@@ -38,6 +52,23 @@ func TestCheckDeferredMemoryWorkQueueConformanceReportsRetryWithoutRequeue(t *te
 	}
 	if err := deferredMemoryWorkQueueConformanceError(results); !errors.Is(err, ErrDeferredMemoryWorkQueueConformanceFailed) {
 		t.Fatalf("conformance error = %v, want ErrDeferredMemoryWorkQueueConformanceFailed", err)
+	}
+}
+
+func TestCheckDeferredMemoryWorkQueueConformanceReportsDuplicateConcurrentDequeue(t *testing.T) {
+	harness := DeferredMemoryWorkQueueConformanceHarness{
+		NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
+			return newDuplicateConcurrentDequeueQueue(jobs), nil
+		},
+		Jobs: []react.DeferredMemoryWorkJob{
+			{ID: "job-1", Export: defaultDeferredMemoryWorkQueueConformanceRunExport(), Attempt: 1, MaxAttempts: 3},
+			{ID: "job-2", Export: defaultDeferredMemoryWorkQueueConformanceRunExport(), Attempt: 1, MaxAttempts: 3},
+		},
+	}
+
+	results := CheckDeferredMemoryWorkQueueConformance(context.Background(), harness)
+	if !hasFailedDeferredMemoryWorkQueueConformanceCase(results, "concurrent-dequeue-delivers-each-job-once") {
+		t.Fatalf("CheckDeferredMemoryWorkQueueConformance() did not report duplicate concurrent dequeue: %+v", results)
 	}
 }
 
@@ -116,8 +147,14 @@ func TestCheckDeferredMemoryWorkQueueVisibilityConformanceReportsMissingDelivery
 }
 
 type conformanceMemoryQueue struct {
+	mu    sync.Mutex
 	jobs  []react.DeferredMemoryWorkJob
 	fault map[string]bool
+}
+
+type duplicateConcurrentDequeueQueue struct {
+	mu   sync.Mutex
+	jobs []react.DeferredMemoryWorkJob
 }
 
 type conformanceVisibilityInFlight struct {
@@ -141,6 +178,14 @@ func newConformanceMemoryQueue(jobs []react.DeferredMemoryWorkJob, fault map[str
 	return out
 }
 
+func newDuplicateConcurrentDequeueQueue(jobs []react.DeferredMemoryWorkJob) *duplicateConcurrentDequeueQueue {
+	out := &duplicateConcurrentDequeueQueue{}
+	for _, job := range jobs {
+		out.jobs = append(out.jobs, copyConformanceMemoryJob(job))
+	}
+	return out
+}
+
 func newConformanceVisibilityQueue(jobs []react.DeferredMemoryWorkJob, now *time.Time, fault map[string]bool) *conformanceVisibilityQueue {
 	out := &conformanceVisibilityQueue{now: now, fault: fault}
 	for _, job := range jobs {
@@ -155,6 +200,8 @@ func (q *conformanceMemoryQueue) Dequeue(ctx context.Context) (react.DeferredMem
 	if err := ctx.Err(); err != nil {
 		return react.DeferredMemoryWorkJob{}, false, err
 	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	if len(q.jobs) == 0 {
 		return react.DeferredMemoryWorkJob{}, false, nil
 	}
@@ -184,7 +231,9 @@ func (q *conformanceMemoryQueue) Retry(ctx context.Context, job react.DeferredMe
 	next.Attempt = decision.NextAttempt
 	next.MaxAttempts = decision.MaxAttempts
 	next.Metadata = copyConformanceMemoryMetadata(decision.Metadata)
+	q.mu.Lock()
 	q.jobs = append(q.jobs, next)
+	q.mu.Unlock()
 	return nil
 }
 
@@ -193,6 +242,48 @@ func (q *conformanceMemoryQueue) DeadLetter(ctx context.Context, job react.Defer
 }
 
 func (q *conformanceMemoryQueue) Stop(ctx context.Context, job react.DeferredMemoryWorkJob, report react.DeferredMemoryWorkReport, decision react.DeferredMemoryWorkScheduleDecision) error {
+	return ctx.Err()
+}
+
+func (q *duplicateConcurrentDequeueQueue) Dequeue(ctx context.Context) (react.DeferredMemoryWorkJob, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return react.DeferredMemoryWorkJob{}, false, err
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.jobs) == 0 {
+		return react.DeferredMemoryWorkJob{}, false, nil
+	}
+	if len(q.jobs) >= 2 {
+		return copyConformanceMemoryJob(q.jobs[0]), true, nil
+	}
+	job := copyConformanceMemoryJob(q.jobs[0])
+	q.jobs = nil
+	return job, true, nil
+}
+
+func (q *duplicateConcurrentDequeueQueue) Complete(ctx context.Context, job react.DeferredMemoryWorkJob, report react.DeferredMemoryWorkReport) error {
+	return ctx.Err()
+}
+
+func (q *duplicateConcurrentDequeueQueue) Retry(ctx context.Context, job react.DeferredMemoryWorkJob, decision react.DeferredMemoryWorkScheduleDecision) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	next := copyConformanceMemoryJob(job)
+	next.Attempt = decision.NextAttempt
+	next.MaxAttempts = decision.MaxAttempts
+	q.mu.Lock()
+	q.jobs = append(q.jobs, next)
+	q.mu.Unlock()
+	return nil
+}
+
+func (q *duplicateConcurrentDequeueQueue) DeadLetter(ctx context.Context, job react.DeferredMemoryWorkJob, decision react.DeferredMemoryWorkScheduleDecision) error {
+	return ctx.Err()
+}
+
+func (q *duplicateConcurrentDequeueQueue) Stop(ctx context.Context, job react.DeferredMemoryWorkJob, report react.DeferredMemoryWorkReport, decision react.DeferredMemoryWorkScheduleDecision) error {
 	return ctx.Err()
 }
 

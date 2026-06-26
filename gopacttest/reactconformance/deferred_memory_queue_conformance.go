@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,6 +58,7 @@ func CheckDeferredMemoryWorkQueueConformance(ctx context.Context, harness Deferr
 		checkDeferredMemoryWorkQueueDeadLetterRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueStopRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueCompleteDoesNotMutateInput(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueConcurrentDequeueDeliversEachJobOnce(ctx, harness.NewQueue, deferredMemoryWorkQueueConformanceConcurrentJobs(jobs)),
 	}
 }
 
@@ -304,6 +306,64 @@ func checkDeferredMemoryWorkQueueCompleteDoesNotMutateInput(ctx context.Context,
 	return passedDeferredMemoryWorkQueueConformance("complete-does-not-mutate-input")
 }
 
+func checkDeferredMemoryWorkQueueConcurrentDequeueDeliversEachJobOnce(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), jobs []react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	queue, err := newDeferredMemoryWorkQueueConformanceQueue(newQueue, jobs)
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("concurrent-dequeue-delivers-each-job-once", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	start := make(chan struct{})
+	results := make(chan deferredMemoryWorkQueueConcurrentDequeueResult, 2)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			ready.Done()
+			select {
+			case <-ctx.Done():
+				results <- deferredMemoryWorkQueueConcurrentDequeueResult{err: ctx.Err()}
+				return
+			case <-start:
+			}
+			job, ok, err := queue.Dequeue(ctx)
+			results <- deferredMemoryWorkQueueConcurrentDequeueResult{job: job, ok: ok, err: err}
+		}()
+	}
+	ready.Wait()
+	close(start)
+
+	seen := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case result := <-results:
+			if result.err != nil {
+				return failedDeferredMemoryWorkQueueConformance("concurrent-dequeue-delivers-each-job-once", result.err)
+			}
+			if !result.ok {
+				return failedDeferredMemoryWorkQueueConformance("concurrent-dequeue-delivers-each-job-once", errors.New("concurrent Dequeue returned ok=false for seeded job"))
+			}
+			if result.job.ID == "" {
+				return failedDeferredMemoryWorkQueueConformance("concurrent-dequeue-delivers-each-job-once", errors.New("concurrent Dequeue returned empty job ID"))
+			}
+			if seen[result.job.ID] {
+				return failedDeferredMemoryWorkQueueConformance("concurrent-dequeue-delivers-each-job-once", fmt.Errorf("concurrent Dequeue delivered duplicate job ID %q", result.job.ID))
+			}
+			seen[result.job.ID] = true
+		case <-ctx.Done():
+			return failedDeferredMemoryWorkQueueConformance("concurrent-dequeue-delivers-each-job-once", ctx.Err())
+		}
+	}
+	return passedDeferredMemoryWorkQueueConformance("concurrent-dequeue-delivers-each-job-once")
+}
+
+type deferredMemoryWorkQueueConcurrentDequeueResult struct {
+	job react.DeferredMemoryWorkJob
+	ok  bool
+	err error
+}
+
 func checkDeferredMemoryWorkQueueVisibilityDequeueSetsDeliveryReceipt(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
 	job.DeliveryID = "stale-input-delivery"
 	queue, err := newDeferredMemoryWorkQueueConformanceQueue(newQueue, []react.DeferredMemoryWorkJob{job})
@@ -447,6 +507,27 @@ func normalizeDeferredMemoryWorkQueueConformanceJobs(in []react.DeferredMemoryWo
 		return copyDeferredMemoryWorkQueueConformanceJobs(in)
 	}
 	return []react.DeferredMemoryWorkJob{defaultDeferredMemoryWorkQueueConformanceJob()}
+}
+
+func deferredMemoryWorkQueueConformanceConcurrentJobs(in []react.DeferredMemoryWorkJob) []react.DeferredMemoryWorkJob {
+	jobs := copyDeferredMemoryWorkQueueConformanceJobs(in)
+	if len(jobs) == 0 {
+		jobs = []react.DeferredMemoryWorkJob{defaultDeferredMemoryWorkQueueConformanceJob()}
+	}
+	if len(jobs) == 1 {
+		second := copyDeferredMemoryWorkQueueConformanceJob(jobs[0])
+		second.ID = jobs[0].ID + "-2"
+		second.Attempt = jobs[0].Attempt
+		second.MaxAttempts = jobs[0].MaxAttempts
+		jobs = append(jobs, second)
+	}
+	if jobs[1].ID == jobs[0].ID {
+		jobs[1].ID = jobs[0].ID + "-2"
+	}
+	return []react.DeferredMemoryWorkJob{
+		copyDeferredMemoryWorkQueueConformanceJob(jobs[0]),
+		copyDeferredMemoryWorkQueueConformanceJob(jobs[1]),
+	}
 }
 
 func defaultDeferredMemoryWorkQueueConformanceJob() react.DeferredMemoryWorkJob {
