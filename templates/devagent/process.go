@@ -14,13 +14,14 @@ var ErrInvalidActionResult = errors.New("devagent: invalid action result")
 
 // ProcessInput contains already-observed Dev Agent decisions to attach to a run export.
 type ProcessInput struct {
-	IDs       gopact.RuntimeIDs `json:"ids,omitempty"`
-	Action    ActionResult      `json:"action"`
-	Patch     PatchProposal     `json:"patch,omitempty"`
-	Review    ReviewDecision    `json:"review,omitempty"`
-	Gate      *GateResult       `json:"gate,omitempty"`
-	CreatedAt time.Time         `json:"created_at,omitempty"`
-	Metadata  map[string]any    `json:"metadata,omitempty"`
+	IDs       gopact.RuntimeIDs       `json:"ids,omitempty"`
+	Action    ActionResult            `json:"action"`
+	Patch     PatchProposal           `json:"patch,omitempty"`
+	Review    ReviewDecision          `json:"review,omitempty"`
+	Gate      *GateResult             `json:"gate,omitempty"`
+	Pending   *gopact.InterruptRecord `json:"pending,omitempty"`
+	CreatedAt time.Time               `json:"created_at,omitempty"`
+	Metadata  map[string]any          `json:"metadata,omitempty"`
 }
 
 // ProcessRecords groups the process records generated for one Dev Agent decision boundary.
@@ -82,6 +83,18 @@ func BuildProcessRecords(input ProcessInput) (ProcessRecords, error) {
 			IDs:       input.IDs,
 			CreatedAt: createdAt,
 			Metadata:  reviewInterventionMetadata(input),
+		})
+	}
+	if input.Pending != nil {
+		pending := copyReleaseInterruptRecord(*input.Pending)
+		records.Interventions = append(records.Interventions, gopact.InterventionRecord{
+			ID:        processID(input.IDs.RunID, "review", input.Pending.ID),
+			Type:      input.Pending.Type,
+			Status:    gopact.InterventionRequested,
+			IDs:       input.IDs,
+			Request:   &pending,
+			CreatedAt: createdAt,
+			Metadata:  pendingInterventionMetadata(input),
 		})
 	}
 	return records, nil
@@ -171,12 +184,23 @@ func validateProcessInput(input ProcessInput) error {
 			return fmt.Errorf("%w: %v", ErrInvalidActionResult, err)
 		}
 	}
+	if input.Action.Status == ActionInterrupted && input.Pending == nil {
+		return fmt.Errorf("%w: pending interrupt is required for interrupted action", ErrInvalidActionResult)
+	}
+	if input.Pending != nil {
+		if input.Action.Status != ActionInterrupted {
+			return fmt.Errorf("%w: pending interrupt requires interrupted action", ErrInvalidActionResult)
+		}
+		if err := input.Pending.Validate(); err != nil {
+			return fmt.Errorf("%w: pending interrupt: %v", ErrInvalidActionResult, err)
+		}
+	}
 	return nil
 }
 
 func (s ActionStatus) valid() bool {
 	switch s {
-	case ActionAllowed, ActionRejected:
+	case ActionAllowed, ActionRejected, ActionInterrupted:
 		return true
 	default:
 		return false
@@ -184,10 +208,14 @@ func (s ActionStatus) valid() bool {
 }
 
 func taskStatusForAction(status ActionStatus) gopact.TaskStatus {
-	if status == ActionAllowed {
+	switch status {
+	case ActionAllowed:
 		return gopact.TaskCompleted
+	case ActionInterrupted:
+		return gopact.TaskInterrupted
+	default:
+		return gopact.TaskFailed
 	}
-	return gopact.TaskFailed
 }
 
 func interventionStatusForReview(status ReviewStatus) gopact.InterventionStatus {
@@ -318,6 +346,22 @@ func reviewInterventionMetadata(input ProcessInput) map[string]any {
 	metadata["review_status"] = string(input.Review.Status)
 	if input.Review.Summary != "" {
 		metadata["summary"] = input.Review.Summary
+	}
+	return metadata
+}
+
+func pendingInterventionMetadata(input ProcessInput) map[string]any {
+	metadata := processBoundaryMetadata(input.Action, input.Metadata)
+	if input.Pending == nil {
+		return metadata
+	}
+	metadata["interrupt_id"] = input.Pending.ID
+	metadata["interrupt_type"] = string(input.Pending.Type)
+	if input.Pending.Reason != "" {
+		metadata["reason"] = input.Pending.Reason
+	}
+	if input.Pending.RequiredBy != "" {
+		metadata["required_by"] = input.Pending.RequiredBy
 	}
 	return metadata
 }

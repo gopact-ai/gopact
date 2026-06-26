@@ -1,0 +1,40 @@
+[
+  {
+    "type": "run_started"
+  },
+  {
+    "type": "node_started",
+    "node": "devagent.analyze",
+    "step": 1
+  },
+  {
+    "type": "node_completed",
+    "node": "devagent.analyze",
+    "step": 1
+  },
+  {
+    "type": "node_started",
+    "node": "devagent.plan",
+    "step": 2
+  },
+  {
+    "type": "node_completed",
+    "node": "devagent.plan",
+    "step": 2
+  },
+  {
+    "type": "node_started",
+    "node": "devagent.release_gate",
+    "step": 3
+  },
+  {
+    "type": "interrupted",
+    "node": "devagent.release_gate",
+    "step": 3
+  },
+  {
+    "type": "run_interrupted",
+    "node": "devagent.release_gate",
+    "step": 3
+  }
+]

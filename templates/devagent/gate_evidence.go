@@ -40,7 +40,7 @@ func RecordReleaseGateCheck(recorder *gopact.VerificationRecorder, result GateRe
 func releaseGateCheck(result GateResult) gopact.VerificationCheck {
 	status := gopact.VerificationStatusPassed
 	switch result.Status {
-	case GateSkipped:
+	case GateSkipped, GatePending:
 		status = gopact.VerificationStatusSkipped
 	case GateRejected:
 		status = gopact.VerificationStatusFailed
@@ -65,7 +65,7 @@ func releaseGateCheck(result GateResult) gopact.VerificationCheck {
 
 func (s GateStatus) valid() bool {
 	switch s {
-	case GatePassed, GateRejected, GateSkipped:
+	case GatePassed, GateRejected, GateSkipped, GatePending:
 		return true
 	default:
 		return false
@@ -81,6 +81,11 @@ func releaseGateSummary(result GateResult) string {
 			return "release gate skipped: " + strings.Join(result.Reasons, "; ")
 		}
 		return "release gate skipped"
+	case GatePending:
+		if len(result.Reasons) > 0 {
+			return "release gate pending: " + strings.Join(result.Reasons, "; ")
+		}
+		return "release gate pending"
 	default:
 		if len(result.Reasons) > 0 {
 			return "release gate rejected: " + strings.Join(result.Reasons, "; ")
