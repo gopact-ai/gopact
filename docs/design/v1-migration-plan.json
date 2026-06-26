@@ -29,6 +29,27 @@
         ".github/workflows/ci.yml",
         "Makefile"
       ],
+      "required_check_ids": [
+        "ci-gates",
+        "command:git diff --check",
+        "command:go test -count=1 ./...",
+        "command:go test -race -count=1 ./...",
+        "command:go vet ./...",
+        "command:golangci-lint run ./...",
+        "command:go test -coverprofile=coverage.out ./...",
+        "command:go test -run '^Example' ./...",
+        "command:govulncheck ./..."
+      ],
+      "required_ci_gates": [
+        "whitespace",
+        "unit",
+        "race",
+        "vet",
+        "lint",
+        "coverage",
+        "examples",
+        "security"
+      ],
       "required_status": "passed",
       "blocking_status": "failed",
       "blocker_summary": "All core CI gates declared by docs/design/core-ci-gates.json must pass locally and in GitHub Actions before v1 release."
@@ -42,6 +63,9 @@
         "docs/design/external-repositories.json",
         "docs/design/extension-scaffold-spec.json",
         "docs/design/extension-conformance.json"
+      ],
+      "required_check_ids": [
+        "external-repositories:gopact-ai"
       ],
       "required_status": "passed",
       "blocking_status": "failed",
@@ -58,6 +82,14 @@
         "docs/design/extension-conformance-template.md",
         "docs/design/extension-scaffold-spec.json"
       ],
+      "required_check_ids": [
+        "file-snapshot:docs/design/extension-conformance.json",
+        "file-snapshot:docs/design/extension-conformance-template.md",
+        "file-snapshot:docs/design/extension-scaffold-spec.json",
+        "command:git diff --check",
+        "command:go test -count=1 ./...",
+        "command:go vet ./..."
+      ],
       "required_status": "passed",
       "blocking_status": "failed",
       "blocker_summary": "Every extension target referenced by the v1 migration plan must keep its scaffold, required conformance suites, examples, and generated repository contract passing before v1 release."
@@ -71,6 +103,11 @@
       "source_manifests": [
         "docs/design/public-api-boundary.json",
         "docs/design/public-api-examples.json"
+      ],
+      "required_check_ids": [
+        "file-snapshot:docs/design/public-api-boundary.json",
+        "file-snapshot:docs/design/public-api-examples.json",
+        "command:go test -run '^Example' ./..."
       ],
       "required_status": "passed",
       "blocking_status": "failed",
@@ -86,6 +123,11 @@
         "docs/design/deprecation-policy.md",
         "docs/design/api-ergonomics.md"
       ],
+      "required_check_ids": [
+        "file-snapshot:docs/design/public-api-boundary.json",
+        "file-snapshot:docs/design/deprecation-policy.md",
+        "file-snapshot:docs/design/api-ergonomics.md"
+      ],
       "required_status": "passed",
       "blocking_status": "failed",
       "blocker_summary": "Every root exported API that remains visible at v1 must be categorized, assigned a stability state, and covered by deprecation policy before v1 release."
@@ -99,6 +141,11 @@
         "docs/design/migration-guide.md",
         "docs/design/deprecation-policy.md",
         "docs/design/versioning-policy.md"
+      ],
+      "required_check_ids": [
+        "file-snapshot:docs/design/migration-guide.md",
+        "file-snapshot:docs/design/deprecation-policy.md",
+        "file-snapshot:docs/design/versioning-policy.md"
       ],
       "required_status": "passed",
       "blocking_status": "failed",

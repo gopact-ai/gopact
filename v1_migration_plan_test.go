@@ -116,6 +116,13 @@ func TestV1MigrationPlanCoversRepositoryBoundaryMoves(t *testing.T) {
 
 func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 	plan := loadV1MigrationPlan(t)
+	coreGates := loadCoreCIGatesManifest(t)
+	knownEvidenceTypes := map[string]bool{
+		"ci_gate":                       true,
+		"command":                       true,
+		"external_repository_readiness": true,
+		"file_snapshot":                 true,
+	}
 
 	checks := map[string]v1ReleaseGateCheck{}
 	for _, check := range plan.ReleaseGateChecks {
@@ -137,6 +144,11 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 		if len(check.EvidenceTypes) == 0 {
 			t.Fatalf("v1 release gate check %q evidence_types is empty", check.ID)
 		}
+		for _, evidenceType := range check.EvidenceTypes {
+			if !knownEvidenceTypes[evidenceType] {
+				t.Fatalf("v1 release gate check %q evidence type %q is not known to release evidence", check.ID, evidenceType)
+			}
+		}
 		if len(check.SourceManifests) == 0 {
 			t.Fatalf("v1 release gate check %q source_manifests is empty", check.ID)
 		}
@@ -145,10 +157,59 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 				t.Fatalf("v1 release gate check %q source_manifest %q: %v", check.ID, path, err)
 			}
 		}
+		if len(check.RequiredCheckIDs) == 0 {
+			t.Fatalf("v1 release gate check %q required_check_ids is empty", check.ID)
+		}
+		checkIDSeen := map[string]bool{}
+		for _, id := range check.RequiredCheckIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				t.Fatalf("v1 release gate check %q required_check_ids contains empty id", check.ID)
+			}
+			if checkIDSeen[id] {
+				t.Fatalf("v1 release gate check %q required_check_ids duplicates %q", check.ID, id)
+			}
+			checkIDSeen[id] = true
+		}
+		if slices.Contains(check.EvidenceTypes, "command") && !hasRequiredCheckIDPrefix(check, "command:") {
+			t.Fatalf("v1 release gate check %q declares command evidence without command:* required_check_ids", check.ID)
+		}
+		if slices.Contains(check.EvidenceTypes, "external_repository_readiness") &&
+			!slices.Contains(check.RequiredCheckIDs, "external-repositories:gopact-ai") {
+			t.Fatalf("v1 release gate check %q missing external-repositories:gopact-ai required_check_ids entry", check.ID)
+		}
+		if slices.Contains(check.EvidenceTypes, "file_snapshot") {
+			for _, path := range check.SourceManifests {
+				id := "file-snapshot:" + path
+				if !slices.Contains(check.RequiredCheckIDs, id) {
+					t.Fatalf("v1 release gate check %q missing %q required_check_ids entry", check.ID, id)
+				}
+			}
+		}
 		if strings.TrimSpace(check.BlockerSummary) == "" {
 			t.Fatalf("v1 release gate check %q blocker_summary is empty", check.ID)
 		}
 		checks[check.ID] = check
+	}
+	coreGateCheck := checks["core-ci-gates"]
+	if coreGateCheck.ID == "" {
+		t.Fatal("v1 release gate checks missing core-ci-gates")
+	}
+	if !slices.Contains(coreGateCheck.RequiredCheckIDs, "ci-gates") {
+		t.Fatal("core-ci-gates release check missing ci-gates required_check_ids entry")
+	}
+	gotCIGates := slices.Clone(coreGateCheck.RequiredCIGates)
+	wantCIGates := slices.Clone(coreGates.RequiredGates)
+	slices.Sort(gotCIGates)
+	slices.Sort(wantCIGates)
+	if !slices.Equal(gotCIGates, wantCIGates) {
+		t.Fatalf("core-ci-gates release check required_ci_gates = %v, want %v", gotCIGates, wantCIGates)
+	}
+	for _, command := range coreGates.RequiredCommands {
+		id := "command:" + command
+		if !slices.Contains(coreGateCheck.RequiredCheckIDs, id) {
+			t.Fatalf("core-ci-gates release check missing %q required_check_ids entry", id)
+		}
 	}
 
 	for _, condition := range plan.ReleaseGateConditions {
@@ -252,6 +313,9 @@ func TestV1MigrationPlanIsIndexed(t *testing.T) {
 		if !strings.Contains(content, "release_gate_checks") {
 			t.Fatalf("%s does not document v1 release_gate_checks", path)
 		}
+		if !strings.Contains(content, "required_check_ids") {
+			t.Fatalf("%s does not document v1 release gate required_check_ids", path)
+		}
 	}
 }
 
@@ -266,12 +330,14 @@ type v1MigrationPlan struct {
 }
 
 type v1ReleaseGateCheck struct {
-	ID              string   `json:"id"`
-	EvidenceTypes   []string `json:"evidence_types"`
-	SourceManifests []string `json:"source_manifests"`
-	RequiredStatus  string   `json:"required_status"`
-	BlockingStatus  string   `json:"blocking_status"`
-	BlockerSummary  string   `json:"blocker_summary"`
+	ID               string   `json:"id"`
+	EvidenceTypes    []string `json:"evidence_types"`
+	SourceManifests  []string `json:"source_manifests"`
+	RequiredCheckIDs []string `json:"required_check_ids"`
+	RequiredCIGates  []string `json:"required_ci_gates,omitempty"`
+	RequiredStatus   string   `json:"required_status"`
+	BlockingStatus   string   `json:"blocking_status"`
+	BlockerSummary   string   `json:"blocker_summary"`
 }
 
 type v1RepositoryMigration struct {
@@ -322,6 +388,15 @@ func publicAPIGroupSymbolNames(group publicAPIBoundaryGroup) []string {
 
 func publicAPITransitionKey(category, sourceFile string) string {
 	return category + ":" + sourceFile
+}
+
+func hasRequiredCheckIDPrefix(check v1ReleaseGateCheck, prefix string) bool {
+	for _, id := range check.RequiredCheckIDs {
+		if strings.HasPrefix(id, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func v1PublicAPIActionAllowed(action string) bool {
