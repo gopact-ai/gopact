@@ -312,6 +312,33 @@ func TestDeferredMemoryWorkWorkerRunOnceRenewsLeaseDuringPass(t *testing.T) {
 	}
 }
 
+func TestDeferredMemoryWorkWorkerRunOnceWaitsForRenewalRecordUpdate(t *testing.T) {
+	ctx := context.Background()
+	key := "react/memory-worker"
+	leases := newReactDelayedRenewLeaseBackend(gopact.NewMemoryLeaseBackend(), 50*time.Millisecond)
+	queue := NewMemoryDeferredMemoryWorkQueue(DeferredMemoryWorkJob{
+		ID:      "job-1",
+		Export:  deferredMemoryWorkExport([]gopact.EffectRecord{pendingMemoryPutEffect("pending-1", "memory:pending-1", "leased")}),
+		Attempt: 1,
+	})
+	executor := gopact.EffectReplayFunc(func(ctx context.Context, decision gopact.EffectReplayDecision) (gopact.EffectReplayResult, error) {
+		leases.WaitRenewStarted(t, time.Second)
+		return gopact.EffectReplayResult{EffectID: decision.Effect.ID, Action: decision.Action, ReplayPolicy: decision.ReplayPolicy}, nil
+	})
+	worker, err := NewDeferredMemoryWorkWorker(queue, executor,
+		WithDeferredMemoryWorkLease(leases, gopact.LeaseRequest{Key: key, Owner: "worker-a", TTL: time.Second}),
+		WithDeferredMemoryWorkLeaseRenewalInterval(time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("NewDeferredMemoryWorkWorker() error = %v", err)
+	}
+
+	result, err := worker.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("RunOnce() result=%+v error=%v snapshot=%+v", result, err, queue.Snapshot())
+	}
+}
+
 func TestDeferredMemoryWorkWorkerRunOnceStopsWhenLeaseRenewalLost(t *testing.T) {
 	ctx := context.Background()
 	key := "react/memory-worker"
@@ -523,6 +550,45 @@ func (b *reactCountingLeaseBackend) WaitRenew(t *testing.T, timeout time.Duratio
 	case <-time.After(timeout):
 		t.Fatalf("timed out waiting for lease renewal")
 		return gopact.LeaseRecord{}
+	}
+}
+
+type reactDelayedRenewLeaseBackend struct {
+	gopact.LeaseBackend
+	delay   time.Duration
+	started chan struct{}
+	once    sync.Once
+}
+
+func newReactDelayedRenewLeaseBackend(next gopact.LeaseBackend, delay time.Duration) *reactDelayedRenewLeaseBackend {
+	return &reactDelayedRenewLeaseBackend{
+		LeaseBackend: next,
+		delay:        delay,
+		started:      make(chan struct{}),
+	}
+}
+
+func (b *reactDelayedRenewLeaseBackend) RenewLease(ctx context.Context, request gopact.LeaseRenewRequest) (gopact.LeaseRecord, error) {
+	record, err := b.LeaseBackend.RenewLease(ctx, request)
+	if err == nil {
+		b.once.Do(func() {
+			close(b.started)
+		})
+		select {
+		case <-ctx.Done():
+			return gopact.LeaseRecord{}, ctx.Err()
+		case <-time.After(b.delay):
+		}
+	}
+	return record, err
+}
+
+func (b *reactDelayedRenewLeaseBackend) WaitRenewStarted(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	select {
+	case <-b.started:
+	case <-time.After(timeout):
+		t.Fatalf("timed out waiting for lease renewal to start")
 	}
 }
 
