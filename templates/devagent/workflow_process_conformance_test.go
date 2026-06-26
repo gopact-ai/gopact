@@ -56,6 +56,25 @@ func TestCheckWorkflowProcessConformanceReportsBrokenParentChildLink(t *testing.
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsDuplicateChildTaskID(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	records.Tasks[1].ID = records.Tasks[0].ID
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[1]["task_id"] = records.Tasks[1].ID
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "child-task-ids") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report duplicate child task id: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsFailedSummaryDrift(t *testing.T) {
 	records := workflowProcessConformanceRejectedFixture(t)
 	output, ok := records.Task.Output.(map[string]any)
