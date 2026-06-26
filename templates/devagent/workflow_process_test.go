@@ -555,6 +555,81 @@ func TestWorkflowActionProcessRecordsReturnsOnlyMatchingActionBoundaries(t *test
 	}
 }
 
+func TestWorkflowActionProcessRecordsFromRunExportReturnsSingleAction(t *testing.T) {
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare release",
+					Diff:    "diff --git a/private b/private\n+raw diff must not be copied\n",
+					Files: []PatchFile{
+						{Path: "templates/devagent/workflow_process_test.go", Intent: "cover run export action process extraction"},
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	export := gopact.RunExport{
+		Version:       gopact.RunExportVersion,
+		IDs:           workflow.Task.IDs,
+		Tasks:         append([]gopact.TaskRecord{workflow.Task}, workflow.Tasks...),
+		Inputs:        workflow.Inputs,
+		Interventions: workflow.Interventions,
+	}
+
+	process, err := WorkflowActionProcessRecordsFromRunExport(export, "", 3)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecordsFromRunExport() error = %v", err)
+	}
+	if process.Task.ID != workflow.Tasks[2].ID {
+		t.Fatalf("process task = %+v, want release child task", process.Task)
+	}
+	if len(process.Inputs) != 1 || process.Inputs[0].Source != "devagent.release_gate" {
+		t.Fatalf("process inputs = %+v, want only release gate input", process.Inputs)
+	}
+	if len(process.Interventions) != 1 || process.Interventions[0].Type != gopact.InterruptApproval {
+		t.Fatalf("process interventions = %+v, want only review intervention", process.Interventions)
+	}
+	process.Inputs[0].Metadata["mutated"] = true
+	if _, ok := export.Inputs[1].Metadata["mutated"]; ok {
+		t.Fatalf("WorkflowActionProcessRecordsFromRunExport returned records sharing input metadata")
+	}
+}
+
 func TestBuildWorkflowProcessRecordsRejectsInvalidInput(t *testing.T) {
 	_, err := BuildWorkflowProcessRecords(WorkflowInput{})
 	if !errors.Is(err, ErrInvalidActionResult) {
