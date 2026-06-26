@@ -39,6 +39,7 @@ func CheckWorkflowProcessConformance(ctx context.Context, harness WorkflowProces
 	return []WorkflowProcessConformanceResult{
 		checkWorkflowProcessRecordsValid(harness.Records),
 		checkWorkflowProcessParentChildLinks(harness.Records),
+		checkWorkflowProcessParentTaskIO(harness.Records),
 		checkWorkflowProcessChildTaskIO(harness.Records),
 		checkWorkflowProcessSummary(harness.Records),
 		checkWorkflowProcessFailureSummary(harness.Records),
@@ -127,6 +128,23 @@ func checkWorkflowProcessParentChildLinks(records WorkflowRecords) WorkflowProce
 	return passedWorkflowProcessConformance("parent-child-links")
 }
 
+func checkWorkflowProcessParentTaskIO(records WorkflowRecords) WorkflowProcessConformanceResult {
+	input, ok := records.Task.Input.(map[string]any)
+	if !ok {
+		return failedWorkflowProcessConformance(
+			"workflow-task-io",
+			fmt.Errorf("workflow input = %T, want map", records.Task.Input),
+		)
+	}
+	if got, ok := workflowProcessIntMetadata(input, "action_count"); !ok || got != len(records.Tasks) {
+		return failedWorkflowProcessConformance(
+			"workflow-task-io",
+			fmt.Errorf("workflow input action_count = %v, want %d", input["action_count"], len(records.Tasks)),
+		)
+	}
+	return passedWorkflowProcessConformance("workflow-task-io")
+}
+
 func checkWorkflowProcessChildTaskIO(records WorkflowRecords) WorkflowProcessConformanceResult {
 	for i, task := range records.Tasks {
 		input, ok := task.Input.(map[string]any)
@@ -150,6 +168,14 @@ func checkWorkflowProcessChildTaskIO(records WorkflowRecords) WorkflowProcessCon
 				return failedWorkflowProcessConformance(
 					"child-task-io",
 					fmt.Errorf("child task %d input %s = %q, want %q", i, field, got, want),
+				)
+			}
+		}
+		if wantReasonCount, ok := workflowProcessOutputReasonCount(output); ok {
+			if got, ok := workflowProcessIntMetadata(input, "reason_count"); !ok || got != wantReasonCount {
+				return failedWorkflowProcessConformance(
+					"child-task-io",
+					fmt.Errorf("child task %d input reason_count = %v, want %d", i, input["reason_count"], wantReasonCount),
 				)
 			}
 		}
