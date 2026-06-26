@@ -54,7 +54,7 @@
 - `docs/design/deprecation-policy.md`：root public API 的稳定性、废弃标记、移除窗口和兼容性审查规则。
 - `docs/design/versioning-policy.md`：core SDK、schema 和外部 extension 的 semver、release gates 和兼容性策略。
 - `docs/design/migration-guide.md`：v1 前后的 public API、adapter split、checkpoint/resume 和 verification 迁移文档要求。
-- `docs/design/v1-migration-plan.json`：v1 前 core 边界收敛计划，把需要外迁的主仓路径和 transitional root API 分别绑定到目标仓库、目标状态和 release gate。
+- `docs/design/v1-migration-plan.json`：v1 前 core 边界收敛计划，把需要外迁的主仓路径和 transitional root API 分别绑定到目标仓库、目标状态和 `release_gate_checks`，让 v1 release gate 能消费同一份机器可读证据要求。
 - `docs/design/template-guide.md`：外部 graph template 的边界、step export/resume、events/verification、memory/side effect 和 conformance 要求。
 - `docs/design/core-ci-gates.json`：core repo 自身的 CI gate 清单，覆盖 whitespace、test、race、vet、lint、coverage、examples 和 security，并绑定 `.golangci.yml` 与 `coverage.out`。
 - `docs/design/external-integration-roadmap.json`：OpenAI/Anthropic/Gemini/OpenRouter、Redis/SQL/S3/GCS/R2/OSS、A2UI/AG-UI/Lark/WebSocket、LangSmith/LangGraph、CI/model reviewer 等生产集成的外部 adapter/plugin/template 路线，并显式标注每条路线是否已可 scaffold。

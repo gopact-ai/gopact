@@ -114,6 +114,65 @@ func TestV1MigrationPlanCoversRepositoryBoundaryMoves(t *testing.T) {
 	}
 }
 
+func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
+	plan := loadV1MigrationPlan(t)
+
+	checks := map[string]v1ReleaseGateCheck{}
+	for _, check := range plan.ReleaseGateChecks {
+		if check.ID == "" {
+			t.Fatal("v1 release gate check id is empty")
+		}
+		if checks[check.ID].ID != "" {
+			t.Fatalf("v1 release gate check %q is duplicated", check.ID)
+		}
+		if !slices.Contains(plan.ReleaseGateConditions, check.ID) {
+			t.Fatalf("v1 release gate check %q is not listed in release_gate_conditions", check.ID)
+		}
+		if check.RequiredStatus != "passed" {
+			t.Fatalf("v1 release gate check %q required_status = %q, want passed", check.ID, check.RequiredStatus)
+		}
+		if check.BlockingStatus != "failed" {
+			t.Fatalf("v1 release gate check %q blocking_status = %q, want failed", check.ID, check.BlockingStatus)
+		}
+		if len(check.EvidenceTypes) == 0 {
+			t.Fatalf("v1 release gate check %q evidence_types is empty", check.ID)
+		}
+		if len(check.SourceManifests) == 0 {
+			t.Fatalf("v1 release gate check %q source_manifests is empty", check.ID)
+		}
+		for _, path := range check.SourceManifests {
+			if _, err := os.Stat(filepath.Clean(path)); err != nil {
+				t.Fatalf("v1 release gate check %q source_manifest %q: %v", check.ID, path, err)
+			}
+		}
+		if strings.TrimSpace(check.BlockerSummary) == "" {
+			t.Fatalf("v1 release gate check %q blocker_summary is empty", check.ID)
+		}
+		checks[check.ID] = check
+	}
+
+	for _, condition := range plan.ReleaseGateConditions {
+		if checks[condition].ID == "" {
+			t.Fatalf("v1 release_gate_conditions entry %q has no release_gate_checks entry", condition)
+		}
+	}
+	for _, migration := range plan.RepositoryMigrations {
+		for _, verification := range migration.Verification {
+			if checks[verification].ID == "" {
+				t.Fatalf("v1 repository migration %q verification %q has no release gate check", migration.SourcePath, verification)
+			}
+		}
+	}
+	for _, transition := range plan.PublicAPITransitions {
+		key := publicAPITransitionKey(transition.Category, transition.SourceFile)
+		for _, verification := range transition.Verification {
+			if checks[verification].ID == "" {
+				t.Fatalf("v1 public api transition %q verification %q has no release gate check", key, verification)
+			}
+		}
+	}
+}
+
 func TestV1MigrationPlanCoversTransitionalPublicAPI(t *testing.T) {
 	boundary := loadPublicAPIBoundaryManifest(t)
 	plan := loadV1MigrationPlan(t)
@@ -190,6 +249,9 @@ func TestV1MigrationPlanIsIndexed(t *testing.T) {
 		if !strings.Contains(content, "v1-migration-plan.json") {
 			t.Fatalf("%s does not reference v1-migration-plan.json", path)
 		}
+		if !strings.Contains(content, "release_gate_checks") {
+			t.Fatalf("%s does not document v1 release_gate_checks", path)
+		}
 	}
 }
 
@@ -198,8 +260,18 @@ type v1MigrationPlan struct {
 	Scope                 string                  `json:"scope"`
 	SourceManifests       []string                `json:"source_manifests"`
 	ReleaseGateConditions []string                `json:"release_gate_conditions"`
+	ReleaseGateChecks     []v1ReleaseGateCheck    `json:"release_gate_checks"`
 	RepositoryMigrations  []v1RepositoryMigration `json:"repository_migrations"`
 	PublicAPITransitions  []v1PublicAPITransition `json:"public_api_transitions"`
+}
+
+type v1ReleaseGateCheck struct {
+	ID              string   `json:"id"`
+	EvidenceTypes   []string `json:"evidence_types"`
+	SourceManifests []string `json:"source_manifests"`
+	RequiredStatus  string   `json:"required_status"`
+	BlockingStatus  string   `json:"blocking_status"`
+	BlockerSummary  string   `json:"blocker_summary"`
 }
 
 type v1RepositoryMigration struct {

@@ -4,7 +4,7 @@
 
 版本策略见 [versioning-policy.md](versioning-policy.md)。迁移说明必须服从 semver、release gate、schema version 和 extension compatibility 规则。
 
-v1 前的具体收敛清单见 [v1-migration-plan.json](v1-migration-plan.json)。该清单把需要外迁或删除的主仓路径、外部仓库目标、transitional root API 的目标状态和 release gate 绑定到机器可测条目。
+v1 前的具体收敛清单见 [v1-migration-plan.json](v1-migration-plan.json)。该清单把需要外迁或删除的主仓路径、外部仓库目标、transitional root API 的目标状态和 `release_gate_checks` 绑定到机器可测条目；每个 gate 都声明 evidence type、来源 manifest、required status 和 blocker summary。
 
 ## Compatibility Promise
 
