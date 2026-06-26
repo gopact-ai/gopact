@@ -128,6 +128,171 @@ func TestMemoryDeferredMemoryWorkQueueCompleteAndStop(t *testing.T) {
 	}
 }
 
+func TestMemoryDeferredMemoryWorkQueueClearsSeedDeliveryID(t *testing.T) {
+	ctx := context.Background()
+	queue := NewMemoryDeferredMemoryWorkQueue(DeferredMemoryWorkJob{
+		ID:         "job-1",
+		DeliveryID: "stale-delivery",
+		Export:     deferredMemoryWorkExport(nil),
+	})
+
+	dequeued, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue() = %+v/%v/%v, want job", dequeued, ok, err)
+	}
+	if dequeued.DeliveryID != "" {
+		t.Fatalf("dequeued.DeliveryID = %q, want empty pending delivery receipt", dequeued.DeliveryID)
+	}
+}
+
+func TestMemoryDeferredMemoryWorkQueueVisibilityTimeoutRequeuesInFlightJob(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	queue, err := NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout(time.Minute, DeferredMemoryWorkJob{
+		ID:       "job-1",
+		Export:   deferredMemoryWorkExport(nil),
+		Metadata: map[string]any{"queue": "local"},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout() error = %v", err)
+	}
+	queue.now = func() time.Time { return now }
+
+	dequeued, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue(first) = %+v/%v/%v, want job", dequeued, ok, err)
+	}
+	if dequeued.ID != "job-1" || dequeued.Metadata["queue"] != "local" {
+		t.Fatalf("dequeued = %+v, want copied job-1", dequeued)
+	}
+	if dequeued.DeliveryID == "" {
+		t.Fatalf("dequeued.DeliveryID is empty, want local delivery receipt")
+	}
+	if len(dequeued.Metadata) != 1 {
+		t.Fatalf("dequeued.Metadata = %+v, want only host metadata", dequeued.Metadata)
+	}
+	if _, ok, err := queue.Dequeue(ctx); err != nil || ok {
+		t.Fatalf("Dequeue(before timeout) ok=%v err=%v, want no visible job", ok, err)
+	}
+	if snapshot := queue.Snapshot(); len(snapshot.Pending) != 0 || len(snapshot.InFlight) != 1 {
+		t.Fatalf("snapshot before timeout = %+v, want one in-flight job", snapshot)
+	} else if snapshot.InFlight[0].Job.DeliveryID != "" {
+		t.Fatalf("snapshot in-flight DeliveryID = %q, want hidden local delivery receipt", snapshot.InFlight[0].Job.DeliveryID)
+	}
+
+	now = now.Add(time.Minute + time.Nanosecond)
+	requeued, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue(after timeout) = %+v/%v/%v, want requeued job", requeued, ok, err)
+	}
+	if requeued.ID != "job-1" || requeued.Metadata["queue"] != "local" {
+		t.Fatalf("requeued = %+v, want original job metadata", requeued)
+	}
+	snapshot := queue.Snapshot()
+	if len(snapshot.Pending) != 0 || len(snapshot.InFlight) != 1 {
+		t.Fatalf("snapshot after requeue = %+v, want re-dequeued in-flight job", snapshot)
+	}
+}
+
+func TestMemoryDeferredMemoryWorkQueueVisibilityTransitionClearsInFlightJob(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	queue, err := NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout(time.Minute, DeferredMemoryWorkJob{
+		ID:     "job-1",
+		Export: deferredMemoryWorkExport(nil),
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout() error = %v", err)
+	}
+	queue.now = func() time.Time { return now }
+
+	dequeued, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue() = %+v/%v/%v, want job", dequeued, ok, err)
+	}
+	if err := queue.Complete(ctx, dequeued, DeferredMemoryWorkReport{Status: DeferredMemoryWorkSucceeded}); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	now = now.Add(time.Minute + time.Nanosecond)
+	if _, ok, err := queue.Dequeue(ctx); err != nil || ok {
+		t.Fatalf("Dequeue(after complete timeout) ok=%v err=%v, want no requeued job", ok, err)
+	}
+	snapshot := queue.Snapshot()
+	if len(snapshot.InFlight) != 0 || len(snapshot.Completed) != 1 {
+		t.Fatalf("snapshot = %+v, want completed job without in-flight duplicate", snapshot)
+	}
+	if snapshot.Completed[0].Job.DeliveryID != "" {
+		t.Fatalf("completed DeliveryID = %q, want hidden local delivery receipt", snapshot.Completed[0].Job.DeliveryID)
+	}
+}
+
+func TestMemoryDeferredMemoryWorkQueueVisibilityRejectsStaleTransition(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	queue, err := NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout(time.Minute, DeferredMemoryWorkJob{
+		ID:     "job-1",
+		Export: deferredMemoryWorkExport(nil),
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout() error = %v", err)
+	}
+	queue.now = func() time.Time { return now }
+
+	firstDelivery, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue(first) = %+v/%v/%v, want job", firstDelivery, ok, err)
+	}
+	now = now.Add(time.Minute + time.Nanosecond)
+	secondDelivery, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue(second) = %+v/%v/%v, want re-delivered job", secondDelivery, ok, err)
+	}
+
+	err = queue.Complete(ctx, firstDelivery, DeferredMemoryWorkReport{Status: DeferredMemoryWorkSucceeded})
+	if !errors.Is(err, ErrDeferredMemoryWorkDeliveryNotFound) {
+		t.Fatalf("Complete(stale delivery) error = %v, want ErrDeferredMemoryWorkDeliveryNotFound", err)
+	}
+	snapshot := queue.Snapshot()
+	if len(snapshot.Completed) != 0 || len(snapshot.InFlight) != 1 {
+		t.Fatalf("snapshot after stale complete = %+v, want current delivery still in-flight", snapshot)
+	}
+	if err := queue.Complete(ctx, secondDelivery, DeferredMemoryWorkReport{Status: DeferredMemoryWorkSucceeded}); err != nil {
+		t.Fatalf("Complete(current delivery) error = %v", err)
+	}
+}
+
+func TestMemoryDeferredMemoryWorkQueueVisibilityRejectsExpiredTransitionBeforeRedelivery(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	queue, err := NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout(time.Minute, DeferredMemoryWorkJob{
+		ID:     "job-1",
+		Export: deferredMemoryWorkExport(nil),
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryDeferredMemoryWorkQueueWithVisibilityTimeout() error = %v", err)
+	}
+	queue.now = func() time.Time { return now }
+
+	firstDelivery, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue(first) = %+v/%v/%v, want job", firstDelivery, ok, err)
+	}
+	now = now.Add(time.Minute + time.Nanosecond)
+	err = queue.Complete(ctx, firstDelivery, DeferredMemoryWorkReport{Status: DeferredMemoryWorkSucceeded})
+	if !errors.Is(err, ErrDeferredMemoryWorkDeliveryNotFound) {
+		t.Fatalf("Complete(expired delivery) error = %v, want ErrDeferredMemoryWorkDeliveryNotFound", err)
+	}
+
+	requeued, ok, err := queue.Dequeue(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Dequeue(after expired complete) = %+v/%v/%v, want requeued job", requeued, ok, err)
+	}
+	if requeued.ID != "job-1" {
+		t.Fatalf("requeued.ID = %q, want job-1", requeued.ID)
+	}
+}
+
 func TestMemoryDeferredMemoryWorkQueueHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

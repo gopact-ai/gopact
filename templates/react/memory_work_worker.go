@@ -19,8 +19,13 @@ var (
 )
 
 // DeferredMemoryWorkJob is one host-queued run export containing deferred memory work.
+//
+// DeliveryID is a queue delivery receipt. Queue implementations may set it on
+// Dequeue and require callers to pass the same job value to Complete, Retry,
+// DeadLetter, or Stop. It should not be treated as durable job metadata.
 type DeferredMemoryWorkJob struct {
 	ID          string
+	DeliveryID  string
 	Export      gopact.RunExport
 	Attempt     int
 	MaxAttempts int
@@ -30,8 +35,9 @@ type DeferredMemoryWorkJob struct {
 // DeferredMemoryWorkQueue is the host-owned queue contract consumed by DeferredMemoryWorkWorker.
 //
 // The SDK includes a local in-memory implementation for tests and single-process
-// workers. Durable storage, visibility timeout, distributed leasing, and
-// production DLQ handling remain adapter or host responsibilities.
+// workers. Durable storage, distributed leasing, and production DLQ handling
+// remain adapter or host responsibilities; the local in-memory queue can provide
+// single-process visibility timeout semantics for tests and lightweight workers.
 type DeferredMemoryWorkQueue interface {
 	Dequeue(ctx context.Context) (DeferredMemoryWorkJob, bool, error)
 	Complete(ctx context.Context, job DeferredMemoryWorkJob, report DeferredMemoryWorkReport) error
@@ -104,9 +110,9 @@ func WithDeferredMemoryWorkScheduleRecorder(recorder *gopact.VerificationRecorde
 // WithDeferredMemoryWorkLease gates each RunOnce call with a worker ownership lease.
 //
 // The lease is acquired before dequeue, checked before queue transitions, and
-// released before RunOnce returns. The SDK does not renew the lease or provide
-// queue visibility timeouts; hosts should pick a TTL that covers one worker
-// pass, or use a durable queue adapter with its own visibility semantics.
+// released before RunOnce returns. WithDeferredMemoryWorkLeaseRenewalInterval
+// can renew the held lease during a pass; durable queue visibility semantics
+// remain the queue adapter's responsibility.
 func WithDeferredMemoryWorkLease(leases gopact.LeaseBackend, request gopact.LeaseRequest) DeferredMemoryWorkWorkerOption {
 	return func(w *DeferredMemoryWorkWorker) {
 		w.leaseBackend = leases
@@ -127,9 +133,10 @@ func WithDeferredMemoryWorkLeaseRenewalInterval(interval time.Duration) Deferred
 // NewDeferredMemoryWorkWorker creates a worker for host-managed deferred memory jobs.
 //
 // If no schedule decider option is supplied, the worker uses the default
-// retry/backoff decider. Queueing, sleeping, visibility timeouts, and durable
-// DLQ storage remain queue or host responsibilities. WithDeferredMemoryWorkLease
-// can optionally gate one RunOnce pass with a host LeaseBackend.
+// retry/backoff decider. Queueing, sleeping, durable DLQ storage, and
+// distributed visibility semantics remain queue or host responsibilities.
+// WithDeferredMemoryWorkLease can optionally gate one RunOnce pass with a host
+// LeaseBackend.
 func NewDeferredMemoryWorkWorker(queue DeferredMemoryWorkQueue, executor gopact.EffectReplayExecutor, opts ...DeferredMemoryWorkWorkerOption) (*DeferredMemoryWorkWorker, error) {
 	if queue == nil {
 		return nil, ErrDeferredMemoryWorkQueueRequired
