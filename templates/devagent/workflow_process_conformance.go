@@ -44,6 +44,7 @@ func CheckWorkflowProcessConformance(ctx context.Context, harness WorkflowProces
 		checkWorkflowProcessRequiredActions(harness.Records, harness.RequiredActions),
 		checkWorkflowProcessInputBoundaries(harness.Records, harness.RequiredInputSources),
 		checkWorkflowProcessInterventionBoundaries(harness.Records),
+		checkWorkflowProcessReleaseBoundaries(harness.Records),
 	}
 }
 
@@ -319,6 +320,118 @@ func checkWorkflowProcessInterventionBoundaries(records WorkflowRecords) Workflo
 		}
 	}
 	return passedWorkflowProcessConformance("intervention-boundaries")
+}
+
+func checkWorkflowProcessReleaseBoundaries(records WorkflowRecords) WorkflowProcessConformanceResult {
+	for i, task := range records.Tasks {
+		if ActionKind(workflowProcessStringMetadata(task.Metadata, "action")) != ActionRelease {
+			continue
+		}
+		actionIndex, ok := workflowProcessIntMetadata(task.Metadata, "workflow_action_index")
+		if !ok {
+			return failedWorkflowProcessConformance(
+				"release-boundaries",
+				fmt.Errorf("release action %d workflow_action_index = %v, want integer", i, task.Metadata["workflow_action_index"]),
+			)
+		}
+		gateInput, ok := workflowProcessReleaseGateInput(records.Inputs, actionIndex)
+		if !ok {
+			return failedWorkflowProcessConformance(
+				"release-boundaries",
+				fmt.Errorf("release action %d release gate input is required", i),
+			)
+		}
+		gateValue, err := validateWorkflowProcessReleaseGateInput(task, gateInput)
+		if err != nil {
+			return failedWorkflowProcessConformance("release-boundaries", fmt.Errorf("release action %d: %w", i, err))
+		}
+
+		if ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status")) != ActionAllowed {
+			continue
+		}
+		review, ok := workflowProcessResolvedReviewIntervention(records.Interventions, actionIndex)
+		if !ok {
+			return failedWorkflowProcessConformance(
+				"release-boundaries",
+				fmt.Errorf("release action %d resolved review intervention is required", i),
+			)
+		}
+		if err := validateWorkflowProcessReleaseReview(task, gateValue, review); err != nil {
+			return failedWorkflowProcessConformance("release-boundaries", fmt.Errorf("release action %d: %w", i, err))
+		}
+	}
+	return passedWorkflowProcessConformance("release-boundaries")
+}
+
+func workflowProcessReleaseGateInput(records []gopact.InputRecord, actionIndex int) (gopact.InputRecord, bool) {
+	for _, record := range records {
+		if record.Source != "devagent.release_gate" {
+			continue
+		}
+		if got, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok && got == actionIndex {
+			return record, true
+		}
+	}
+	return gopact.InputRecord{}, false
+}
+
+func workflowProcessResolvedReviewIntervention(records []gopact.InterventionRecord, actionIndex int) (gopact.InterventionRecord, bool) {
+	for _, record := range records {
+		if record.Type != gopact.InterruptApproval || record.Status != gopact.InterventionResolved {
+			continue
+		}
+		if got, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok && got == actionIndex {
+			return record, true
+		}
+	}
+	return gopact.InterventionRecord{}, false
+}
+
+func validateWorkflowProcessReleaseGateInput(
+	task gopact.TaskRecord,
+	record gopact.InputRecord,
+) (map[string]any, error) {
+	value, ok := record.Value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("release gate input value = %T, want map", record.Value)
+	}
+	status := GateStatus(workflowProcessStringMetadata(value, "status"))
+	if !status.valid() {
+		return nil, fmt.Errorf("release gate status = %q, want valid status", status)
+	}
+	if got, want := string(status), workflowProcessStringMetadata(task.Metadata, "gate_status"); want != "" && got != want {
+		return nil, fmt.Errorf("release gate status = %q, want task gate_status %q", got, want)
+	}
+	if ActionStatus(workflowProcessStringMetadata(task.Metadata, "action_status")) == ActionAllowed && status != GatePassed {
+		return nil, fmt.Errorf("allowed release gate status = %q, want %q", status, GatePassed)
+	}
+	return value, nil
+}
+
+func validateWorkflowProcessReleaseReview(
+	task gopact.TaskRecord,
+	gateValue map[string]any,
+	record gopact.InterventionRecord,
+) error {
+	reviewStatus := workflowProcessStringMetadata(record.Metadata, "review_status")
+	if reviewStatus != string(ReviewApproved) {
+		return fmt.Errorf("review intervention review_status = %q, want %q", reviewStatus, ReviewApproved)
+	}
+	if reviewer := workflowProcessStringMetadata(record.Metadata, "reviewer"); reviewer == "" {
+		return errors.New("review intervention reviewer is required")
+	}
+	for _, expected := range []struct {
+		name  string
+		value string
+	}{
+		{name: "task review_status", value: workflowProcessStringMetadata(task.Metadata, "review_status")},
+		{name: "gate review_status", value: workflowProcessStringMetadata(gateValue, "review_status")},
+	} {
+		if expected.value != "" && reviewStatus != expected.value {
+			return fmt.Errorf("review intervention review_status = %q, want %s %q", reviewStatus, expected.name, expected.value)
+		}
+	}
+	return nil
 }
 
 func validateWorkflowProcessBoundaryMetadata(records WorkflowRecords, metadata map[string]any, label string, index int) error {
