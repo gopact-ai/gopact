@@ -55,6 +55,7 @@ func TestRecordRemoteStatusCheckRecordsPassedCheck(t *testing.T) {
 	if check.Metadata["organization"] != "gopact-ai" ||
 		check.Metadata["repository_count"] != 1 ||
 		check.Metadata["ready_count"] != 1 ||
+		check.Metadata["not_ready_count"] != 0 ||
 		check.Metadata["missing_count"] != 0 {
 		t.Fatalf("metadata = %+v, want readiness counts", check.Metadata)
 	}
@@ -120,12 +121,16 @@ func TestRecordRemoteStatusCheckRecordsFailedCheckBeforeReturningError(t *testin
 	if check.Status != gopact.VerificationStatusFailed {
 		t.Fatalf("check status = %q, want failed", check.Status)
 	}
+	if check.Summary != "external repositories not ready: 0 ready, 1 not ready" {
+		t.Fatalf("check summary = %q, want not ready count", check.Summary)
+	}
 	if check.Metadata["repository_count"] != 1 ||
 		check.Metadata["ready_count"] != 0 ||
+		check.Metadata["not_ready_count"] != 1 ||
 		check.Metadata["missing_count"] != 1 ||
 		check.Metadata["blocking_reason_count"] != 2 ||
 		check.Metadata["required_action_count"] != 2 {
-		t.Fatalf("metadata = %+v, want missing repository counts", check.Metadata)
+		t.Fatalf("metadata = %+v, want not ready repository counts", check.Metadata)
 	}
 	metadata := check.Evidence[0].Metadata
 	if metadata["private_sdk_token_secret_present"] != false ||

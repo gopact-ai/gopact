@@ -17,10 +17,11 @@ type RemoteStatusOptions struct {
 
 // RemoteStatusReport summarizes GitHub status for external scaffold repositories.
 type RemoteStatusReport struct {
-	Organization string                   `json:"organization"`
-	ReadyCount   int                      `json:"ready_count"`
-	MissingCount int                      `json:"missing_count"`
-	Repositories []RemoteRepositoryStatus `json:"repositories"`
+	Organization  string                   `json:"organization"`
+	ReadyCount    int                      `json:"ready_count"`
+	NotReadyCount int                      `json:"not_ready_count"`
+	MissingCount  int                      `json:"missing_count"`
+	Repositories  []RemoteRepositoryStatus `json:"repositories"`
 }
 
 // Repository returns the status for one remote repository by name.
@@ -109,6 +110,7 @@ func CheckRemoteRepositories(ctx context.Context, root string, options RemoteSta
 		if status.Ready {
 			report.ReadyCount++
 		} else {
+			report.NotReadyCount++
 			report.MissingCount++
 		}
 		report.Repositories = append(report.Repositories, status)
