@@ -185,9 +185,11 @@ exit 2
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 	var report struct {
-		Organization string `json:"organization"`
-		ReadyCount   int    `json:"ready_count"`
-		Repositories []struct {
+		Organization  string `json:"organization"`
+		ReadyCount    int    `json:"ready_count"`
+		NotReadyCount int    `json:"not_ready_count"`
+		MissingCount  int    `json:"missing_count"`
+		Repositories  []struct {
 			Name                    string `json:"name"`
 			Exists                  bool   `json:"exists"`
 			Private                 bool   `json:"private"`
@@ -205,6 +207,9 @@ exit 2
 	}
 	if report.ReadyCount != expectedScaffoldRepositoryCount {
 		t.Fatalf("ReadyCount = %d, want %d", report.ReadyCount, expectedScaffoldRepositoryCount)
+	}
+	if report.NotReadyCount != 0 || report.MissingCount != 0 {
+		t.Fatalf("not ready counts = %d/%d, want zero", report.NotReadyCount, report.MissingCount)
 	}
 	if len(report.Repositories) != expectedScaffoldRepositoryCount {
 		t.Fatalf("repositories = %d, want %d", len(report.Repositories), expectedScaffoldRepositoryCount)
@@ -248,7 +253,9 @@ exit 2
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 	var report struct {
-		Repositories []struct {
+		NotReadyCount int `json:"not_ready_count"`
+		MissingCount  int `json:"missing_count"`
+		Repositories  []struct {
 			Name             string   `json:"name"`
 			BlockingReasons  []string `json:"blocking_reasons"`
 			RequiredActions  []string `json:"required_actions"`
@@ -262,6 +269,9 @@ exit 2
 	}
 	if len(report.Repositories) != expectedScaffoldRepositoryCount {
 		t.Fatalf("repositories = %d, want %d", len(report.Repositories), expectedScaffoldRepositoryCount)
+	}
+	if report.NotReadyCount != expectedScaffoldRepositoryCount || report.MissingCount != expectedScaffoldRepositoryCount {
+		t.Fatalf("not ready counts = %d/%d, want %d", report.NotReadyCount, report.MissingCount, expectedScaffoldRepositoryCount)
 	}
 	first := report.Repositories[0]
 	if first.Ready || first.CIRunPassed || first.PrivateSDKSecret {
@@ -310,10 +320,12 @@ exit 2
 		ID       string `json:"id"`
 		Name     string `json:"name"`
 		Status   string `json:"status"`
+		Summary  string `json:"summary"`
 		Metadata struct {
 			Organization        string `json:"organization"`
 			RepositoryCount     int    `json:"repository_count"`
 			ReadyCount          int    `json:"ready_count"`
+			NotReadyCount       int    `json:"not_ready_count"`
 			MissingCount        int    `json:"missing_count"`
 			BlockingReasonCount int    `json:"blocking_reason_count"`
 			RequiredActionCount int    `json:"required_action_count"`
@@ -341,9 +353,13 @@ exit 2
 		check.Status != "failed" {
 		t.Fatalf("check = %+v, want failed external repository readiness check", check)
 	}
+	if !strings.Contains(check.Summary, "not ready") || strings.Contains(check.Summary, "missing") {
+		t.Fatalf("check summary = %q, want not ready wording without missing", check.Summary)
+	}
 	if check.Metadata.Organization != "gopact-ai" ||
 		check.Metadata.RepositoryCount != expectedScaffoldRepositoryCount ||
 		check.Metadata.ReadyCount != 0 ||
+		check.Metadata.NotReadyCount != expectedScaffoldRepositoryCount ||
 		check.Metadata.MissingCount != expectedScaffoldRepositoryCount ||
 		check.Metadata.BlockingReasonCount != expectedScaffoldRepositoryCount*2 ||
 		check.Metadata.RequiredActionCount != expectedScaffoldRepositoryCount*2 {

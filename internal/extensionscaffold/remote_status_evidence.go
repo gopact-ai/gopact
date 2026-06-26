@@ -58,44 +58,45 @@ func validateRemoteStatusReport(report RemoteStatusReport) error {
 
 func remoteStatusCheck(report RemoteStatusReport) gopact.VerificationCheck {
 	organization := strings.TrimSpace(report.Organization)
-	ready, missing, blockingReasons, requiredActions := remoteStatusCounts(report.Repositories)
+	ready, notReady, blockingReasons, requiredActions := remoteStatusCounts(report.Repositories)
 	status := gopact.VerificationStatusPassed
-	if missing > 0 {
+	if notReady > 0 {
 		status = gopact.VerificationStatusFailed
 	}
 	return gopact.VerificationCheck{
 		ID:       VerificationCheckRemoteRepositories + ":" + organization,
 		Name:     "external repository readiness",
 		Status:   status,
-		Summary:  remoteStatusSummary(status, ready, missing),
+		Summary:  remoteStatusSummary(status, ready, notReady),
 		Evidence: remoteStatusEvidence(organization, report.Repositories),
 		Metadata: map[string]any{
 			"organization":          organization,
 			"repository_count":      len(report.Repositories),
 			"ready_count":           ready,
-			"missing_count":         missing,
+			"not_ready_count":       notReady,
+			"missing_count":         notReady,
 			"blocking_reason_count": blockingReasons,
 			"required_action_count": requiredActions,
 		},
 	}
 }
 
-func remoteStatusCounts(repositories []RemoteRepositoryStatus) (ready, missing, blockingReasons, requiredActions int) {
+func remoteStatusCounts(repositories []RemoteRepositoryStatus) (ready, notReady, blockingReasons, requiredActions int) {
 	for _, repository := range repositories {
 		if repository.Ready {
 			ready++
 		} else {
-			missing++
+			notReady++
 		}
 		blockingReasons += len(repository.BlockingReasons)
 		requiredActions += len(repository.RequiredActions)
 	}
-	return ready, missing, blockingReasons, requiredActions
+	return ready, notReady, blockingReasons, requiredActions
 }
 
-func remoteStatusSummary(status gopact.VerificationStatus, ready, missing int) string {
+func remoteStatusSummary(status gopact.VerificationStatus, ready, notReady int) string {
 	if status == gopact.VerificationStatusFailed {
-		return fmt.Sprintf("external repositories not ready: %d ready, %d missing", ready, missing)
+		return fmt.Sprintf("external repositories not ready: %d ready, %d not ready", ready, notReady)
 	}
 	return fmt.Sprintf("external repositories ready: %d ready", ready)
 }
