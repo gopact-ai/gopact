@@ -20,6 +20,7 @@ type ProcessInput struct {
 	Review    ReviewDecision          `json:"review,omitempty"`
 	Gate      *GateResult             `json:"gate,omitempty"`
 	Pending   *gopact.InterruptRecord `json:"pending,omitempty"`
+	Resume    *gopact.ResumeRequest   `json:"resume,omitempty"`
 	CreatedAt time.Time               `json:"created_at,omitempty"`
 	Metadata  map[string]any          `json:"metadata,omitempty"`
 }
@@ -75,12 +76,30 @@ func BuildProcessRecords(input ProcessInput) (ProcessRecords, error) {
 			Metadata:  processBoundaryMetadata(input.Action, input.Metadata),
 		})
 	}
+	if input.Resume != nil {
+		resume := releaseResumeWithDefaultIDs(*input.Resume, input.IDs)
+		records.Inputs = append(records.Inputs, gopact.InputRecord{
+			ID:        processID(input.IDs.RunID, "resume", input.Resume.InterruptID),
+			Kind:      gopact.InputResume,
+			IDs:       input.IDs,
+			Source:    "devagent.review_resume",
+			Resume:    &resume,
+			CreatedAt: createdAt,
+			Metadata:  resumeInputMetadata(input),
+		})
+	}
 	if input.Review.Status != ReviewUnknown {
+		var resume *gopact.ResumeRequest
+		if input.Resume != nil {
+			copied := releaseResumeWithDefaultIDs(*input.Resume, input.IDs)
+			resume = &copied
+		}
 		records.Interventions = append(records.Interventions, gopact.InterventionRecord{
 			ID:        processID(input.IDs.RunID, "review", input.Review.Reviewer),
 			Type:      gopact.InterruptApproval,
 			Status:    interventionStatusForReview(input.Review.Status),
 			IDs:       input.IDs,
+			Resume:    resume,
 			CreatedAt: createdAt,
 			Metadata:  reviewInterventionMetadata(input),
 		})
@@ -193,6 +212,20 @@ func validateProcessInput(input ProcessInput) error {
 		}
 		if err := input.Pending.Validate(); err != nil {
 			return fmt.Errorf("%w: pending interrupt: %v", ErrInvalidActionResult, err)
+		}
+	}
+	if input.Resume != nil {
+		if input.Pending != nil {
+			return fmt.Errorf("%w: resume request conflicts with pending interrupt", ErrInvalidActionResult)
+		}
+		if input.Review.Status == ReviewUnknown {
+			return fmt.Errorf("%w: resume request requires review decision", ErrInvalidActionResult)
+		}
+		if err := input.Resume.Validate(); err != nil {
+			return fmt.Errorf("%w: resume request: %v", ErrInvalidActionResult, err)
+		}
+		if err := validateWorkflowActionRuntimeIDs(input.IDs, input.Resume.IDs); err != nil {
+			return fmt.Errorf("%w: resume request ids: %v", ErrInvalidActionResult, err)
 		}
 	}
 	return nil
@@ -347,6 +380,15 @@ func reviewInterventionMetadata(input ProcessInput) map[string]any {
 	if input.Review.Summary != "" {
 		metadata["summary"] = input.Review.Summary
 	}
+	if input.Resume != nil {
+		metadata["resume_interrupt_id"] = input.Resume.InterruptID
+		if input.Resume.CheckpointID != "" {
+			metadata["resume_checkpoint_id"] = input.Resume.CheckpointID
+		}
+		if input.Resume.StepID != "" {
+			metadata["resume_step_id"] = input.Resume.StepID
+		}
+	}
 	return metadata
 }
 
@@ -364,4 +406,28 @@ func pendingInterventionMetadata(input ProcessInput) map[string]any {
 		metadata["required_by"] = input.Pending.RequiredBy
 	}
 	return metadata
+}
+
+func resumeInputMetadata(input ProcessInput) map[string]any {
+	metadata := processBoundaryMetadata(input.Action, input.Metadata)
+	if input.Resume == nil {
+		return metadata
+	}
+	metadata["resume_interrupt_id"] = input.Resume.InterruptID
+	if input.Resume.CheckpointID != "" {
+		metadata["resume_checkpoint_id"] = input.Resume.CheckpointID
+	}
+	if input.Resume.StepID != "" {
+		metadata["resume_step_id"] = input.Resume.StepID
+	}
+	if input.Resume.PayloadCodec != "" {
+		metadata["resume_payload_codec"] = input.Resume.PayloadCodec
+	}
+	return metadata
+}
+
+func releaseResumeWithDefaultIDs(resume gopact.ResumeRequest, defaults gopact.RuntimeIDs) gopact.ResumeRequest {
+	out := copyReleaseResumeRequest(resume)
+	out.IDs = out.IDs.WithDefaults(defaults)
+	return out
 }

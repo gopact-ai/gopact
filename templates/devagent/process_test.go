@@ -165,6 +165,94 @@ func TestBuildProcessRecordsCreatesRequestedInterventionForInterruptedAction(t *
 	}
 }
 
+func TestBuildProcessRecordsRecordsResumeInputForReviewDecision(t *testing.T) {
+	createdAt := time.Date(2026, 6, 26, 14, 0, 0, 0, time.UTC)
+	ids := gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"}
+	resume := gopact.ResumeRequest{
+		CheckpointID: "checkpoint-1",
+		StepID:       "release-gate",
+		InterruptID:  "approval-1",
+		IDs:          ids,
+		Payload: map[string]any{
+			"decision": "approved",
+			"comment":  "ship it",
+		},
+		PayloadCodec: "application/json",
+		CreatedAt:    createdAt.Add(time.Minute),
+		Metadata:     map[string]any{"channel": "lark"},
+	}
+
+	records, err := BuildProcessRecords(ProcessInput{
+		IDs:       ids,
+		CreatedAt: createdAt,
+		Action: ActionResult{
+			Status: ActionAllowed,
+			Mode:   ModeWrite,
+			Action: ActionRelease,
+		},
+		Gate: &GateResult{
+			Status:       GatePassed,
+			Mode:         ModeWrite,
+			ReportStatus: gopact.VerificationStatusPassed,
+			ReviewStatus: ReviewApproved,
+		},
+		Review: ReviewDecision{
+			Status:   ReviewApproved,
+			Reviewer: "human",
+			Summary:  "release approved through lark",
+		},
+		Resume: &resume,
+	})
+	if err != nil {
+		t.Fatalf("BuildProcessRecords() error = %v", err)
+	}
+
+	if len(records.Inputs) != 2 {
+		t.Fatalf("inputs = %+v, want release gate and resume inputs", records.Inputs)
+	}
+	resume.Payload.(map[string]any)["decision"] = "mutated"
+	resumeInput := records.Inputs[1]
+	if resumeInput.ID != "devagent:run-1:resume:approval-1" ||
+		resumeInput.Kind != gopact.InputResume ||
+		resumeInput.Source != "devagent.review_resume" ||
+		resumeInput.Resume == nil ||
+		resumeInput.Resume.InterruptID != "approval-1" ||
+		resumeInput.Resume.Payload.(map[string]any)["decision"] != "approved" ||
+		resumeInput.Metadata["resume_interrupt_id"] != "approval-1" ||
+		resumeInput.Metadata["resume_payload_codec"] != "application/json" {
+		t.Fatalf("resume input = %+v, want copied resume boundary", resumeInput)
+	}
+
+	if len(records.Interventions) != 1 {
+		t.Fatalf("interventions = %+v, want resolved review intervention", records.Interventions)
+	}
+	intervention := records.Interventions[0]
+	if intervention.Resume == nil ||
+		intervention.Resume.InterruptID != "approval-1" ||
+		intervention.Resume.Payload.(map[string]any)["decision"] != "approved" ||
+		intervention.Metadata["resume_interrupt_id"] != "approval-1" {
+		t.Fatalf("intervention = %+v, want review intervention linked to resume", intervention)
+	}
+}
+
+func TestBuildProcessRecordsRejectsResumeWithoutReviewDecision(t *testing.T) {
+	_, err := BuildProcessRecords(ProcessInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1"},
+		Action: ActionResult{
+			Status: ActionAllowed,
+			Mode:   ModeWrite,
+			Action: ActionRelease,
+		},
+		Resume: &gopact.ResumeRequest{InterruptID: "approval-1"},
+	})
+	if !errors.Is(err, ErrInvalidActionResult) {
+		t.Fatalf("BuildProcessRecords() error = %v, want ErrInvalidActionResult", err)
+	}
+	if !strings.Contains(err.Error(), "resume request requires review decision") {
+		t.Fatalf("BuildProcessRecords() error = %v, want resume review decision message", err)
+	}
+}
+
 func TestRecordProcessRecordsAppendsToRunRecorder(t *testing.T) {
 	recorder := gopact.NewRunRecorder()
 	if err := RecordProcessRecords(recorder, ProcessInput{

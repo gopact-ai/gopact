@@ -287,6 +287,107 @@ func TestBuildWorkflowProcessRecordsPreservesActionMetadataOnChildBoundaries(t *
 	}
 }
 
+func TestBuildWorkflowProcessRecordsCarriesReviewResumeInput(t *testing.T) {
+	createdAt := time.Date(2026, 6, 26, 14, 30, 0, 0, time.UTC)
+	ids := gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"}
+
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       ids,
+		Name:      "self-bootstrap resumed release workflow",
+		CreatedAt: createdAt,
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+					Summary:  "resume approved through lark",
+				},
+				Resume: &gopact.ResumeRequest{
+					CheckpointID: "checkpoint-1",
+					StepID:       "release-gate",
+					InterruptID:  "approval-1",
+					IDs:          ids,
+					Payload: map[string]any{
+						"decision": "approved",
+					},
+					PayloadCodec: "application/json",
+					CreatedAt:    createdAt.Add(time.Minute),
+					Metadata:     map[string]any{"channel": "lark"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	if len(records.Inputs) != 2 {
+		t.Fatalf("inputs = %+v, want release gate and resume inputs", records.Inputs)
+	}
+	resumeInput := records.Inputs[1]
+	if resumeInput.Kind != gopact.InputResume ||
+		resumeInput.Source != "devagent.review_resume" ||
+		resumeInput.Resume == nil ||
+		resumeInput.Resume.InterruptID != "approval-1" ||
+		resumeInput.Metadata["workflow_id"] != records.Task.ID ||
+		resumeInput.Metadata["workflow_action_index"] != 2 ||
+		resumeInput.Metadata["resume_interrupt_id"] != "approval-1" {
+		t.Fatalf("resume input = %+v, want workflow-scoped resume input", resumeInput)
+	}
+	if len(records.Interventions) != 1 ||
+		records.Interventions[0].Resume == nil ||
+		records.Interventions[0].Resume.InterruptID != "approval-1" {
+		t.Fatalf("interventions = %+v, want review intervention linked to resume", records.Interventions)
+	}
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	actionSummaries, ok := output["actions"].([]map[string]any)
+	if !ok {
+		t.Fatalf("workflow output actions = %T, want []map[string]any", output["actions"])
+	}
+	if actionSummaries[1]["input_count"] != 2 ||
+		actionSummaries[1]["intervention_count"] != 1 {
+		t.Fatalf("release action summary = %+v, want gate + resume inputs and review intervention", actionSummaries[1])
+	}
+
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records:              records,
+		RequiredActions:      []ActionKind{ActionAnalyze, ActionRelease},
+		RequiredInputSources: []string{"devagent.release_gate", "devagent.review_resume"},
+	})
+
+	process, err := WorkflowActionProcessRecords(records, 2)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
+	}
+	if len(process.Inputs) != 2 ||
+		process.Inputs[1].Kind != gopact.InputResume ||
+		process.Inputs[1].Resume == nil ||
+		process.Inputs[1].Resume.InterruptID != "approval-1" {
+		t.Fatalf("process inputs = %+v, want release action resume input", process.Inputs)
+	}
+}
+
 func TestBuildWorkflowProcessRecordsSummarizesRejectedChildAction(t *testing.T) {
 	records, err := BuildWorkflowProcessRecords(WorkflowInput{
 		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},

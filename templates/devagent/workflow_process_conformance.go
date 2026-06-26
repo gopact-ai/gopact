@@ -402,6 +402,9 @@ func checkWorkflowProcessInputBoundaries(records WorkflowRecords, requiredSource
 		if input.Source == "devagent.patch" && workflowProcessPatchInputLeaksRawDiff(input.Value) {
 			return failedWorkflowProcessConformance("input-boundaries", fmt.Errorf("patch input %q leaked raw diff", input.ID))
 		}
+		if err := validateWorkflowProcessResumeInput(records, input, i); err != nil {
+			return failedWorkflowProcessConformance("input-boundaries", err)
+		}
 		sources = append(sources, input.Source)
 	}
 	if err := workflowProcessRequiredStrings("input source", sources, requiredSources); err != nil {
@@ -422,6 +425,9 @@ func checkWorkflowProcessInterventionBoundaries(records WorkflowRecords) Workflo
 			)
 		}
 		if err := validateWorkflowProcessBoundaryMetadata(records, intervention.Metadata, "intervention", i); err != nil {
+			return failedWorkflowProcessConformance("intervention-boundaries", err)
+		}
+		if err := validateWorkflowProcessInterventionResume(records, intervention, i); err != nil {
 			return failedWorkflowProcessConformance("intervention-boundaries", err)
 		}
 	}
@@ -606,6 +612,98 @@ func validateWorkflowProcessReleaseReview(
 		}
 	}
 	return nil
+}
+
+func validateWorkflowProcessResumeInput(records WorkflowRecords, record gopact.InputRecord, index int) error {
+	if record.Kind != gopact.InputResume && record.Source != "devagent.review_resume" {
+		return nil
+	}
+	if record.Kind != gopact.InputResume {
+		return fmt.Errorf("resume input %d kind = %q, want %q", index, record.Kind, gopact.InputResume)
+	}
+	if record.Source != "devagent.review_resume" {
+		return fmt.Errorf("resume input %d source = %q, want devagent.review_resume", index, record.Source)
+	}
+	if record.Resume == nil {
+		return fmt.Errorf("resume input %d resume request is required", index)
+	}
+	if err := validateWorkflowActionRuntimeIDs(record.IDs, record.Resume.IDs); err != nil {
+		return fmt.Errorf("resume input %d resume ids: %w", index, err)
+	}
+	if got := workflowProcessStringMetadata(record.Metadata, "resume_interrupt_id"); got != record.Resume.InterruptID {
+		return fmt.Errorf("resume input %d resume_interrupt_id = %q, want %q", index, got, record.Resume.InterruptID)
+	}
+	actionIndex, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index")
+	if !ok {
+		return fmt.Errorf("resume input %d workflow_action_index = %v, want integer", index, record.Metadata["workflow_action_index"])
+	}
+	review, ok := workflowProcessReviewIntervention(records.Interventions, actionIndex)
+	if !ok {
+		return fmt.Errorf("resume input %d review intervention is required", index)
+	}
+	if review.Resume == nil {
+		return fmt.Errorf("resume input %d review intervention resume request is required", index)
+	}
+	if err := validateWorkflowActionRuntimeIDs(review.IDs, review.Resume.IDs); err != nil {
+		return fmt.Errorf("resume input %d review resume ids: %w", index, err)
+	}
+	if review.Resume.InterruptID != record.Resume.InterruptID {
+		return fmt.Errorf(
+			"resume input %d review resume interrupt id = %q, want %q",
+			index,
+			review.Resume.InterruptID,
+			record.Resume.InterruptID,
+		)
+	}
+	if got := workflowProcessStringMetadata(review.Metadata, "resume_interrupt_id"); got != "" && got != record.Resume.InterruptID {
+		return fmt.Errorf("resume input %d review resume_interrupt_id = %q, want %q", index, got, record.Resume.InterruptID)
+	}
+	return nil
+}
+
+func validateWorkflowProcessInterventionResume(records WorkflowRecords, record gopact.InterventionRecord, index int) error {
+	if record.Resume == nil {
+		return nil
+	}
+	actionIndex, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index")
+	if !ok {
+		return fmt.Errorf("intervention %d workflow_action_index = %v, want integer", index, record.Metadata["workflow_action_index"])
+	}
+	input, ok := workflowProcessResumeInput(records.Inputs, actionIndex, record.Resume.InterruptID)
+	if !ok {
+		return fmt.Errorf("intervention %d resume input is required", index)
+	}
+	if input.Resume == nil {
+		return fmt.Errorf("intervention %d resume input request is required", index)
+	}
+	if input.Resume.InterruptID != record.Resume.InterruptID {
+		return fmt.Errorf(
+			"intervention %d resume input interrupt id = %q, want %q",
+			index,
+			input.Resume.InterruptID,
+			record.Resume.InterruptID,
+		)
+	}
+	if err := validateWorkflowActionRuntimeIDs(input.IDs, input.Resume.IDs); err != nil {
+		return fmt.Errorf("intervention %d resume input ids: %w", index, err)
+	}
+	return nil
+}
+
+func workflowProcessResumeInput(records []gopact.InputRecord, actionIndex int, interruptID string) (gopact.InputRecord, bool) {
+	for _, record := range records {
+		if record.Kind != gopact.InputResume || record.Source != "devagent.review_resume" {
+			continue
+		}
+		gotIndex, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index")
+		if !ok || gotIndex != actionIndex {
+			continue
+		}
+		if record.Resume != nil && record.Resume.InterruptID == interruptID {
+			return record, true
+		}
+	}
+	return gopact.InputRecord{}, false
 }
 
 func validateWorkflowProcessBoundaryMetadata(records WorkflowRecords, metadata map[string]any, label string, index int) error {

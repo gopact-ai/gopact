@@ -348,6 +348,110 @@ func TestCheckWorkflowProcessConformanceReportsInputActionIndexDrift(t *testing.
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsResumeInputWithoutReviewResume(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+				},
+				Resume: &gopact.ResumeRequest{
+					InterruptID: "approval-1",
+					Payload: map[string]any{
+						"decision": "approved",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	records.Interventions[0].Resume = nil
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "input-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report orphaned resume input: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsReviewResumeWithoutResumeInput(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+				},
+				Resume: &gopact.ResumeRequest{
+					InterruptID: "approval-1",
+					Payload: map[string]any{
+						"decision": "approved",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	records.Inputs = records.Inputs[:1]
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	output["input_count"] = 1
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[1]["input_count"] = 1
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "intervention-boundaries") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report orphaned review resume: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsInterventionActionMetadataDrift(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	records.Interventions[0].Metadata["action"] = string(ActionApplyPatch)
