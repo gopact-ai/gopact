@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // RepositoryScaffold is one rendered external repository scaffold.
@@ -185,7 +186,8 @@ func VerifyBootstrapWorkspace(ctx context.Context, dir string, workspace Bootstr
 			return report, err
 		}
 		repoDir := filepath.Join(dir, filepath.FromSlash(scaffold.Directory))
-		if err := ensureVerificationGitRepository(ctx, repoDir); err != nil {
+		temporaryGitRepository, err := ensureVerificationGitRepository(ctx, repoDir)
+		if err != nil {
 			return report, fmt.Errorf("extensionscaffold: prepare verification repository %q: %w", scaffold.Repository.Name, err)
 		}
 		for _, commandLine := range scaffold.Repository.RequiredCICommands {
@@ -207,6 +209,17 @@ func VerifyBootstrapWorkspace(ctx context.Context, dir string, workspace Bootstr
 			}
 			report.Results = append(report.Results, result)
 			if err != nil {
+				cleanupErr := cleanupVerificationGitRepository(repoDir, temporaryGitRepository)
+				if cleanupErr != nil {
+					return report, fmt.Errorf(
+						"extensionscaffold: verify repository %q command %q: %w; cleanup temporary git repository: %v\n%s",
+						scaffold.Repository.Name,
+						commandLine,
+						err,
+						cleanupErr,
+						strings.TrimSpace(result.Output),
+					)
+				}
 				return report, fmt.Errorf(
 					"extensionscaffold: verify repository %q command %q: %w\n%s",
 					scaffold.Repository.Name,
@@ -216,23 +229,59 @@ func VerifyBootstrapWorkspace(ctx context.Context, dir string, workspace Bootstr
 				)
 			}
 		}
+		if err := cleanupVerificationGitRepository(repoDir, temporaryGitRepository); err != nil {
+			return report, fmt.Errorf(
+				"extensionscaffold: cleanup temporary git repository %q: %w",
+				scaffold.Repository.Name,
+				err,
+			)
+		}
 	}
 	return report, nil
 }
 
-func ensureVerificationGitRepository(ctx context.Context, repoDir string) error {
+func ensureVerificationGitRepository(ctx context.Context, repoDir string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "rev-parse", "--is-inside-work-tree")
 	if err := cmd.Run(); err != nil {
 		initCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "init", "-b", "main")
 		if output, initErr := initCmd.CombinedOutput(); initErr != nil {
-			return fmt.Errorf("%w\n%s", initErr, strings.TrimSpace(string(output)))
+			return false, fmt.Errorf("%w\n%s", initErr, strings.TrimSpace(string(output)))
 		}
+		addCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "add", "-N", ".")
+		if output, addErr := addCmd.CombinedOutput(); addErr != nil {
+			cleanupErr := cleanupVerificationGitRepository(repoDir, true)
+			if cleanupErr != nil {
+				return false, fmt.Errorf(
+					"%w; cleanup temporary git repository: %v\n%s",
+					addErr,
+					cleanupErr,
+					strings.TrimSpace(string(output)),
+				)
+			}
+			return false, fmt.Errorf("%w\n%s", addErr, strings.TrimSpace(string(output)))
+		}
+		return true, nil
 	}
 	addCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "add", "-N", ".")
 	if output, err := addCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%w\n%s", err, strings.TrimSpace(string(output)))
+		return false, fmt.Errorf("%w\n%s", err, strings.TrimSpace(string(output)))
 	}
-	return nil
+	return false, nil
+}
+
+func cleanupVerificationGitRepository(repoDir string, temporary bool) error {
+	if !temporary {
+		return nil
+	}
+	gitDir := filepath.Join(repoDir, ".git")
+	for range 10 {
+		err := os.RemoveAll(gitDir)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return os.RemoveAll(gitDir)
 }
 
 func commandShell(commandLine string) ([]string, error) {

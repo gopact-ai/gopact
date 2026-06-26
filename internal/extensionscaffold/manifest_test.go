@@ -337,6 +337,33 @@ func TestVerifyBootstrapWorkspaceRunsCommandLinesWithShell(t *testing.T) {
 	}
 }
 
+func TestVerifyBootstrapWorkspaceRemovesTemporaryGitRepository(t *testing.T) {
+	dir := tempDirWithRetryCleanup(t)
+	repoDir := filepath.Join(dir, "repo")
+	if err := os.Mkdir(repoDir, 0o755); err != nil {
+		t.Fatalf("create generated repository: %v", err)
+	}
+
+	workspace := BootstrapWorkspace{
+		Scaffolds: []RepositoryScaffold{{
+			Repository: Repository{
+				Name: "repo",
+				RequiredCICommands: []string{
+					"git diff --check",
+				},
+			},
+			Directory: "repo",
+		}},
+	}
+
+	if _, err := VerifyBootstrapWorkspace(context.Background(), dir, workspace); err != nil {
+		t.Fatalf("VerifyBootstrapWorkspace() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("temporary .git stat error = %v, want not exist", err)
+	}
+}
+
 func TestRenderSyncPlanFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 	plan, err := RenderSyncPlanFromDesign(filepath.Join("..", ".."))
 	if err != nil {
