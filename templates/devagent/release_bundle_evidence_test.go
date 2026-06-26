@@ -201,6 +201,10 @@ func TestRecordReleaseBundleCheckCapturesObservedWorkflowRelease(t *testing.T) {
 	export.Inputs = workflow.Inputs
 	export.Interventions = workflow.Interventions
 	export.VerificationReports = []gopact.VerificationReport{report}
+	process, err := WorkflowActionProcessRecords(workflow, 3)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
+	}
 
 	bundle, err := BuildReleaseBundle(ReleaseBundleInput{
 		Export:                export,
@@ -213,13 +217,9 @@ func TestRecordReleaseBundleCheckCapturesObservedWorkflowRelease(t *testing.T) {
 			Mode:   ModeWrite,
 			Action: ActionRelease,
 		},
-		Review: review,
-		Gate:   gate,
-		Process: ProcessRecords{
-			Task:          workflow.Tasks[2],
-			Inputs:        workflow.Inputs,
-			Interventions: workflow.Interventions,
-		},
+		Review:    review,
+		Gate:      gate,
+		Process:   process,
 		CreatedAt: createdAt,
 		Metadata:  map[string]any{"release": "self-bootstrap"},
 	})
@@ -251,7 +251,7 @@ func TestRecordReleaseBundleCheckCapturesObservedWorkflowRelease(t *testing.T) {
 	}
 	metadata := check.Evidence[0].Metadata
 	if metadata["process_task_id"] != "devagent:run-self-bootstrap-1:release" ||
-		metadata["process_input_count"] != 2 ||
+		metadata["process_input_count"] != 1 ||
 		metadata["process_intervention_count"] != 1 ||
 		metadata["release_gate_input_id"] != "devagent:run-self-bootstrap-1:release_gate" ||
 		metadata["review_intervention_id"] != "devagent:run-self-bootstrap-1:review:human" ||
