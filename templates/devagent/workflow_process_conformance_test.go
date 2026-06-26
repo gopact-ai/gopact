@@ -452,6 +452,34 @@ func TestCheckWorkflowProcessConformanceReportsReviewResumeWithoutResumeInput(t 
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsApplyResumeSummaryBoundaryDrift(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		key  string
+	}{
+		{name: "resume input id", key: "resume_input_id"},
+		{name: "review intervention id", key: "review_intervention_id"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			records := workflowProcessApplyResumeFixture(t)
+			output, ok := records.Task.Output.(map[string]any)
+			if !ok {
+				t.Fatalf("workflow output = %T, want map", records.Task.Output)
+			}
+			summaries, err := workflowProcessActionSummaries(output)
+			if err != nil {
+				t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+			}
+			delete(summaries[2], tt.key)
+
+			results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+			if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+				t.Fatalf("CheckWorkflowProcessConformance() did not report apply resume summary drift: %+v", results)
+			}
+		})
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsInterventionActionMetadataDrift(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	records.Interventions[0].Metadata["action"] = string(ActionApplyPatch)
@@ -472,6 +500,72 @@ func TestCheckWorkflowProcessConformanceReportsCanceledContext(t *testing.T) {
 	if !hasFailedWorkflowProcessConformanceCase(results, "context") {
 		t.Fatalf("CheckWorkflowProcessConformance() did not report canceled context: %+v", results)
 	}
+}
+
+func workflowProcessApplyResumeFixture(t *testing.T) WorkflowRecords {
+	t.Helper()
+
+	ids := gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"}
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  ids,
+		Name: "self-bootstrap apply resume workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare resumable apply",
+					Files: []PatchFile{
+						{Path: "templates/devagent/workflow_process_conformance_test.go", Intent: "cover apply resume summary"},
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionApplyPatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare resumable apply",
+					Files: []PatchFile{
+						{Path: "templates/devagent/workflow_process_conformance_test.go", Intent: "cover apply resume summary"},
+					},
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+					Summary:  "apply approved through policy review",
+				},
+				Resume: &gopact.ResumeRequest{
+					CheckpointID: "checkpoint-apply-1",
+					StepID:       "devagent:run-1:step:devagent.apply_patch",
+					InterruptID:  "approval-1",
+					IDs:          ids,
+					Payload: map[string]any{
+						"decision": "approved",
+					},
+					PayloadCodec: "application/json",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	return records
 }
 
 func workflowProcessConformanceFixture(t *testing.T) WorkflowRecords {

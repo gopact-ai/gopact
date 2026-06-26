@@ -319,6 +319,9 @@ func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConform
 		if err := validateWorkflowProcessReleaseSummaryBoundary(records, task, summary, i+1); err != nil {
 			return failedWorkflowProcessConformance("workflow-summary", err)
 		}
+		if err := validateWorkflowProcessResumeSummaryBoundary(records, summary, i+1); err != nil {
+			return failedWorkflowProcessConformance("workflow-summary", err)
+		}
 	}
 	return passedWorkflowProcessConformance("workflow-summary")
 }
@@ -502,6 +505,24 @@ func validateWorkflowProcessReleaseSummaryBoundary(
 	return nil
 }
 
+func validateWorkflowProcessResumeSummaryBoundary(
+	records WorkflowRecords,
+	summary map[string]any,
+	actionIndex int,
+) error {
+	if resumeInput, ok := workflowProcessResumeInputForAction(records.Inputs, actionIndex); ok {
+		if got := workflowProcessStringMetadata(summary, "resume_input_id"); got != resumeInput.ID {
+			return fmt.Errorf("workflow action summary %d resume_input_id = %q, want %q", actionIndex, got, resumeInput.ID)
+		}
+	}
+	if review, ok := workflowProcessReviewIntervention(records.Interventions, actionIndex); ok {
+		if got := workflowProcessStringMetadata(summary, "review_intervention_id"); got != review.ID {
+			return fmt.Errorf("workflow action summary %d review_intervention_id = %q, want %q", actionIndex, got, review.ID)
+		}
+	}
+	return nil
+}
+
 func workflowProcessReleaseGateInput(records []gopact.InputRecord, actionIndex int) (gopact.InputRecord, bool) {
 	for _, record := range records {
 		if record.Source != "devagent.release_gate" {
@@ -524,6 +545,18 @@ func workflowProcessReviewIntervention(records []gopact.InterventionRecord, acti
 		}
 	}
 	return gopact.InterventionRecord{}, false
+}
+
+func workflowProcessResumeInputForAction(records []gopact.InputRecord, actionIndex int) (gopact.InputRecord, bool) {
+	for _, record := range records {
+		if record.Kind != gopact.InputResume || record.Source != "devagent.review_resume" {
+			continue
+		}
+		if got, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok && got == actionIndex {
+			return record, true
+		}
+	}
+	return gopact.InputRecord{}, false
 }
 
 func workflowProcessReleaseRequiresReview(task gopact.TaskRecord, gateValue map[string]any) bool {
