@@ -1,0 +1,212 @@
+package gopact_test
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gopact-ai/gopact"
+	"github.com/gopact-ai/gopact/gopacttest"
+	"github.com/gopact-ai/gopact/templates/devagent"
+)
+
+func TestV1MigrationReleaseGateChecksDriveSDKReleaseGateRequirements(t *testing.T) {
+	plan := loadV1ReleaseGatePlan(t)
+
+	for _, check := range plan.ReleaseGateChecks {
+		t.Run(check.ID, func(t *testing.T) {
+			export, report := v1SyntheticReleaseGateReport(t, check)
+			requirement := []gopacttest.VerificationEvidenceRequirement{
+				{
+					Name:                  check.ID,
+					RequiredCheckIDs:      check.RequiredCheckIDs,
+					RequiredEvidenceTypes: check.EvidenceTypes,
+					RequiredCIGates:       check.RequiredCIGates,
+				},
+			}
+			gopacttest.RequireVerificationEvidenceRequirements(t, report, requirement)
+
+			review := devagent.ReviewDecision{
+				Status:   devagent.ReviewApproved,
+				Reviewer: "v1-release-gate-test",
+				Summary:  "v1 release gate requirement is satisfied by observed evidence",
+			}
+			gate, err := devagent.EvaluateReleaseGate(devagent.GateInput{
+				Mode:   devagent.ModeWrite,
+				Report: report,
+				Review: review,
+			},
+				devagent.RequireCheckIDs(check.RequiredCheckIDs...),
+				devagent.RequireEvidenceTypes(check.EvidenceTypes...),
+				devagent.RequireCIGates(check.RequiredCIGates...),
+			)
+			if err != nil {
+				t.Fatalf("EvaluateReleaseGate(%s) error = %v", check.ID, err)
+			}
+
+			bundle, err := devagent.BuildReleaseBundle(devagent.ReleaseBundleInput{
+				Export:                export,
+				Report:                report,
+				RequiredCheckIDs:      check.RequiredCheckIDs,
+				RequiredEvidenceTypes: check.EvidenceTypes,
+				RequiredCIGates:       check.RequiredCIGates,
+				Action: devagent.ActionResult{
+					Status: devagent.ActionAllowed,
+					Mode:   devagent.ModeWrite,
+					Action: devagent.ActionRelease,
+				},
+				Review:    review,
+				Gate:      gate,
+				CreatedAt: export.CreatedAt,
+				Metadata:  map[string]any{"v1_release_gate_check": check.ID},
+			})
+			if err != nil {
+				t.Fatalf("BuildReleaseBundle(%s) error = %v", check.ID, err)
+			}
+			if bundle.Metadata["v1_release_gate_check"] != check.ID {
+				t.Fatalf("bundle metadata = %+v, want v1 release gate check id", bundle.Metadata)
+			}
+		})
+	}
+}
+
+type v1ReleaseGatePlan struct {
+	ReleaseGateChecks []v1ReleaseGateCheck `json:"release_gate_checks"`
+}
+
+type v1ReleaseGateCheck struct {
+	ID               string   `json:"id"`
+	EvidenceTypes    []string `json:"evidence_types"`
+	RequiredCheckIDs []string `json:"required_check_ids"`
+	RequiredCIGates  []string `json:"required_ci_gates,omitempty"`
+}
+
+func loadV1ReleaseGatePlan(t *testing.T) v1ReleaseGatePlan {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join("docs", "design", "v1-migration-plan.json"))
+	if err != nil {
+		t.Fatalf("read v1 migration plan: %v", err)
+	}
+	var plan v1ReleaseGatePlan
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatalf("decode v1 migration plan: %v", err)
+	}
+	if len(plan.ReleaseGateChecks) == 0 {
+		t.Fatal("v1 migration plan release_gate_checks is empty")
+	}
+	return plan
+}
+
+func v1SyntheticReleaseGateReport(t *testing.T, check v1ReleaseGateCheck) (gopact.RunExport, gopact.VerificationReport) {
+	t.Helper()
+
+	createdAt := time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)
+	export := gopact.RunExport{
+		Version:   gopact.RunExportVersion,
+		IDs:       gopact.RuntimeIDs{RunID: "run-v1-" + v1GateIDSegment(check.ID), ThreadID: "thread-v1"},
+		Outcome:   gopact.RunCompleted,
+		CreatedAt: createdAt,
+	}
+	recorder := gopact.NewVerificationRecorder()
+	for _, checkID := range check.RequiredCheckIDs {
+		if err := recorder.Record(v1SyntheticVerificationCheck(checkID, check)); err != nil {
+			t.Fatalf("Record(%s) error = %v", checkID, err)
+		}
+	}
+	report, err := recorder.Report(export)
+	if err != nil {
+		t.Fatalf("Report(%s) error = %v", check.ID, err)
+	}
+	export.VerificationReports = []gopact.VerificationReport{report}
+	return export, report
+}
+
+func v1SyntheticVerificationCheck(id string, gate v1ReleaseGateCheck) gopact.VerificationCheck {
+	evidence := v1SyntheticEvidenceForCheck(id, gate)
+	return gopact.VerificationCheck{
+		ID:       id,
+		Name:     gate.ID,
+		Status:   gopact.VerificationStatusPassed,
+		Summary:  "v1 release gate evidence observed",
+		Evidence: evidence,
+	}
+}
+
+func v1SyntheticEvidenceForCheck(id string, gate v1ReleaseGateCheck) []gopact.VerificationEvidence {
+	var evidence []gopact.VerificationEvidence
+	switch {
+	case id == "ci-gates":
+		for _, ciGate := range gate.RequiredCIGates {
+			evidence = append(evidence, gopact.VerificationEvidence{
+				Type:    gopacttest.VerificationEvidenceTypeCIGate,
+				Ref:     "ci-gate:" + ciGate,
+				Summary: ciGate + " gate passed",
+				Metadata: map[string]any{
+					"gate":   ciGate,
+					"status": string(gopact.VerificationStatusPassed),
+				},
+			})
+		}
+	case strings.HasPrefix(id, "command:"):
+		evidence = append(evidence, gopact.VerificationEvidence{
+			Type:    gopacttest.VerificationEvidenceTypeCommand,
+			Ref:     strings.TrimPrefix(id, "command:"),
+			Summary: "command passed",
+		})
+	case strings.HasPrefix(id, "file-snapshot:"):
+		evidence = append(evidence, gopact.VerificationEvidence{
+			Type:    "file_snapshot",
+			Ref:     strings.TrimPrefix(id, "file-snapshot:"),
+			Summary: "file snapshot captured",
+		})
+	default:
+		evidence = append(evidence, gopact.VerificationEvidence{
+			Type:    v1FallbackEvidenceType(gate),
+			Ref:     id,
+			Summary: "gate evidence captured",
+		})
+	}
+	for _, evidenceType := range gate.EvidenceTypes {
+		if !v1EvidenceContainsType(evidence, evidenceType) {
+			evidence = append(evidence, gopact.VerificationEvidence{
+				Type:    evidenceType,
+				Ref:     "v1-gate:" + gate.ID + ":" + evidenceType,
+				Summary: "gate evidence captured",
+			})
+		}
+	}
+	return evidence
+}
+
+func v1FallbackEvidenceType(gate v1ReleaseGateCheck) string {
+	for _, evidenceType := range gate.EvidenceTypes {
+		if evidenceType != "" {
+			return evidenceType
+		}
+	}
+	return "requirement"
+}
+
+func v1EvidenceContainsType(evidence []gopact.VerificationEvidence, evidenceType string) bool {
+	for _, item := range evidence {
+		if item.Type == evidenceType {
+			return true
+		}
+	}
+	return false
+}
+
+func v1GateIDSegment(id string) string {
+	id = strings.TrimSpace(id)
+	id = strings.ReplaceAll(id, ":", "-")
+	id = strings.ReplaceAll(id, "/", "-")
+	id = strings.ReplaceAll(id, " ", "-")
+	if id == "" {
+		return "release-gate"
+	}
+	return id
+}

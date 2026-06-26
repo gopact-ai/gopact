@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gopact-ai/gopact"
@@ -15,6 +16,14 @@ var ErrVerificationEvidenceConformanceFailed = errors.New("gopacttest: verificat
 // VerificationEvidenceConformanceHarness describes one VerificationReport under test.
 type VerificationEvidenceConformanceHarness struct {
 	Report                gopact.VerificationReport
+	RequiredCheckIDs      []string
+	RequiredEvidenceTypes []string
+	RequiredCIGates       []string
+}
+
+// VerificationEvidenceRequirement describes one named release/readiness gate requirement.
+type VerificationEvidenceRequirement struct {
+	Name                  string
 	RequiredCheckIDs      []string
 	RequiredEvidenceTypes []string
 	RequiredCIGates       []string
@@ -41,6 +50,54 @@ func CheckVerificationEvidenceConformance(ctx context.Context, harness Verificat
 		checkVerificationRequiredCheckIDs(harness.Report, harness.RequiredCheckIDs),
 		checkVerificationRequiredEvidenceTypes(harness.Report, harness.RequiredEvidenceTypes),
 		checkVerificationRequiredCIGates(harness.Report, harness.RequiredCIGates),
+	}
+}
+
+// CheckVerificationEvidenceRequirements runs reusable verification conformance over a named requirement set.
+func CheckVerificationEvidenceRequirements(
+	ctx context.Context,
+	report gopact.VerificationReport,
+	requirements []VerificationEvidenceRequirement,
+) []VerificationEvidenceConformanceResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return []VerificationEvidenceConformanceResult{failedVerificationEvidenceConformance("context", err)}
+	}
+	if len(requirements) == 0 {
+		return CheckVerificationEvidenceConformance(ctx, VerificationEvidenceConformanceHarness{Report: report})
+	}
+
+	var results []VerificationEvidenceConformanceResult
+	for i, requirement := range requirements {
+		name := verificationEvidenceRequirementName(i, requirement.Name)
+		requirementResults := CheckVerificationEvidenceConformance(ctx, VerificationEvidenceConformanceHarness{
+			Report:                report,
+			RequiredCheckIDs:      requirement.RequiredCheckIDs,
+			RequiredEvidenceTypes: requirement.RequiredEvidenceTypes,
+			RequiredCIGates:       requirement.RequiredCIGates,
+		})
+		for _, result := range requirementResults {
+			result.Case = name + "/" + result.Case
+			results = append(results, result)
+		}
+	}
+	return results
+}
+
+// RequireVerificationEvidenceRequirements fails the test unless report satisfies every named requirement.
+func RequireVerificationEvidenceRequirements(
+	t testing.TB,
+	report gopact.VerificationReport,
+	requirements []VerificationEvidenceRequirement,
+) {
+	t.Helper()
+
+	for _, result := range CheckVerificationEvidenceRequirements(context.Background(), report, requirements) {
+		if !result.Passed {
+			t.Fatalf("verification evidence requirement case %q failed: %v", result.Case, result.Err)
+		}
 	}
 }
 
@@ -170,6 +227,14 @@ func verificationReportCIGates(report gopact.VerificationReport) map[string]gopa
 		}
 	}
 	return gates
+}
+
+func verificationEvidenceRequirementName(index int, name string) string {
+	name = strings.TrimSpace(name)
+	if name != "" {
+		return name
+	}
+	return fmt.Sprintf("requirement-%d", index+1)
 }
 
 func passedVerificationEvidenceConformance(name string) VerificationEvidenceConformanceResult {
