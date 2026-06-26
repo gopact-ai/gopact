@@ -324,6 +324,155 @@ func TestRecordCIRunCheckRecordsRemoteRunAsCIGateEvidence(t *testing.T) {
 	}
 }
 
+func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T) {
+	recorder := gopact.NewVerificationRecorder()
+
+	err := RecordCIRunSetCheck(recorder, CIRunSet{
+		ID:                   "external-ci:gopact-ai",
+		Name:                 "external repository CI",
+		RequiredRepositories: []string{"gopact-ai/gopact-adapters-model", "gopact-ai/gopact-adapters-channel"},
+		RequiredGates:        []string{"test", "vet"},
+		Runs: []CIRun{
+			{
+				Provider:   "github-actions",
+				Repository: "gopact-ai/gopact-adapters-model",
+				Workflow:   "ci",
+				RunID:      "1001",
+				Status:     "completed",
+				Conclusion: "success",
+				Gates: []CIRunGate{
+					{Gate: "test", Status: gopact.VerificationStatusPassed, Job: "test"},
+					{Gate: "vet", Status: gopact.VerificationStatusPassed, Job: "test"},
+				},
+			},
+			{
+				Provider:   "github-actions",
+				Repository: "gopact-ai/gopact-adapters-channel",
+				Workflow:   "ci",
+				RunID:      "1002",
+				Status:     "completed",
+				Conclusion: "success",
+				Gates: []CIRunGate{
+					{Gate: "test", Status: gopact.VerificationStatusPassed, Job: "test"},
+					{Gate: "vet", Status: gopact.VerificationStatusPassed, Job: "test"},
+				},
+			},
+		},
+		Metadata: map[string]any{"scope": "m6-external-ci"},
+	})
+	if err != nil {
+		t.Fatalf("RecordCIRunSetCheck() error = %v", err)
+	}
+
+	checks := recorder.Checks()
+	if len(checks) != 1 {
+		t.Fatalf("check count = %d, want 1", len(checks))
+	}
+	check := checks[0]
+	if check.ID != "external-ci:gopact-ai" ||
+		check.Name != "external repository CI" ||
+		check.Status != gopact.VerificationStatusPassed ||
+		check.Summary != "CI gates passed: 4 passed" {
+		t.Fatalf("check = %+v, want passed external CI run set check", check)
+	}
+	if len(check.Evidence) != 4 {
+		t.Fatalf("evidence = %+v, want one evidence item per run gate", check.Evidence)
+	}
+	if check.Metadata["run_count"] != 2 ||
+		check.Metadata["repository_count"] != 2 ||
+		check.Metadata["gate_count"] != 4 ||
+		check.Metadata["passed_run_count"] != 2 ||
+		check.Metadata["failed_run_count"] != 0 ||
+		check.Metadata["passed_gate_count"] != 4 ||
+		check.Metadata["scope"] != "m6-external-ci" {
+		t.Fatalf("metadata = %+v, want external CI run set counts", check.Metadata)
+	}
+	if got, ok := check.Metadata["required_repositories"].([]string); !ok ||
+		!reflect.DeepEqual(got, []string{"gopact-ai/gopact-adapters-model", "gopact-ai/gopact-adapters-channel"}) {
+		t.Fatalf("required repositories = %#v, want copied required repositories", check.Metadata["required_repositories"])
+	}
+	if got, ok := check.Metadata["required_gates"].([]string); !ok ||
+		!reflect.DeepEqual(got, []string{"test", "vet"}) {
+		t.Fatalf("required gates = %#v, want copied required gates", check.Metadata["required_gates"])
+	}
+	evidence := check.Evidence[0]
+	if evidence.Type != VerificationEvidenceTypeCIGate ||
+		evidence.Ref != "ci-gate:gopact-ai/gopact-adapters-model:test" ||
+		evidence.Metadata["gate"] != "test" ||
+		evidence.Metadata["repository"] != "gopact-ai/gopact-adapters-model" ||
+		evidence.Metadata["run_id"] != "1001" ||
+		evidence.Metadata["status"] != string(gopact.VerificationStatusPassed) {
+		t.Fatalf("first evidence = %+v, want repository-qualified CI gate evidence", evidence)
+	}
+
+	report, err := gopact.BuildVerificationReport(
+		gopact.RunExport{Version: gopact.RunExportVersion, IDs: gopact.RuntimeIDs{RunID: "run-1"}, Outcome: gopact.RunCompleted},
+		checks,
+	)
+	if err != nil {
+		t.Fatalf("BuildVerificationReport() error = %v", err)
+	}
+	RequireVerificationEvidenceRequirements(t, report, []VerificationEvidenceRequirement{
+		{
+			Name:                  "external-ci",
+			RequiredCheckIDs:      []string{"external-ci:gopact-ai"},
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
+			RequiredCIGates:       []string{"test", "vet"},
+		},
+	})
+}
+
+func TestRecordCIRunSetCheckRecordsFailedRunBeforeReturningError(t *testing.T) {
+	recorder := gopact.NewVerificationRecorder()
+
+	err := RecordCIRunSetCheck(recorder, CIRunSet{
+		RequiredRepositories: []string{"gopact-ai/gopact-adapters-model"},
+		RequiredGates:        []string{"test", "vet"},
+		Runs: []CIRun{
+			{
+				Repository: "gopact-ai/gopact-adapters-model",
+				Gates: []CIRunGate{
+					{Gate: "test", Status: gopact.VerificationStatusPassed},
+					{Gate: "vet", Status: gopact.VerificationStatusFailed},
+				},
+			},
+		},
+	})
+	if !errors.Is(err, ErrCIGateFailed) {
+		t.Fatalf("RecordCIRunSetCheck() error = %v, want ErrCIGateFailed", err)
+	}
+	checks := recorder.Checks()
+	if len(checks) != 1 {
+		t.Fatalf("check count = %d, want 1", len(checks))
+	}
+	check := checks[0]
+	if check.Status != gopact.VerificationStatusFailed ||
+		check.Metadata["failed_run_count"] != 1 ||
+		check.Metadata["failed_gate_count"] != 1 {
+		t.Fatalf("check = %+v, want failed run set check", check)
+	}
+}
+
+func TestRecordCIRunSetCheckRejectsMissingRequiredRepositoryWithoutRecording(t *testing.T) {
+	recorder := gopact.NewVerificationRecorder()
+
+	err := RecordCIRunSetCheck(recorder, CIRunSet{
+		RequiredRepositories: []string{"gopact-ai/gopact-adapters-model", "gopact-ai/gopact-adapters-channel"},
+		Runs: []CIRun{
+			{
+				Repository: "gopact-ai/gopact-adapters-model",
+				Gates:      []CIRunGate{{Gate: "test", Status: gopact.VerificationStatusPassed}},
+			},
+		},
+	})
+	if !errors.Is(err, ErrCIGateRequired) {
+		t.Fatalf("RecordCIRunSetCheck() error = %v, want ErrCIGateRequired", err)
+	}
+	if len(recorder.Checks()) != 0 {
+		t.Fatalf("check count = %d, want 0 after missing required repository", len(recorder.Checks()))
+	}
+}
+
 func TestRecordCIRunCheckEvidenceIsDevAgentCompatible(t *testing.T) {
 	recorder := gopact.NewVerificationRecorder()
 
