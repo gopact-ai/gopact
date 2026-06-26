@@ -92,6 +92,8 @@ func TestRunPrintsSyncPlanShellScript(t *testing.T) {
 		"local organization='gopact-ai'",
 		"prepare_remote_go_module \"${repo_dir}\"",
 		"GOWORK=off",
+		"copy_generated_scaffold \"${repo_dir}\" \"${sync_dir}\"",
+		"gh repo clone \"${repo}\" \"${sync_dir}\"",
 		"run_ci_command \"${repo_dir}\" \"${command}\"",
 		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
 		"gh repo create \"${repo}\" \"${visibility_flag}\" --source \"${repo_dir}\" --remote origin --push",

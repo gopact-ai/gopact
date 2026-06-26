@@ -267,7 +267,7 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private'",
 		"prepare_remote_go_module \"${repo_dir}\"",
 		"GOWORK=off",
-		"git -C \"${repo_dir}\" commit -m \"chore: bootstrap gopact extension scaffold\"",
+		"git -C \"${repo_dir}\" commit -m \"chore: sync gopact extension scaffold\"",
 		"gh repo create \"${repo}\" \"${visibility_flag}\" --source \"${repo_dir}\" --remote origin --push",
 	} {
 		if !strings.Contains(string(syncScriptBody), want) {
@@ -492,9 +492,11 @@ func TestRenderSyncScriptFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 		"set -euo pipefail",
 		"local organization='gopact-ai'",
 		"ensure_git_repo \"${repo_dir}\"",
+		"copy_generated_scaffold \"${repo_dir}\" \"${sync_dir}\"",
 		"prepare_remote_go_module \"${repo_dir}\"",
 		"GIT_CONFIG_KEY_0=\"${git_key}\"",
 		"run_ci_command \"${repo_dir}\" \"${command}\"",
+		"gh repo clone \"${repo}\" \"${sync_dir}\"",
 		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
 		"sync_repo 'gopact-templates-devagent' 'gopact-templates-devagent' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
 		"git -C \"${repo_dir}\" push -u origin HEAD:main",
