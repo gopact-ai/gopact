@@ -32,7 +32,7 @@ Template 必须让过程可观察：
 - run、node、model、tool、memory、policy、channel、checkpoint、replay、verification 事件要能解释关键决策；
 - `RunRecorder` 应能从事件流导出 `RunExport`；
 - verification evidence 只记录已观察事实，不执行命令、不读取环境、不替代业务 gate；
-- golden trajectory 可以是最小语义轨迹，不要求绑定完整内部实现顺序。
+- golden trajectory 可以是最小语义轨迹，不要求绑定完整内部实现顺序，但 required frame 应能按 metadata 子集固定 action/mode 等关键治理语义。
 
 ## Memory and Side Effects
 
