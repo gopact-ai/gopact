@@ -132,6 +132,19 @@ func TestSelfBootstrapRejectedReleaseMatchesGoldenTrajectory(t *testing.T) {
 	if report.Status != gopact.VerificationStatusFailed {
 		t.Fatalf("report status = %q, want failed", report.Status)
 	}
+	workflow := selfBootstrapWorkflowRecordsFromExport(t, export)
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: workflow,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionRelease,
+		},
+		RequiredInputSources: []string{"devagent.patch", "devagent.release_gate"},
+	})
+	if workflow.Task.Status != gopact.TaskFailed {
+		t.Fatalf("workflow task status = %q, want failed", workflow.Task.Status)
+	}
 }
 
 func TestSelfBootstrapRejectedApplyMatchesGoldenTrajectory(t *testing.T) {
@@ -534,18 +547,17 @@ func selfBootstrapRejectedReleaseTrajectoryFixture(t *testing.T) (gopact.RunExpo
 		Reviewer: "human",
 		Summary:  "release needs another plan pass",
 	}
+	entropy := gopact.EntropyAudit{
+		ID:        "entropy-1",
+		Status:    gopact.VerificationStatusPassed,
+		IDs:       ids,
+		CreatedAt: createdAt,
+	}
 	gate, err := EvaluateReleaseGate(GateInput{
-		Mode:   ModeWrite,
-		Report: passedReport,
-		Review: review,
-		EntropyAudits: []gopact.EntropyAudit{
-			{
-				ID:        "entropy-1",
-				Status:    gopact.VerificationStatusPassed,
-				IDs:       ids,
-				CreatedAt: createdAt,
-			},
-		},
+		Mode:          ModeWrite,
+		Report:        passedReport,
+		Review:        review,
+		EntropyAudits: []gopact.EntropyAudit{entropy},
 	}, RequireCheckIDs("unit-tests", "diff-check"), RequireEvidenceTypes("command", "diff"))
 	if !errors.Is(err, ErrReleaseGateRejected) {
 		t.Fatalf("EvaluateReleaseGate() error = %v, want ErrReleaseGateRejected", err)
@@ -561,6 +573,48 @@ func selfBootstrapRejectedReleaseTrajectoryFixture(t *testing.T) (gopact.RunExpo
 	})
 	if err != nil {
 		t.Fatalf("Report(failed export) error = %v", err)
+	}
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       ids,
+		Name:      "self-bootstrap rejected release workflow",
+		CreatedAt: createdAt,
+		Metadata:  map[string]any{"scope": "m5-workflow"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: selfBootstrapPatchProposal("reject self-bootstrap release until the plan is updated"),
+			},
+			{
+				Action: ActionResult{
+					Status: ActionRejected,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+					Reasons: []string{
+						"release gate rejected: review status rejected",
+					},
+				},
+				Review: review,
+				Gate:   &gate,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	recordWorkflowRecords(t, recorder, workflow)
+	if err := recorder.RecordEntropyAudit(entropy); err != nil {
+		t.Fatalf("RecordEntropyAudit() error = %v", err)
 	}
 	if err := recorder.RecordVerificationReport(report); err != nil {
 		t.Fatalf("RecordVerificationReport() error = %v", err)
@@ -836,6 +890,31 @@ func recordWorkflowRecords(t *testing.T, recorder *gopact.RunRecorder, records W
 			t.Fatalf("RecordIntervention() error = %v", err)
 		}
 	}
+}
+
+func selfBootstrapWorkflowRecordsFromExport(t *testing.T, export gopact.RunExport) WorkflowRecords {
+	t.Helper()
+
+	workflowID := "devagent:" + export.IDs.RunID + ":workflow"
+	workflow := WorkflowRecords{
+		Inputs:        export.Inputs,
+		Interventions: export.Interventions,
+	}
+	for _, task := range export.Tasks {
+		switch {
+		case task.ID == workflowID:
+			workflow.Task = task
+		case task.ParentID == workflowID:
+			workflow.Tasks = append(workflow.Tasks, task)
+		}
+	}
+	if workflow.Task.ID == "" {
+		t.Fatalf("export tasks = %+v, want workflow parent task %q", export.Tasks, workflowID)
+	}
+	if len(workflow.Tasks) == 0 {
+		t.Fatalf("export tasks = %+v, want workflow child tasks", export.Tasks)
+	}
+	return workflow
 }
 
 func intPtr(v int) *int {
