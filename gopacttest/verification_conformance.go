@@ -67,8 +67,21 @@ func checkVerificationRequiredCheckIDs(report gopact.VerificationReport, require
 		if id == "" {
 			return failedVerificationEvidenceConformance("required-check-ids", errors.New("required check id is empty"))
 		}
-		if !verificationReportHasCheckID(report, id) {
+		check, ok := verificationReportCheckByID(report, id)
+		if !ok {
 			return failedVerificationEvidenceConformance("required-check-ids", fmt.Errorf("missing required check id %q", id))
+		}
+		switch check.Status {
+		case gopact.VerificationStatusPassed:
+		case gopact.VerificationStatusFailed:
+			return failedVerificationEvidenceConformance("required-check-ids", fmt.Errorf("required check id %q failed", id))
+		case gopact.VerificationStatusSkipped:
+			return failedVerificationEvidenceConformance("required-check-ids", fmt.Errorf("required check id %q skipped", id))
+		default:
+			return failedVerificationEvidenceConformance(
+				"required-check-ids",
+				fmt.Errorf("required check id %q status %s is not passed", id, check.Status),
+			)
 		}
 	}
 	return passedVerificationEvidenceConformance("required-check-ids")
@@ -107,13 +120,13 @@ func checkVerificationRequiredCIGates(report gopact.VerificationReport, required
 	return passedVerificationEvidenceConformance("required-ci-gates")
 }
 
-func verificationReportHasCheckID(report gopact.VerificationReport, id string) bool {
+func verificationReportCheckByID(report gopact.VerificationReport, id string) (gopact.VerificationCheck, bool) {
 	for _, check := range report.Checks {
 		if check.ID == id {
-			return true
+			return check, true
 		}
 	}
-	return false
+	return gopact.VerificationCheck{}, false
 }
 
 func verificationReportEvidenceTypes(report gopact.VerificationReport) []string {

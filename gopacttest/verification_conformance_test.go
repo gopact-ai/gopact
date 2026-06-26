@@ -36,6 +36,30 @@ func TestCheckVerificationEvidenceConformanceReportsMissingEvidenceType(t *testi
 	}
 }
 
+func TestCheckVerificationEvidenceConformanceReportsRequiredCheckIDThatDidNotPass(t *testing.T) {
+	report := verificationConformanceReport(t)
+	report.Checks = append(report.Checks, gopact.VerificationCheck{
+		ID:      "release-gate",
+		Name:    "release gate",
+		Status:  gopact.VerificationStatusFailed,
+		Summary: "release gate failed",
+		Evidence: []gopact.VerificationEvidence{
+			{Type: "release_gate", Ref: "release-gate:write", Summary: "release gate rejected"},
+		},
+	})
+	report.Status = gopact.VerificationStatusFailed
+	report.FailedCount++
+	harness := VerificationEvidenceConformanceHarness{
+		Report:           report,
+		RequiredCheckIDs: []string{"release-gate"},
+	}
+
+	results := CheckVerificationEvidenceConformance(context.Background(), harness)
+	if !hasFailedVerificationEvidenceConformanceCase(results, "required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceConformance() did not report failed required check id: %+v", results)
+	}
+}
+
 func TestCheckVerificationEvidenceConformanceReportsMissingCIGate(t *testing.T) {
 	report := verificationConformanceReport(t)
 	harness := VerificationEvidenceConformanceHarness{
