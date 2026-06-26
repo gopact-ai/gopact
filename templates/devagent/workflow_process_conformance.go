@@ -192,6 +192,24 @@ func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConform
 				fmt.Errorf("workflow action summary %d status = %q, want %q", i, got, task.Status),
 			)
 		}
+		if got, want := workflowProcessStringMetadata(summary, "mode"), workflowProcessStringMetadata(task.Metadata, "mode"); want != "" && got != want {
+			return failedWorkflowProcessConformance(
+				"workflow-summary",
+				fmt.Errorf("workflow action summary %d mode = %q, want %q", i, got, want),
+			)
+		}
+		if got, want := workflowProcessStringMetadata(summary, "action"), workflowProcessStringMetadata(task.Metadata, "action"); want != "" && got != want {
+			return failedWorkflowProcessConformance(
+				"workflow-summary",
+				fmt.Errorf("workflow action summary %d action = %q, want %q", i, got, want),
+			)
+		}
+		if got, want := workflowProcessStringMetadata(summary, "action_status"), workflowProcessStringMetadata(task.Metadata, "action_status"); want != "" && got != want {
+			return failedWorkflowProcessConformance(
+				"workflow-summary",
+				fmt.Errorf("workflow action summary %d action_status = %q, want %q", i, got, want),
+			)
+		}
 		if got, ok := workflowProcessIntMetadata(summary, "input_count"); !ok || got != inputCounts[i+1] {
 			return failedWorkflowProcessConformance(
 				"workflow-summary",
