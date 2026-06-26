@@ -437,6 +437,10 @@ func spanAttributes(event gopact.Event) map[string]string {
 	if event.PolicyDecision != nil && event.PolicyDecision.Action != "" {
 		attributes["policy.decision"] = string(event.PolicyDecision.Action)
 	}
+	if event.Redaction.Applied {
+		attributes["redaction.applied"] = "true"
+		attributes["redaction.field_count"] = strconv.Itoa(len(event.Redaction.Fields))
+	}
 	return attributes
 }
 

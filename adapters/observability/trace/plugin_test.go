@@ -3,7 +3,9 @@ package trace
 import (
 	"context"
 	"errors"
+	"iter"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,6 +222,80 @@ func TestPluginPropagatesExporterError(t *testing.T) {
 	}
 }
 
+func TestPluginExporterFailureFallbackDoesNotFailRunner(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("trace collector down")
+	host := gopact.NewPluginHost(gopact.WithPluginFailureFallback())
+	if err := host.Install(ctx, NewPlugin(ExporterFunc(func(_ context.Context, _ SpanRecord) error {
+		return wantErr
+	}))); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+
+	runner, err := gopact.NewRunner(traceRunnable{
+		events: []gopact.Event{{Type: gopact.EventRunStarted}},
+	}, gopact.WithPluginHost(host))
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	events, err := collectTraceEvents(runner.Run(ctx, "input"))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(events) != 1 || events[0].Type != gopact.EventRunStarted {
+		t.Fatalf("events = %+v, want run_started", events)
+	}
+	failures, ok := events[0].Metadata[gopact.EventMetadataPluginSubscriberErrors].([]string)
+	if !ok || len(failures) != 1 || !strings.Contains(failures[0], wantErr.Error()) {
+		t.Fatalf("event metadata = %+v, want trace exporter fallback error", events[0].Metadata)
+	}
+}
+
+func TestPluginExportsRedactionBoundaryAttributes(t *testing.T) {
+	ctx := context.Background()
+	exporter := NewMemoryExporter()
+	host := gopact.NewPluginHost()
+	if err := host.Install(ctx, NewPlugin(exporter)); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	redactor := gopact.TextRedactorFunc(func(_ context.Context, text string) (string, error) {
+		return strings.ReplaceAll(text, "secret", "[redacted]"), nil
+	})
+	runner, err := gopact.NewRunner(traceRunnable{
+		events: []gopact.Event{
+			{
+				Type: gopact.EventToolResult,
+				Result: &gopact.ToolResult{
+					Content: "secret result",
+				},
+				Metadata: map[string]any{
+					"summary": "secret metadata",
+				},
+			},
+		},
+	}, gopact.WithRunnerEventMiddleware(gopact.EventRedactionMiddleware(redactor)), gopact.WithPluginHost(host))
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	events, err := collectTraceEvents(runner.Run(ctx, "input"))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(events) != 1 || !events[0].Redaction.Applied {
+		t.Fatalf("events = %+v, want redacted event", events)
+	}
+	spans := exporter.Spans()
+	if len(spans) != 1 {
+		t.Fatalf("spans = %+v, want one span", spans)
+	}
+	attributes := spans[0].Attributes
+	if attributes["redaction.applied"] != "true" || attributes["redaction.field_count"] != "2" {
+		t.Fatalf("span attributes = %+v, want redaction boundary attributes", attributes)
+	}
+}
+
 func TestMemoryExporterReturnsCopiedSpans(t *testing.T) {
 	exporter := NewMemoryExporter()
 	if err := exporter.ExportSpan(context.Background(), SpanRecord{
@@ -237,4 +313,33 @@ func TestMemoryExporterReturnsCopiedSpans(t *testing.T) {
 	if second[0].Attributes["event.type"] != string(gopact.EventRunStarted) {
 		t.Fatalf("Spans() returned shared attributes: %+v", second[0].Attributes)
 	}
+}
+
+type traceRunnable struct {
+	events []gopact.Event
+}
+
+func (r traceRunnable) Run(ctx context.Context, input any, opts ...gopact.RunOption) iter.Seq2[gopact.Event, error] {
+	return func(yield func(gopact.Event, error) bool) {
+		for _, event := range r.events {
+			if err := ctx.Err(); err != nil {
+				yield(gopact.Event{}, err)
+				return
+			}
+			if !yield(event, nil) {
+				return
+			}
+		}
+	}
+}
+
+func collectTraceEvents(seq iter.Seq2[gopact.Event, error]) ([]gopact.Event, error) {
+	var events []gopact.Event
+	for event, err := range seq {
+		if err != nil {
+			return events, err
+		}
+		events = append(events, event)
+	}
+	return events, nil
 }
