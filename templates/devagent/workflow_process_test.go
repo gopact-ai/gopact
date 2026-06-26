@@ -774,6 +774,173 @@ func TestWorkflowActionProcessRecordsFromRunExportByTaskIDReturnsSingleAction(t 
 	}
 }
 
+func TestImportProcessRecordsRecordsDefensiveCopy(t *testing.T) {
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Name: "self-bootstrap release workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	process, err := WorkflowActionProcessRecords(workflow, 2)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
+	}
+
+	recorder := gopact.NewRunRecorder()
+	if err := ImportProcessRecords(recorder, process); err != nil {
+		t.Fatalf("ImportProcessRecords() error = %v", err)
+	}
+	if err := recorder.Record(gopact.Event{
+		Type: gopact.EventRunCompleted,
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+	}); err != nil {
+		t.Fatalf("Record(run completed) error = %v", err)
+	}
+	process.Task.Metadata["mutated"] = true
+	process.Inputs[0].Value.(map[string]any)["status"] = "mutated"
+	process.Interventions[0].Metadata["mutated"] = true
+
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+	if len(export.Tasks) != 1 || export.Tasks[0].ID != process.Task.ID {
+		t.Fatalf("export tasks = %+v, want imported task", export.Tasks)
+	}
+	if _, ok := export.Tasks[0].Metadata["mutated"]; ok {
+		t.Fatalf("ImportProcessRecords recorded task sharing metadata")
+	}
+	if len(export.Inputs) != 1 || export.Inputs[0].Source != "devagent.release_gate" {
+		t.Fatalf("export inputs = %+v, want imported release gate input", export.Inputs)
+	}
+	value, ok := export.Inputs[0].Value.(map[string]any)
+	if !ok || value["status"] != string(GatePassed) {
+		t.Fatalf("export input value = %+v, want defensive copy of release gate value", export.Inputs[0].Value)
+	}
+	if len(export.Interventions) != 1 || export.Interventions[0].Status != gopact.InterventionResolved {
+		t.Fatalf("export interventions = %+v, want imported review intervention", export.Interventions)
+	}
+	if _, ok := export.Interventions[0].Metadata["mutated"]; ok {
+		t.Fatalf("ImportProcessRecords recorded intervention sharing metadata")
+	}
+}
+
+func TestImportWorkflowRecordsCanBeRestoredFromRunExport(t *testing.T) {
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Name: "self-bootstrap apply release workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare apply release",
+					Diff:    "diff --git a/private b/private\n+raw diff must not be copied\n",
+					Files: []PatchFile{
+						{Path: "templates/devagent/workflow_process_test.go", Intent: "cover workflow records import"},
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	recorder := gopact.NewRunRecorder()
+	if err := ImportWorkflowRecords(recorder, workflow); err != nil {
+		t.Fatalf("ImportWorkflowRecords() error = %v", err)
+	}
+	if err := recorder.Record(gopact.Event{
+		Type: gopact.EventRunCompleted,
+		IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+	}); err != nil {
+		t.Fatalf("Record(run completed) error = %v", err)
+	}
+	workflow.Task.Metadata["mutated"] = true
+	workflow.Inputs[0].Value.(map[string]any)["summary"] = "mutated"
+
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+	restored, err := WorkflowRecordsFromRunExport(export, workflow.Task.ID)
+	if err != nil {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v", err)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: restored,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionRelease,
+		},
+		RequiredInputSources: []string{"devagent.patch", "devagent.release_gate"},
+	})
+	if _, ok := restored.Task.Metadata["mutated"]; ok {
+		t.Fatalf("ImportWorkflowRecords recorded workflow task sharing metadata")
+	}
+	value, ok := restored.Inputs[0].Value.(map[string]any)
+	if !ok || value["summary"] != "prepare apply release" {
+		t.Fatalf("restored patch input value = %+v, want defensive copy", restored.Inputs[0].Value)
+	}
+}
+
 func TestBuildWorkflowProcessRecordsRejectsInvalidInput(t *testing.T) {
 	_, err := BuildWorkflowProcessRecords(WorkflowInput{})
 	if !errors.Is(err, ErrInvalidActionResult) {

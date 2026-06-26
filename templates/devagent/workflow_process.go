@@ -93,6 +93,21 @@ func RecordWorkflowProcessRecords(recorder *gopact.RunRecorder, input WorkflowIn
 	if err != nil {
 		return err
 	}
+	return ImportWorkflowRecords(recorder, records)
+}
+
+// ImportWorkflowRecords appends already-observed Dev Agent workflow records to a RunRecorder.
+//
+// It validates workflow process conformance and stores defensive copies. It
+// does not schedule, execute, or reinterpret the workflow.
+func ImportWorkflowRecords(recorder *gopact.RunRecorder, records WorkflowRecords) error {
+	if recorder == nil {
+		return errors.New("devagent: run recorder is nil")
+	}
+	if err := validateWorkflowRecordsConformance(records); err != nil {
+		return err
+	}
+	records = copyWorkflowRecords(records)
 	if err := recorder.RecordTask(records.Task); err != nil {
 		return err
 	}
@@ -112,6 +127,15 @@ func RecordWorkflowProcessRecords(recorder *gopact.RunRecorder, input WorkflowIn
 		}
 	}
 	return nil
+}
+
+func copyWorkflowRecords(in WorkflowRecords) WorkflowRecords {
+	return WorkflowRecords{
+		Task:          copyReleaseTaskRecord(in.Task),
+		Tasks:         copyReleaseTaskRecords(in.Tasks),
+		Inputs:        copyReleaseInputRecords(in.Inputs),
+		Interventions: copyReleaseInterventionRecords(in.Interventions),
+	}
 }
 
 // WorkflowRecordsFromRunExport restores one Dev Agent workflow process from a run export.
