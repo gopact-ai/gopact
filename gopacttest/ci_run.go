@@ -27,6 +27,16 @@ type CIRun struct {
 	Metadata      map[string]any
 }
 
+// CIRunSet is a collection of already-observed CI runs that should be consumed as one readiness gate.
+type CIRunSet struct {
+	ID                   string
+	Name                 string
+	RequiredRepositories []string
+	RequiredGates        []string
+	Runs                 []CIRun
+	Metadata             map[string]any
+}
+
 // CIRunGate is one already-observed gate inside a remote CI run.
 type CIRunGate struct {
 	Gate        string
@@ -59,6 +69,25 @@ func RecordCIRunCheck(recorder *gopact.VerificationRecorder, run CIRun) error {
 	return nil
 }
 
+// RecordCIRunSetCheck records already-observed remote CI runs as one verification check.
+func RecordCIRunSetCheck(recorder *gopact.VerificationRecorder, set CIRunSet) error {
+	if recorder == nil {
+		return errors.New("gopacttest: verification recorder is nil")
+	}
+	if err := validateCIRunSet(set); err != nil {
+		return err
+	}
+
+	check := ciRunSetCheck(set)
+	if err := recorder.Record(check); err != nil {
+		return err
+	}
+	if check.Status == gopact.VerificationStatusFailed {
+		return ErrCIGateFailed
+	}
+	return nil
+}
+
 func validateCIRun(run CIRun) error {
 	if len(run.Gates) == 0 {
 		return fmt.Errorf("%w: gates are required", ErrCIGateRequired)
@@ -75,6 +104,59 @@ func validateCIRun(run CIRun) error {
 		gateByName[name] = struct{}{}
 	}
 	for _, gate := range run.RequiredGates {
+		gate = strings.TrimSpace(gate)
+		if gate == "" {
+			return fmt.Errorf("%w: required gate is empty", ErrCIGateRequired)
+		}
+		if _, ok := gateByName[gate]; !ok {
+			return fmt.Errorf("%w: required gate %s is missing", ErrCIGateRequired, gate)
+		}
+	}
+	return nil
+}
+
+func validateCIRunSet(set CIRunSet) error {
+	if len(set.Runs) == 0 {
+		return fmt.Errorf("%w: runs are required", ErrCIGateRequired)
+	}
+	repositoryByName := make(map[string]struct{}, len(set.Runs))
+	for i, run := range set.Runs {
+		repository := strings.TrimSpace(run.Repository)
+		if repository == "" {
+			return fmt.Errorf("%w: run %d repository is required", ErrCIGateRequired, i)
+		}
+		if _, ok := repositoryByName[repository]; ok {
+			return fmt.Errorf("%w: repository %s is duplicated", ErrCIGateRequired, repository)
+		}
+		if err := validateCIRun(run); err != nil {
+			return fmt.Errorf("gopacttest: CI run set run %s: %w", repository, err)
+		}
+		if err := validateCIRunRequiredGates(run, set.RequiredGates); err != nil {
+			return fmt.Errorf("gopacttest: CI run set run %s: %w", repository, err)
+		}
+		repositoryByName[repository] = struct{}{}
+	}
+	for _, repository := range set.RequiredRepositories {
+		repository = strings.TrimSpace(repository)
+		if repository == "" {
+			return fmt.Errorf("%w: required repository is empty", ErrCIGateRequired)
+		}
+		if _, ok := repositoryByName[repository]; !ok {
+			return fmt.Errorf("%w: required repository %s is missing", ErrCIGateRequired, repository)
+		}
+	}
+	return nil
+}
+
+func validateCIRunRequiredGates(run CIRun, required []string) error {
+	if len(required) == 0 {
+		return nil
+	}
+	gateByName := make(map[string]struct{}, len(run.Gates))
+	for _, gate := range run.Gates {
+		gateByName[strings.TrimSpace(gate.Gate)] = struct{}{}
+	}
+	for _, gate := range required {
 		gate = strings.TrimSpace(gate)
 		if gate == "" {
 			return fmt.Errorf("%w: required gate is empty", ErrCIGateRequired)
@@ -117,6 +199,27 @@ func ciRunCheck(run CIRun) gopact.VerificationCheck {
 	}
 }
 
+func ciRunSetCheck(set CIRunSet) gopact.VerificationCheck {
+	id := set.ID
+	if id == "" {
+		id = "ci-runs"
+	}
+	name := set.Name
+	if name == "" {
+		name = "CI runs"
+	}
+	status, passedGates, failedGates, skippedGates := ciRunSetGateStatus(set.Runs)
+	passedRuns, failedRuns, skippedRuns := ciRunSetRunStatusCounts(set.Runs)
+	return gopact.VerificationCheck{
+		ID:       id,
+		Name:     name,
+		Status:   status,
+		Summary:  ciGateSuiteSummary(status, passedGates, failedGates, skippedGates),
+		Evidence: ciRunSetEvidence(set.Runs),
+		Metadata: ciRunSetMetadata(set, passedRuns, failedRuns, skippedRuns, passedGates, failedGates, skippedGates),
+	}
+}
+
 func ciRunCheckID(run CIRun) string {
 	parts := make([]string, 0, 4)
 	for _, part := range []string{run.Provider, run.Repository, run.Workflow, run.RunID} {
@@ -129,6 +232,29 @@ func ciRunCheckID(run CIRun) string {
 		return VerificationCheckCIGates
 	}
 	return "ci-run:" + strings.Join(parts, ":")
+}
+
+func ciRunSetGateStatus(runs []CIRun) (gopact.VerificationStatus, int, int, int) {
+	var gates []CIRunGate
+	for _, run := range runs {
+		gates = append(gates, run.Gates...)
+	}
+	return ciRunStatus(gates)
+}
+
+func ciRunSetRunStatusCounts(runs []CIRun) (passed, failed, skipped int) {
+	for _, run := range runs {
+		status, _, _, _ := ciRunStatus(run.Gates)
+		switch status {
+		case gopact.VerificationStatusFailed:
+			failed++
+		case gopact.VerificationStatusSkipped:
+			skipped++
+		default:
+			passed++
+		}
+	}
+	return passed, failed, skipped
 }
 
 func ciRunStatus(gates []CIRunGate) (gopact.VerificationStatus, int, int, int) {
@@ -167,6 +293,21 @@ func ciRunEvidence(run CIRun) []gopact.VerificationEvidence {
 	return evidence
 }
 
+func ciRunSetEvidence(runs []CIRun) []gopact.VerificationEvidence {
+	var evidence []gopact.VerificationEvidence
+	for _, run := range runs {
+		for _, gate := range run.Gates {
+			evidence = append(evidence, gopact.VerificationEvidence{
+				Type:     VerificationEvidenceTypeCIGate,
+				Ref:      ciRunSetGateRef(run.Repository, gate.Gate),
+				Summary:  ciGateEvidenceSummary(gate.Gate, gate.Status),
+				Metadata: ciRunGateMetadata(run, gate),
+			})
+		}
+	}
+	return evidence
+}
+
 func ciRunMetadata(run CIRun, passed, failed, skipped int) map[string]any {
 	metadata := map[string]any{
 		"gate_count":         len(run.Gates),
@@ -185,6 +326,28 @@ func ciRunMetadata(run CIRun, passed, failed, skipped int) map[string]any {
 		metadata["conclusion"] = run.Conclusion
 	}
 	mergeSupplementalMetadata(metadata, run.Metadata, ciRunReservedMetadataKey)
+	return metadata
+}
+
+func ciRunSetMetadata(set CIRunSet, passedRuns, failedRuns, skippedRuns, passedGates, failedGates, skippedGates int) map[string]any {
+	metadata := map[string]any{
+		"run_count":          len(set.Runs),
+		"repository_count":   ciRunSetRepositoryCount(set.Runs),
+		"gate_count":         passedGates + failedGates + skippedGates,
+		"passed_run_count":   passedRuns,
+		"failed_run_count":   failedRuns,
+		"skipped_run_count":  skippedRuns,
+		"passed_gate_count":  passedGates,
+		"failed_gate_count":  failedGates,
+		"skipped_gate_count": skippedGates,
+	}
+	if len(set.RequiredRepositories) > 0 {
+		metadata["required_repositories"] = append([]string(nil), set.RequiredRepositories...)
+	}
+	if len(set.RequiredGates) > 0 {
+		metadata["required_gates"] = append([]string(nil), set.RequiredGates...)
+	}
+	mergeSupplementalMetadata(metadata, set.Metadata, ciRunSetReservedMetadataKey)
 	return metadata
 }
 
@@ -239,6 +402,46 @@ func addCIRunIdentityMetadata(metadata map[string]any, run CIRun) {
 	}
 	if run.HeadBranch != "" {
 		metadata["head_branch"] = run.HeadBranch
+	}
+}
+
+func ciRunSetRepositoryCount(runs []CIRun) int {
+	seen := make(map[string]struct{}, len(runs))
+	for _, run := range runs {
+		repository := strings.TrimSpace(run.Repository)
+		if repository == "" {
+			continue
+		}
+		seen[repository] = struct{}{}
+	}
+	return len(seen)
+}
+
+func ciRunSetGateRef(repository, gate string) string {
+	repository = strings.TrimSpace(repository)
+	gate = ciGateName(gate)
+	if repository == "" {
+		return ciGateRef(gate)
+	}
+	return "ci-gate:" + repository + ":" + gate
+}
+
+func ciRunSetReservedMetadataKey(key string) bool {
+	switch key {
+	case "run_count",
+		"repository_count",
+		"gate_count",
+		"passed_run_count",
+		"failed_run_count",
+		"skipped_run_count",
+		"passed_gate_count",
+		"failed_gate_count",
+		"skipped_gate_count",
+		"required_repositories",
+		"required_gates":
+		return true
+	default:
+		return false
 	}
 }
 
