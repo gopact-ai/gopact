@@ -1,6 +1,7 @@
 package devagent
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -50,6 +51,46 @@ func TestSelfBootstrapReleaseMatchesGoldenTrajectory(t *testing.T) {
 	if bundle.Process.Task.ID != "devagent:run-self-bootstrap-1:release" ||
 		bundle.Process.Task.ParentID != "devagent:run-self-bootstrap-1:workflow" {
 		t.Fatalf("release process task = %+v, want workflow child release task", bundle.Process.Task)
+	}
+}
+
+func TestSelfBootstrapRejectedReleaseMatchesGoldenTrajectory(t *testing.T) {
+	const goldenPath = "testdata/self_bootstrap_rejected_release.golden.json"
+
+	export, report := selfBootstrapRejectedReleaseTrajectoryFixture(t)
+
+	gopacttest.RequireRunExportGoldenTrajectoryFrames(t, goldenPath, export)
+	gopacttest.RequireTemplateTrajectoryConformance(t, gopacttest.TemplateTrajectoryConformanceHarness{
+		Name:      "devagent.self-bootstrap-rejected-release",
+		RunExport: &export,
+		RequiredEventTypes: []gopact.EventType{
+			gopact.EventRunStarted,
+			gopact.EventNodeCompleted,
+			gopact.EventNodeCompleted,
+			gopact.EventNodeFailed,
+			gopact.EventRunFailed,
+		},
+		RequiredFrames: []gopacttest.TrajectoryFramePattern{
+			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
+			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
+			{Type: gopact.EventNodeFailed, Node: "devagent.release_gate", Step: intPtr(3)},
+		},
+	})
+
+	if export.Outcome != gopact.RunFailed {
+		t.Fatalf("export outcome = %q, want failed", export.Outcome)
+	}
+	if len(export.Steps) != 3 || export.Steps[2].Phase != gopact.StepFailed {
+		t.Fatalf("exported steps = %+v, want failed release gate step", export.Steps)
+	}
+	if len(export.Failures) != 1 || export.Failures[0].Kind != gopact.FailureVerification {
+		t.Fatalf("export failures = %+v, want verification failure attribution", export.Failures)
+	}
+	if len(export.VerificationReports) != 1 || export.VerificationReports[0].Status != gopact.VerificationStatusFailed {
+		t.Fatalf("export verification reports = %+v, want failed report", export.VerificationReports)
+	}
+	if report.Status != gopact.VerificationStatusFailed {
+		t.Fatalf("report status = %q, want failed", report.Status)
 	}
 }
 
@@ -199,6 +240,103 @@ func selfBootstrapReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gop
 	return export, bundle
 }
 
+func selfBootstrapRejectedReleaseTrajectoryFixture(t *testing.T) (gopact.RunExport, gopact.VerificationReport) {
+	t.Helper()
+
+	createdAt := time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)
+	ids := selfBootstrapRuntimeIDs()
+	recorder := gopact.NewRunRecorder()
+	events := selfBootstrapReleaseEvents(ids, createdAt)
+	for _, event := range events[:len(events)-2] {
+		if err := recorder.Record(event); err != nil {
+			t.Fatalf("Record(event) error = %v", err)
+		}
+	}
+
+	reportRecorder := gopact.NewVerificationRecorder()
+	for _, check := range []gopact.VerificationCheck{
+		verificationCheck("unit-tests", gopact.VerificationStatusPassed, "command"),
+		verificationCheck("diff-check", gopact.VerificationStatusPassed, "diff"),
+	} {
+		if err := reportRecorder.Record(check); err != nil {
+			t.Fatalf("Record(check) error = %v", err)
+		}
+	}
+	candidate := gopact.RunExport{
+		Version:   gopact.RunExportVersion,
+		IDs:       ids,
+		Outcome:   gopact.RunCompleted,
+		CreatedAt: createdAt,
+	}
+	passedReport, err := reportRecorder.Report(candidate)
+	if err != nil {
+		t.Fatalf("Report(candidate) error = %v", err)
+	}
+	review := ReviewDecision{
+		Status:   ReviewRejected,
+		Reviewer: "human",
+		Summary:  "release needs another plan pass",
+	}
+	gate, err := EvaluateReleaseGate(GateInput{
+		Mode:   ModeWrite,
+		Report: passedReport,
+		Review: review,
+		EntropyAudits: []gopact.EntropyAudit{
+			{
+				ID:        "entropy-1",
+				Status:    gopact.VerificationStatusPassed,
+				IDs:       ids,
+				CreatedAt: createdAt,
+			},
+		},
+	}, RequireCheckIDs("unit-tests", "diff-check"), RequireEvidenceTypes("command", "diff"))
+	if !errors.Is(err, ErrReleaseGateRejected) {
+		t.Fatalf("EvaluateReleaseGate() error = %v, want ErrReleaseGateRejected", err)
+	}
+	if err := RecordReleaseGateCheck(reportRecorder, gate); !errors.Is(err, ErrReleaseGateRejected) {
+		t.Fatalf("RecordReleaseGateCheck() error = %v, want ErrReleaseGateRejected", err)
+	}
+	report, err := reportRecorder.Report(gopact.RunExport{
+		Version:   gopact.RunExportVersion,
+		IDs:       ids,
+		Outcome:   gopact.RunFailed,
+		CreatedAt: createdAt,
+	})
+	if err != nil {
+		t.Fatalf("Report(failed export) error = %v", err)
+	}
+	if err := recorder.RecordVerificationReport(report); err != nil {
+		t.Fatalf("RecordVerificationReport() error = %v", err)
+	}
+	if err := recorder.Record(devAgentFailedStepEvent(
+		ids,
+		createdAt.Add(6*time.Second),
+		3,
+		"devagent.release_gate",
+		"release gate rejected: review status rejected",
+	)); err != nil {
+		t.Fatalf("Record(failed step) error = %v", err)
+	}
+	if err := recorder.Record(gopact.Event{
+		Type:      gopact.EventRunFailed,
+		IDs:       ids,
+		Node:      "devagent.release_gate",
+		Step:      3,
+		CreatedAt: createdAt.Add(7 * time.Second),
+		Err:       errors.New("release gate rejected: review status rejected"),
+		Metadata: map[string]any{
+			gopact.EventMetadataFailureKind: string(gopact.FailureVerification),
+		},
+	}); err != nil {
+		t.Fatalf("Record(run failed) error = %v", err)
+	}
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+	return export, report
+}
+
 func selfBootstrapRuntimeIDs() gopact.RuntimeIDs {
 	return gopact.RuntimeIDs{
 		RunID:     "run-self-bootstrap-1",
@@ -222,6 +360,27 @@ func selfBootstrapReleaseEvents(ids gopact.RuntimeIDs, createdAt time.Time) []go
 		devAgentStepEvent(ids, createdAt.Add(5*time.Second), gopact.EventNodeStarted, 3, "devagent.release_gate", gopact.StepRunning),
 		devAgentStepEvent(ids, createdAt.Add(6*time.Second), gopact.EventNodeCompleted, 3, "devagent.release_gate", gopact.StepCompleted),
 		{Type: gopact.EventRunCompleted, IDs: ids, CreatedAt: createdAt.Add(7 * time.Second)},
+	}
+}
+
+func devAgentFailedStepEvent(ids gopact.RuntimeIDs, at time.Time, step int, node string, errText string) gopact.Event {
+	return gopact.Event{
+		Type:      gopact.EventNodeFailed,
+		IDs:       ids,
+		Node:      node,
+		Step:      step,
+		CreatedAt: at,
+		Err:       errors.New(errText),
+		StepSnapshot: &gopact.StepSnapshot{
+			ID:          "devagent:" + ids.RunID + ":step:" + node,
+			Step:        step,
+			Node:        node,
+			Phase:       gopact.StepFailed,
+			IDs:         ids,
+			Error:       errText,
+			StartedAt:   at,
+			CompletedAt: at,
+		},
 	}
 }
 
