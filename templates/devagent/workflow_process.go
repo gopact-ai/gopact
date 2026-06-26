@@ -182,6 +182,61 @@ func WorkflowActionProcessRecordsFromRunExport(
 	return WorkflowActionProcessRecords(records, actionIndex)
 }
 
+// WorkflowActionProcessRecordsFromRunExportByTaskID restores one workflow from
+// a run export and extracts one child action's process records by task id.
+//
+// The target task must be a workflow child task. The returned records are
+// defensive copies and include only input/intervention boundaries attached to
+// the task's workflow_action_index.
+func WorkflowActionProcessRecordsFromRunExportByTaskID(
+	export gopact.RunExport,
+	workflowID string,
+	taskID string,
+) (ProcessRecords, error) {
+	records, err := WorkflowRecordsFromRunExport(export, workflowID)
+	if err != nil {
+		return ProcessRecords{}, err
+	}
+	return WorkflowActionProcessRecordsByTaskID(records, taskID)
+}
+
+// WorkflowActionProcessRecordsByTaskID extracts one child action's process records by task id.
+//
+// The target task must be a workflow child task. The returned records are
+// defensive copies and include only input/intervention boundaries attached to
+// the task's workflow_action_index.
+func WorkflowActionProcessRecordsByTaskID(records WorkflowRecords, taskID string) (ProcessRecords, error) {
+	if err := validateWorkflowRecordsConformance(records); err != nil {
+		return ProcessRecords{}, err
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return ProcessRecords{}, errors.New("devagent: workflow action task id is required")
+	}
+	actionIndex := 0
+	for _, task := range records.Tasks {
+		if task.ID != taskID {
+			continue
+		}
+		if actionIndex != 0 {
+			return ProcessRecords{}, fmt.Errorf("devagent: duplicate workflow action task id %q", taskID)
+		}
+		got, ok := workflowProcessIntMetadata(task.Metadata, "workflow_action_index")
+		if !ok {
+			return ProcessRecords{}, fmt.Errorf(
+				"devagent: workflow action task %q workflow_action_index = %v, want integer",
+				taskID,
+				task.Metadata["workflow_action_index"],
+			)
+		}
+		actionIndex = got
+	}
+	if actionIndex == 0 {
+		return ProcessRecords{}, fmt.Errorf("devagent: workflow action task %q not found", taskID)
+	}
+	return WorkflowActionProcessRecords(records, actionIndex)
+}
+
 // WorkflowActionProcessRecords extracts one child action's process records from a workflow.
 //
 // actionIndex is 1-based and must match workflow_action_index. The returned
