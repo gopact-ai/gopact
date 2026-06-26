@@ -142,6 +142,18 @@ func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConform
 			fmt.Errorf("workflow output action_count = %v, want %d", output["action_count"], len(records.Tasks)),
 		)
 	}
+	if got, ok := workflowProcessIntMetadata(output, "input_count"); !ok || got != len(records.Inputs) {
+		return failedWorkflowProcessConformance(
+			"workflow-summary",
+			fmt.Errorf("workflow output input_count = %v, want %d", output["input_count"], len(records.Inputs)),
+		)
+	}
+	if got, ok := workflowProcessIntMetadata(output, "intervention_count"); !ok || got != len(records.Interventions) {
+		return failedWorkflowProcessConformance(
+			"workflow-summary",
+			fmt.Errorf("workflow output intervention_count = %v, want %d", output["intervention_count"], len(records.Interventions)),
+		)
+	}
 	if got := workflowProcessStringMetadata(output, "status"); got != string(records.Task.Status) {
 		return failedWorkflowProcessConformance(
 			"workflow-summary",
@@ -158,6 +170,8 @@ func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConform
 			fmt.Errorf("workflow action summaries = %d, want %d", len(summaries), len(records.Tasks)),
 		)
 	}
+	inputCounts := workflowProcessInputCountsByActionIndex(records.Inputs)
+	interventionCounts := workflowProcessInterventionCountsByActionIndex(records.Interventions)
 	for i, task := range records.Tasks {
 		summary := summaries[i]
 		if got, ok := workflowProcessIntMetadata(summary, "index"); !ok || got != i+1 {
@@ -176,6 +190,18 @@ func checkWorkflowProcessSummary(records WorkflowRecords) WorkflowProcessConform
 			return failedWorkflowProcessConformance(
 				"workflow-summary",
 				fmt.Errorf("workflow action summary %d status = %q, want %q", i, got, task.Status),
+			)
+		}
+		if got, ok := workflowProcessIntMetadata(summary, "input_count"); !ok || got != inputCounts[i+1] {
+			return failedWorkflowProcessConformance(
+				"workflow-summary",
+				fmt.Errorf("workflow action summary %d input_count = %v, want %d", i, summary["input_count"], inputCounts[i+1]),
+			)
+		}
+		if got, ok := workflowProcessIntMetadata(summary, "intervention_count"); !ok || got != interventionCounts[i+1] {
+			return failedWorkflowProcessConformance(
+				"workflow-summary",
+				fmt.Errorf("workflow action summary %d intervention_count = %v, want %d", i, summary["intervention_count"], interventionCounts[i+1]),
 			)
 		}
 	}
@@ -333,6 +359,26 @@ func workflowProcessFailedActionCount(tasks []gopact.TaskRecord) int {
 		}
 	}
 	return failed
+}
+
+func workflowProcessInputCountsByActionIndex(records []gopact.InputRecord) map[int]int {
+	counts := map[int]int{}
+	for _, record := range records {
+		if index, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok {
+			counts[index]++
+		}
+	}
+	return counts
+}
+
+func workflowProcessInterventionCountsByActionIndex(records []gopact.InterventionRecord) map[int]int {
+	counts := map[int]int{}
+	for _, record := range records {
+		if index, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index"); ok {
+			counts[index]++
+		}
+	}
+	return counts
 }
 
 func workflowProcessRequiredStrings(label string, observed []string, required []string) error {

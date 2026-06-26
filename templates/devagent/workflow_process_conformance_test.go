@@ -70,6 +70,38 @@ func TestCheckWorkflowProcessConformanceReportsFailedSummaryDrift(t *testing.T) 
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsWorkflowCountDrift(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	output["input_count"] = 1
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report workflow input count drift: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsChildSummaryCountDrift(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[2]["intervention_count"] = 0
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report child summary intervention count drift: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsRawDiffLeak(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	value, ok := records.Inputs[0].Value.(map[string]any)
