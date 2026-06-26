@@ -130,6 +130,7 @@ func TestExtensionScaffoldSpecCoversExternalRepositories(t *testing.T) {
 		"docs/design/extension-repository-template.md",
 		"docs/design/extension-conformance-template.md",
 		"docs/design/extension-ci-workflow.yml",
+		"docs/design/v1-migration-plan.json",
 	} {
 		if !slices.Contains(spec.SourceManifests, path) {
 			t.Fatalf("extension scaffold spec source_manifests missing %q", path)
@@ -234,6 +235,12 @@ func TestExtensionScaffoldMaterializerIsDocumented(t *testing.T) {
 		}
 		if !strings.Contains(content, "LoadRepositoriesFromDesign") {
 			t.Fatalf("%s does not reference LoadRepositoriesFromDesign", path)
+		}
+		if !strings.Contains(content, "v1-migration-plan.json") {
+			t.Fatalf("%s does not reference v1-migration-plan.json", path)
+		}
+		if !strings.Contains(content, "V1 Migration Ownership") {
+			t.Fatalf("%s does not reference V1 Migration Ownership", path)
 		}
 		if !strings.Contains(content, "WriteRepositoriesFromDesign") {
 			t.Fatalf("%s does not reference WriteRepositoriesFromDesign", path)

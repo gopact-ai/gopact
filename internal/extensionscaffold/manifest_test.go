@@ -75,6 +75,15 @@ func TestLoadRepositoriesFromDesignRendersConformantScaffolds(t *testing.T) {
 	if !slices.Contains(target.RequiredExamples, "host-injected HTTP client") {
 		t.Fatalf("model target RequiredExamples = %#v, want host-injected HTTP client", target.RequiredExamples)
 	}
+	if len(target.Migrations) != 1 {
+		t.Fatalf("model target Migrations = %#v, want 1 migration", target.Migrations)
+	}
+	if target.Migrations[0].SourcePath != "adapters/model/openaicompatible" {
+		t.Fatalf("model target migration SourcePath = %q, want adapters/model/openaicompatible", target.Migrations[0].SourcePath)
+	}
+	if target.Migrations[0].Action != "move-to-adapter-repo" {
+		t.Fatalf("model target migration Action = %q, want move-to-adapter-repo", target.Migrations[0].Action)
+	}
 
 	template := byName["gopact-templates-devagent"]
 	if template.Kind != "template" {
@@ -82,6 +91,24 @@ func TestLoadRepositoriesFromDesignRendersConformantScaffolds(t *testing.T) {
 	}
 	if !slices.Contains(template.SourcePaths, "templates/devagent") {
 		t.Fatalf("gopact-templates-devagent SourcePaths = %#v, want templates/devagent", template.SourcePaths)
+	}
+	if len(template.Targets) != 1 || len(template.Targets[0].Migrations) != 5 {
+		t.Fatalf("gopact-templates-devagent migrations = %#v, want 5 source migrations", template.Targets)
+	}
+	devAgentMigrationPaths := make([]string, 0, len(template.Targets[0].Migrations))
+	for _, migration := range template.Targets[0].Migrations {
+		devAgentMigrationPaths = append(devAgentMigrationPaths, migration.SourcePath)
+	}
+	for _, want := range []string{
+		"adapters/devagent/channelreview",
+		"adapters/devagent/cireview",
+		"adapters/devagent/gitdiff",
+		"adapters/devagent/modelreview",
+		"templates/devagent",
+	} {
+		if !slices.Contains(devAgentMigrationPaths, want) {
+			t.Fatalf("gopact-templates-devagent migration paths = %#v, want %q", devAgentMigrationPaths, want)
+		}
 	}
 
 	reactTemplate := byName["gopact-templates-react"]
@@ -579,6 +606,10 @@ func TestLoadRepositoriesFromDesignRejectsMissingTargetScaffoldSpec(t *testing.T
     "module_path": "github.com/gopact-ai/gopact-adapters-example",
     "targets": []
   }]
+}`)
+	writeManifestFixture(t, dir, "docs/design/v1-migration-plan.json", `{
+  "version": 1,
+  "repository_migrations": []
 }`)
 
 	_, err := LoadRepositoriesFromDesign(dir)

@@ -15,6 +15,7 @@ const (
 	externalRepositoriesManifestPath = "docs/design/external-repositories.json"
 	extensionConformanceManifestPath = "docs/design/extension-conformance.json"
 	extensionScaffoldSpecPath        = "docs/design/extension-scaffold-spec.json"
+	v1MigrationPlanPath              = "docs/design/v1-migration-plan.json"
 )
 
 // LoadRepositoriesFromDesign loads external repository scaffold inputs from the design manifests.
@@ -35,6 +36,10 @@ func LoadRepositoriesFromDesign(root string) ([]Repository, error) {
 	if err != nil {
 		return nil, err
 	}
+	v1Plan, err := loadJSON[designV1MigrationPlan](root, v1MigrationPlanPath)
+	if err != nil {
+		return nil, err
+	}
 	if externalRepos.Version != 1 {
 		return nil, fmt.Errorf("extensionscaffold: %s version = %d, want 1", externalRepositoriesManifestPath, externalRepos.Version)
 	}
@@ -43,6 +48,9 @@ func LoadRepositoriesFromDesign(root string) ([]Repository, error) {
 	}
 	if scaffold.Version != 1 {
 		return nil, fmt.Errorf("extensionscaffold: %s version = %d, want 1", extensionScaffoldSpecPath, scaffold.Version)
+	}
+	if v1Plan.Version != 1 {
+		return nil, fmt.Errorf("extensionscaffold: %s version = %d, want 1", v1MigrationPlanPath, v1Plan.Version)
 	}
 
 	targets := make(map[string]designExtensionConformanceTarget, len(conformance.Targets))
@@ -54,6 +62,10 @@ func LoadRepositoriesFromDesign(root string) ([]Repository, error) {
 			return nil, fmt.Errorf("extensionscaffold: duplicate conformance target %q", target.Name)
 		}
 		targets[target.Name] = target
+	}
+	migrationsByTarget, err := v1MigrationsByTarget(v1Plan, targets)
+	if err != nil {
+		return nil, err
 	}
 
 	scaffoldRepos := make(map[string]designExtensionScaffoldRepository, len(scaffold.Repositories))
@@ -120,6 +132,7 @@ func LoadRepositoriesFromDesign(root string) ([]Repository, error) {
 				PackagePath:        scaffoldTarget.PackagePath,
 				MinimalExamplePath: scaffoldTarget.MinimalExamplePath,
 				SourcePaths:        append([]string(nil), conformanceTarget.SourcePaths...),
+				Migrations:         migrationsForSourcePaths(conformanceTarget.SourcePaths, migrationsByTarget[targetName]),
 				ConformanceSuites:  append([]string(nil), conformanceTarget.ConformanceSuites...),
 				RequiredExamples:   append([]string(nil), conformanceTarget.RequiredExamples...),
 			})
@@ -133,6 +146,60 @@ func LoadRepositoriesFromDesign(root string) ([]Repository, error) {
 		repos = append(repos, repo)
 	}
 	return repos, nil
+}
+
+func v1MigrationsByTarget(plan designV1MigrationPlan, targets map[string]designExtensionConformanceTarget) (map[string][]Migration, error) {
+	out := map[string][]Migration{}
+	for _, migration := range plan.RepositoryMigrations {
+		if strings.TrimSpace(migration.SourcePath) == "" {
+			return nil, fmt.Errorf("extensionscaffold: v1 migration source_path is required")
+		}
+		if strings.TrimSpace(migration.Action) == "" {
+			return nil, fmt.Errorf("extensionscaffold: v1 migration for %q action is required", migration.SourcePath)
+		}
+		if strings.TrimSpace(migration.V1Condition) == "" {
+			return nil, fmt.Errorf("extensionscaffold: v1 migration for %q v1_condition is required", migration.SourcePath)
+		}
+		if strings.TrimSpace(migration.ExtensionTarget) == "" {
+			continue
+		}
+		target, ok := targets[migration.ExtensionTarget]
+		if !ok {
+			return nil, fmt.Errorf("extensionscaffold: v1 migration target %q is not a conformance target", migration.ExtensionTarget)
+		}
+		if !containsString(target.SourcePaths, migration.SourcePath) {
+			return nil, fmt.Errorf("extensionscaffold: v1 migration target %q source_path %q is not in conformance source_paths", migration.ExtensionTarget, migration.SourcePath)
+		}
+		out[migration.ExtensionTarget] = append(out[migration.ExtensionTarget], Migration{
+			SourcePath:  migration.SourcePath,
+			Action:      migration.Action,
+			V1Condition: migration.V1Condition,
+		})
+	}
+	return out, nil
+}
+
+func migrationsForSourcePaths(sourcePaths []string, migrations []Migration) []Migration {
+	byPath := map[string]Migration{}
+	for _, migration := range migrations {
+		byPath[migration.SourcePath] = migration
+	}
+	out := make([]Migration, 0, len(migrations))
+	for _, path := range sourcePaths {
+		if migration, ok := byPath[path]; ok {
+			out = append(out, migration)
+		}
+	}
+	return out
+}
+
+func containsString(values []string, value string) bool {
+	for _, existing := range values {
+		if existing == value {
+			return true
+		}
+	}
+	return false
 }
 
 func loadJSON[T any](root, slashPath string) (T, error) {
@@ -231,4 +298,16 @@ type designExtensionScaffoldTarget struct {
 	Name               string `json:"name"`
 	PackagePath        string `json:"package_path"`
 	MinimalExamplePath string `json:"minimal_example_path"`
+}
+
+type designV1MigrationPlan struct {
+	Version              int                           `json:"version"`
+	RepositoryMigrations []designV1RepositoryMigration `json:"repository_migrations"`
+}
+
+type designV1RepositoryMigration struct {
+	SourcePath      string `json:"source_path"`
+	Action          string `json:"action"`
+	ExtensionTarget string `json:"extension_target"`
+	V1Condition     string `json:"v1_condition"`
 }

@@ -5,7 +5,8 @@
     "docs/design/extension-conformance.json",
     "docs/design/extension-repository-template.md",
     "docs/design/extension-conformance-template.md",
-    "docs/design/extension-ci-workflow.yml"
+    "docs/design/extension-ci-workflow.yml",
+    "docs/design/v1-migration-plan.json"
   ],
   "file_templates": [
     {
