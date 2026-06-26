@@ -27,9 +27,9 @@ func TestSelfBootstrapReleaseMatchesGoldenTrajectory(t *testing.T) {
 			gopact.EventRunCompleted,
 		},
 		RequiredFrames: []gopacttest.TrajectoryFramePattern{
-			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.release_gate", Step: intPtr(3)},
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.analyze", 1),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.plan", 2),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.release_gate", 3),
 		},
 	})
 
@@ -72,10 +72,10 @@ func TestSelfBootstrapInterruptedReleaseMatchesGoldenTrajectory(t *testing.T) {
 			gopact.EventRunInterrupted,
 		},
 		RequiredFrames: []gopacttest.TrajectoryFramePattern{
-			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
-			{Type: gopact.EventInterrupted, Node: "devagent.release_gate", Step: intPtr(3)},
-			{Type: gopact.EventRunInterrupted, Node: "devagent.release_gate", Step: intPtr(3)},
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.analyze", 1),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.plan", 2),
+			devAgentFramePattern(gopact.EventInterrupted, "devagent.release_gate", 3),
+			devAgentFramePattern(gopact.EventRunInterrupted, "devagent.release_gate", 3),
 		},
 	})
 
@@ -141,10 +141,10 @@ func TestSelfBootstrapResumedReleaseMatchesGoldenTrajectory(t *testing.T) {
 			gopact.EventRunCompleted,
 		},
 		RequiredFrames: []gopacttest.TrajectoryFramePattern{
-			{Type: gopact.EventStepImported, Node: "devagent.release_gate", Step: intPtr(3)},
-			{Type: gopact.EventResumeReceived, Node: "devagent.release_gate", Step: intPtr(3)},
-			{Type: gopact.EventNodeResumed, Node: "devagent.release_gate", Step: intPtr(4)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.release_gate", Step: intPtr(4)},
+			devAgentFramePattern(gopact.EventStepImported, "devagent.release_gate", 3),
+			devAgentFramePattern(gopact.EventResumeReceived, "devagent.release_gate", 3),
+			devAgentFramePattern(gopact.EventNodeResumed, "devagent.release_gate", 4),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.release_gate", 4),
 		},
 	})
 
@@ -223,10 +223,10 @@ func TestSelfBootstrapApplyReleaseMatchesGoldenTrajectory(t *testing.T) {
 			gopact.EventRunCompleted,
 		},
 		RequiredFrames: []gopacttest.TrajectoryFramePattern{
-			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.apply_patch", Step: intPtr(3)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.release_gate", Step: intPtr(4)},
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.analyze", 1),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.plan", 2),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.apply_patch", 3),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.release_gate", 4),
 		},
 	})
 
@@ -264,11 +264,11 @@ func TestSelfBootstrapResumedApplyReleaseMatchesGoldenTrajectory(t *testing.T) {
 			gopact.EventRunCompleted,
 		},
 		RequiredFrames: []gopacttest.TrajectoryFramePattern{
-			{Type: gopact.EventStepImported, Node: "devagent.apply_patch", Step: intPtr(3)},
-			{Type: gopact.EventResumeReceived, Node: "devagent.apply_patch", Step: intPtr(3)},
-			{Type: gopact.EventNodeResumed, Node: "devagent.apply_patch", Step: intPtr(4)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.apply_patch", Step: intPtr(4)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.release_gate", Step: intPtr(5)},
+			devAgentFramePattern(gopact.EventStepImported, "devagent.apply_patch", 3),
+			devAgentFramePattern(gopact.EventResumeReceived, "devagent.apply_patch", 3),
+			devAgentFramePattern(gopact.EventNodeResumed, "devagent.apply_patch", 4),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.apply_patch", 4),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.release_gate", 5),
 		},
 	})
 
@@ -339,9 +339,9 @@ func TestSelfBootstrapRejectedReleaseMatchesGoldenTrajectory(t *testing.T) {
 			gopact.EventRunFailed,
 		},
 		RequiredFrames: []gopacttest.TrajectoryFramePattern{
-			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
-			{Type: gopact.EventNodeFailed, Node: "devagent.release_gate", Step: intPtr(3)},
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.analyze", 1),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.plan", 2),
+			devAgentFramePattern(gopact.EventNodeFailed, "devagent.release_gate", 3),
 		},
 	})
 
@@ -395,9 +395,9 @@ func TestSelfBootstrapRejectedApplyMatchesGoldenTrajectory(t *testing.T) {
 			gopact.EventRunFailed,
 		},
 		RequiredFrames: []gopacttest.TrajectoryFramePattern{
-			{Type: gopact.EventNodeCompleted, Node: "devagent.analyze", Step: intPtr(1)},
-			{Type: gopact.EventNodeCompleted, Node: "devagent.plan", Step: intPtr(2)},
-			{Type: gopact.EventNodeFailed, Node: "devagent.apply_patch", Step: intPtr(3)},
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.analyze", 1),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.plan", 2),
+			devAgentFramePattern(gopact.EventNodeFailed, "devagent.apply_patch", 3),
 		},
 	})
 	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
@@ -1303,9 +1303,9 @@ func selfBootstrapRejectedReleaseTrajectoryFixture(t *testing.T) (gopact.RunExpo
 		Step:      3,
 		CreatedAt: createdAt.Add(7 * time.Second),
 		Err:       errors.New("release gate rejected: review status rejected"),
-		Metadata: map[string]any{
+		Metadata: devAgentStepMetadataWith("devagent.release_gate", map[string]any{
 			gopact.EventMetadataFailureKind: string(gopact.FailureVerification),
-		},
+		}),
 	}); err != nil {
 		t.Fatalf("Record(run failed) error = %v", err)
 	}
@@ -1424,6 +1424,7 @@ func selfBootstrapInterruptedReleaseEvents(
 			Step:      3,
 			CreatedAt: createdAt.Add(7 * time.Second),
 			Err:       gopact.Interrupt(pending),
+			Metadata:  devAgentStepMetadata("devagent.release_gate"),
 		},
 	}
 }
@@ -1440,6 +1441,7 @@ func selfBootstrapResumedReleaseEvents(
 		Node:        "devagent.release_gate",
 		Phase:       gopact.StepInterrupted,
 		IDs:         ids,
+		Metadata:    devAgentStepMetadata("devagent.release_gate"),
 		Pending:     &pending,
 		StartedAt:   createdAt.Add(time.Second),
 		CompletedAt: createdAt.Add(time.Second),
@@ -1453,6 +1455,7 @@ func selfBootstrapResumedReleaseEvents(
 			Step:         3,
 			StepSnapshot: &imported,
 			CreatedAt:    createdAt.Add(time.Second),
+			Metadata:     devAgentStepMetadata("devagent.release_gate"),
 		},
 		{
 			Type:      gopact.EventResumeReceived,
@@ -1460,10 +1463,10 @@ func selfBootstrapResumedReleaseEvents(
 			Node:      "devagent.release_gate",
 			Step:      3,
 			CreatedAt: createdAt.Add(2 * time.Second),
-			Metadata: map[string]any{
+			Metadata: devAgentStepMetadataWith("devagent.release_gate", map[string]any{
 				"checkpoint_id": resume.CheckpointID,
 				"interrupt_id":  resume.InterruptID,
-			},
+			}),
 		},
 		devAgentStepEvent(ids, createdAt.Add(3*time.Second), gopact.EventNodeResumed, 4, "devagent.release_gate", gopact.StepRunning),
 		devAgentStepEvent(ids, createdAt.Add(4*time.Second), gopact.EventNodeCompleted, 4, "devagent.release_gate", gopact.StepCompleted),
@@ -1503,6 +1506,7 @@ func selfBootstrapResumedApplyReleaseEvents(
 		Node:        "devagent.apply_patch",
 		Phase:       gopact.StepInterrupted,
 		IDs:         ids,
+		Metadata:    devAgentStepMetadata("devagent.apply_patch"),
 		Pending:     &pending,
 		StartedAt:   createdAt.Add(time.Second),
 		CompletedAt: createdAt.Add(time.Second),
@@ -1516,6 +1520,7 @@ func selfBootstrapResumedApplyReleaseEvents(
 			Step:         3,
 			StepSnapshot: &imported,
 			CreatedAt:    createdAt.Add(time.Second),
+			Metadata:     devAgentStepMetadata("devagent.apply_patch"),
 		},
 		{
 			Type:      gopact.EventResumeReceived,
@@ -1523,10 +1528,10 @@ func selfBootstrapResumedApplyReleaseEvents(
 			Node:      "devagent.apply_patch",
 			Step:      3,
 			CreatedAt: createdAt.Add(2 * time.Second),
-			Metadata: map[string]any{
+			Metadata: devAgentStepMetadataWith("devagent.apply_patch", map[string]any{
 				"checkpoint_id": resume.CheckpointID,
 				"interrupt_id":  resume.InterruptID,
-			},
+			}),
 		},
 		devAgentStepEvent(ids, createdAt.Add(3*time.Second), gopact.EventNodeResumed, 4, "devagent.apply_patch", gopact.StepRunning),
 	}
@@ -1557,9 +1562,9 @@ func selfBootstrapRejectedApplyEvents(ids gopact.RuntimeIDs, createdAt time.Time
 			Step:      3,
 			CreatedAt: createdAt.Add(7 * time.Second),
 			Err:       errors.New(reason),
-			Metadata: map[string]any{
+			Metadata: devAgentStepMetadataWith("devagent.apply_patch", map[string]any{
 				gopact.EventMetadataFailureKind: string(gopact.FailurePolicy),
-			},
+			}),
 		},
 	}
 }
@@ -1662,6 +1667,7 @@ func selfBootstrapApplyApprovalInterrupt(createdAt time.Time) gopact.InterruptRe
 }
 
 func devAgentFailedStepEvent(ids gopact.RuntimeIDs, at time.Time, step int, node string, errText string) gopact.Event {
+	metadata := devAgentStepMetadata(node)
 	return gopact.Event{
 		Type:      gopact.EventNodeFailed,
 		IDs:       ids,
@@ -1669,6 +1675,7 @@ func devAgentFailedStepEvent(ids gopact.RuntimeIDs, at time.Time, step int, node
 		Step:      step,
 		CreatedAt: at,
 		Err:       errors.New(errText),
+		Metadata:  copyDevAgentMetadata(metadata),
 		StepSnapshot: &gopact.StepSnapshot{
 			ID:          "devagent:" + ids.RunID + ":step:" + node,
 			Step:        step,
@@ -1676,6 +1683,7 @@ func devAgentFailedStepEvent(ids gopact.RuntimeIDs, at time.Time, step int, node
 			Phase:       gopact.StepFailed,
 			IDs:         ids,
 			Error:       errText,
+			Metadata:    copyDevAgentMetadata(metadata),
 			StartedAt:   at,
 			CompletedAt: at,
 		},
@@ -1689,12 +1697,14 @@ func devAgentInterruptedStepEvent(
 	node string,
 	pending gopact.InterruptRecord,
 ) gopact.Event {
+	metadata := devAgentStepMetadata(node)
 	return gopact.Event{
 		Type:      gopact.EventInterrupted,
 		IDs:       ids,
 		Node:      node,
 		Step:      step,
 		CreatedAt: at,
+		Metadata:  copyDevAgentMetadata(metadata),
 		StepSnapshot: &gopact.StepSnapshot{
 			ID:          "devagent:" + ids.RunID + ":step:" + node,
 			Step:        step,
@@ -1702,6 +1712,7 @@ func devAgentInterruptedStepEvent(
 			Phase:       gopact.StepInterrupted,
 			IDs:         ids,
 			Pending:     &pending,
+			Metadata:    copyDevAgentMetadata(metadata),
 			StartedAt:   at,
 			CompletedAt: at,
 		},
@@ -1716,12 +1727,14 @@ func devAgentStepEvent(
 	node string,
 	phase gopact.StepPhase,
 ) gopact.Event {
+	metadata := devAgentStepMetadata(node)
 	snapshot := &gopact.StepSnapshot{
 		ID:        "devagent:" + ids.RunID + ":step:" + node,
 		Step:      step,
 		Node:      node,
 		Phase:     phase,
 		IDs:       ids,
+		Metadata:  copyDevAgentMetadata(metadata),
 		StartedAt: at,
 	}
 	if phase != gopact.StepRunning {
@@ -1733,7 +1746,55 @@ func devAgentStepEvent(
 		Node:         node,
 		Step:         step,
 		CreatedAt:    at,
+		Metadata:     copyDevAgentMetadata(metadata),
 		StepSnapshot: snapshot,
+	}
+}
+
+func devAgentStepMetadata(node string) map[string]any {
+	switch node {
+	case "devagent.analyze":
+		return map[string]any{
+			"action": string(ActionAnalyze),
+			"mode":   string(ModeAnalyze),
+		}
+	case "devagent.plan":
+		return map[string]any{
+			"action": string(ActionProposePatch),
+			"mode":   string(ModePlan),
+		}
+	case "devagent.apply_patch":
+		return map[string]any{
+			"action": string(ActionApplyPatch),
+			"mode":   string(ModeWrite),
+		}
+	case "devagent.release_gate":
+		return map[string]any{
+			"action": string(ActionRelease),
+			"mode":   string(ModeWrite),
+		}
+	default:
+		return nil
+	}
+}
+
+func devAgentStepMetadataWith(node string, extra map[string]any) map[string]any {
+	metadata := copyDevAgentMetadata(devAgentStepMetadata(node))
+	for key, value := range extra {
+		if metadata == nil {
+			metadata = map[string]any{}
+		}
+		metadata[key] = value
+	}
+	return metadata
+}
+
+func devAgentFramePattern(eventType gopact.EventType, node string, step int) gopacttest.TrajectoryFramePattern {
+	return gopacttest.TrajectoryFramePattern{
+		Type:     eventType,
+		Node:     node,
+		Step:     intPtr(step),
+		Metadata: devAgentStepMetadata(node),
 	}
 }
 

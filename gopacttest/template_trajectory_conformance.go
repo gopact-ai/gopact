@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/gopact-ai/gopact"
@@ -12,10 +13,12 @@ import (
 var ErrTemplateTrajectoryConformanceFailed = errors.New("gopacttest: template trajectory conformance failed")
 
 // TrajectoryFramePattern matches a compact event frame in a template trajectory.
+// Metadata is an optional subset matcher against the original event metadata.
 type TrajectoryFramePattern struct {
-	Type gopact.EventType
-	Node string
-	Step *int
+	Type     gopact.EventType
+	Node     string
+	Step     *int
+	Metadata map[string]any
 }
 
 // TemplateTrajectoryConformanceHarness describes one template trajectory under test.
@@ -54,7 +57,7 @@ func CheckTemplateTrajectoryConformance(ctx context.Context, harness TemplateTra
 		checkTemplateTrajectoryRuntimeIdentity(events),
 		checkTemplateTrajectoryTerminalEvent(events),
 		checkTemplateTrajectoryRequiredEventTypes(events, harness.RequiredEventTypes),
-		checkTemplateTrajectoryRequiredFrames(EventFrames(events), harness.RequiredFrames),
+		checkTemplateTrajectoryRequiredFrames(events, harness.RequiredFrames),
 	}
 }
 
@@ -141,13 +144,13 @@ func checkTemplateTrajectoryRequiredEventTypes(events []gopact.Event, required [
 	return passedTemplateTrajectoryConformance("required-event-types")
 }
 
-func checkTemplateTrajectoryRequiredFrames(frames []TrajectoryFrame, required []TrajectoryFramePattern) TemplateTrajectoryConformanceResult {
+func checkTemplateTrajectoryRequiredFrames(events []gopact.Event, required []TrajectoryFramePattern) TemplateTrajectoryConformanceResult {
 	if len(required) == 0 {
 		return passedTemplateTrajectoryConformance("required-frames")
 	}
 	next := 0
-	for _, frame := range frames {
-		if next < len(required) && trajectoryFrameMatchesPattern(frame, required[next]) {
+	for _, event := range events {
+		if next < len(required) && trajectoryEventMatchesPattern(event, required[next]) {
 			next++
 		}
 	}
@@ -157,15 +160,21 @@ func checkTemplateTrajectoryRequiredFrames(frames []TrajectoryFrame, required []
 	return passedTemplateTrajectoryConformance("required-frames")
 }
 
-func trajectoryFrameMatchesPattern(frame TrajectoryFrame, pattern TrajectoryFramePattern) bool {
-	if pattern.Type == "" || frame.Type != pattern.Type {
+func trajectoryEventMatchesPattern(event gopact.Event, pattern TrajectoryFramePattern) bool {
+	if pattern.Type == "" || event.Type != pattern.Type {
 		return false
 	}
-	if pattern.Node != "" && frame.Node != pattern.Node {
+	if pattern.Node != "" && event.Node != pattern.Node {
 		return false
 	}
-	if pattern.Step != nil && frame.Step != *pattern.Step {
+	if pattern.Step != nil && event.Step != *pattern.Step {
 		return false
+	}
+	for key, want := range pattern.Metadata {
+		got, ok := event.Metadata[key]
+		if !ok || !reflect.DeepEqual(got, want) {
+			return false
+		}
 	}
 	return true
 }

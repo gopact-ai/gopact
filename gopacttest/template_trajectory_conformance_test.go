@@ -69,6 +69,75 @@ func TestCheckTemplateTrajectoryConformanceReportsMissingRequiredFrame(t *testin
 	}
 }
 
+func TestCheckTemplateTrajectoryConformancePassesRequiredFrameMetadata(t *testing.T) {
+	step := 3
+	harness := TemplateTrajectoryConformanceHarness{
+		Name: "devagent",
+		Events: []gopact.Event{
+			{Type: gopact.EventRunStarted, IDs: gopact.RuntimeIDs{RunID: "run-1"}},
+			{
+				Type: gopact.EventNodeCompleted,
+				Node: "devagent.release_gate",
+				Step: 3,
+				Metadata: map[string]any{
+					"action": "release",
+					"mode":   "write",
+				},
+			},
+			{Type: gopact.EventRunCompleted, IDs: gopact.RuntimeIDs{RunID: "run-1"}},
+		},
+		RequiredFrames: []TrajectoryFramePattern{
+			{
+				Type: gopact.EventNodeCompleted,
+				Node: "devagent.release_gate",
+				Step: &step,
+				Metadata: map[string]any{
+					"action": "release",
+				},
+			},
+		},
+	}
+
+	results := CheckTemplateTrajectoryConformance(context.Background(), harness)
+	if failed := failedTemplateTrajectoryConformanceCases(results); len(failed) > 0 {
+		t.Fatalf("CheckTemplateTrajectoryConformance() failed cases: %v", failed)
+	}
+}
+
+func TestCheckTemplateTrajectoryConformanceReportsRequiredFrameMetadataDrift(t *testing.T) {
+	step := 3
+	harness := TemplateTrajectoryConformanceHarness{
+		Name: "devagent",
+		Events: []gopact.Event{
+			{Type: gopact.EventRunStarted, IDs: gopact.RuntimeIDs{RunID: "run-1"}},
+			{
+				Type: gopact.EventNodeCompleted,
+				Node: "devagent.release_gate",
+				Step: 3,
+				Metadata: map[string]any{
+					"action": "plan",
+				},
+			},
+			{Type: gopact.EventRunCompleted, IDs: gopact.RuntimeIDs{RunID: "run-1"}},
+		},
+		RequiredFrames: []TrajectoryFramePattern{
+			{
+				Type: gopact.EventNodeCompleted,
+				Node: "devagent.release_gate",
+				Step: &step,
+				Metadata: map[string]any{
+					"action": "release",
+				},
+			},
+		},
+	}
+
+	results := CheckTemplateTrajectoryConformance(context.Background(), harness)
+	if !hasFailedTemplateTrajectoryConformanceCase(results, "required-frames") {
+		t.Fatalf("CheckTemplateTrajectoryConformance() did not report required frame metadata drift: %+v", results)
+	}
+}
+
 func TestCheckTemplateTrajectoryConformanceReportsMixedRuntimeIdentity(t *testing.T) {
 	harness := TemplateTrajectoryConformanceHarness{
 		Name: "react",
