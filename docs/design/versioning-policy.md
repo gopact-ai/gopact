@@ -22,6 +22,8 @@ root public API 的稳定性以 `public-api-boundary.json` 为准：
 - `experimental`：`v1` 前可以调整；`v1` 后如仍保留，必须写明兼容窗口。
 - `transitional`：必须在 `v1` 前稳定、移出 core、降级为 reference-only，或删除。
 
+`v1-migration-plan.json` 是 transitional public API 和主仓 adapter/template 外迁的逐项执行清单。它必须覆盖所有 transitional root API group，以及所有 `repository-boundary.json` 中的 `move-to-adapter-repo`、`move-to-template-repo` 和 `remove-before-v1` 条目。
+
 稳定性状态变化本身就是 public API 变更，必须更新 deprecation policy、migration guide 和 examples。
 
 ## Release Gates
@@ -32,6 +34,7 @@ root public API 的稳定性以 `public-api-boundary.json` 为准：
 - `.golangci.yml` 中 required linters/formatters 与 manifest 一致；
 - public examples 可运行；
 - root public API 已被 `public-api-boundary.json` 覆盖；
+- transitional public API 和需要外迁/删除的主仓 adapter/template 已被 `v1-migration-plan.json` 覆盖；
 - 关键 root facade 已被 `public-api-examples.json` 覆盖；
 - 若发生废弃、移动或删除，必须更新 `deprecation-policy.md` 和 `migration-guide.md`；
 - 若发生可序列化 schema 变化，必须说明 `RunExport`、`StepExport`、`CheckpointRecord`、resume payload、verification report 的兼容性。

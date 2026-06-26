@@ -4,9 +4,12 @@
 
 版本策略见 [versioning-policy.md](versioning-policy.md)。迁移说明必须服从 semver、release gate、schema version 和 extension compatibility 规则。
 
+v1 前的具体收敛清单见 [v1-migration-plan.json](v1-migration-plan.json)。该清单把需要外迁或删除的主仓路径、外部仓库目标、transitional root API 的目标状态和 release gate 绑定到机器可测条目。
+
 ## Compatibility Promise
 
 - root public API 的稳定性以 `docs/design/public-api-boundary.json` 为准。
+- v1 前 root public API 和主仓 adapter/template 收敛动作以 `docs/design/v1-migration-plan.json` 为准。
 - `stable` API 只能按 deprecation policy 迁移，不能静默删除或改变语义。
 - `experimental` API 可以调整，但必须在 release note、migration note 和示例中说明。
 - `transitional` API 默认要求在 v1 前移动、删除或降级为 reference-only。
