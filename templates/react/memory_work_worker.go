@@ -102,6 +102,14 @@ func WithDeferredMemoryWorkScheduleDecider(decider DeferredMemoryWorkScheduleDec
 	}
 }
 
+// WithDeferredMemoryWorkRecorder records both worker pass reports and schedule decisions.
+func WithDeferredMemoryWorkRecorder(recorder *gopact.VerificationRecorder) DeferredMemoryWorkWorkerOption {
+	return func(w *DeferredMemoryWorkWorker) {
+		w.reportRecorder = recorder
+		w.recorder = recorder
+	}
+}
+
 // WithDeferredMemoryWorkScheduleRecorder records schedule decisions as verification evidence.
 func WithDeferredMemoryWorkScheduleRecorder(recorder *gopact.VerificationRecorder) DeferredMemoryWorkWorkerOption {
 	return func(w *DeferredMemoryWorkWorker) {

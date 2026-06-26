@@ -168,6 +168,45 @@ func TestDeferredMemoryWorkWorkerRunOnceRecordsFailedPassBeforeRetrySchedule(t *
 	}
 }
 
+func TestDeferredMemoryWorkWorkerRunOnceUnifiedRecorderCapturesPassAndSchedule(t *testing.T) {
+	queue := &fakeDeferredMemoryWorkQueue{
+		job: DeferredMemoryWorkJob{
+			ID:          "job-1",
+			Export:      deferredMemoryWorkExport(twoPendingMemoryEffects()),
+			Attempt:     1,
+			MaxAttempts: 3,
+		},
+		hasJob: true,
+	}
+	recorder := gopact.NewVerificationRecorder()
+	worker, err := NewDeferredMemoryWorkWorker(queue, failingSecondMemoryEffectExecutor(),
+		WithDeferredMemoryWorkRecorder(recorder),
+		WithDeferredMemoryWorkScheduleDecider(DeferredMemoryWorkScheduleDeciderFunc(func(_ context.Context, request DeferredMemoryWorkScheduleRequest) (DeferredMemoryWorkScheduleDecision, error) {
+			return DeferredMemoryWorkScheduleDecision{
+				Action:      DeferredMemoryWorkScheduleRetry,
+				NextAttempt: request.Attempt + 1,
+				Reason:      "temporary store outage",
+			}, nil
+		})),
+	)
+	if err != nil {
+		t.Fatalf("NewDeferredMemoryWorkWorker() error = %v", err)
+	}
+
+	if _, err := worker.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce() error = %v, want retry scheduled without terminal error", err)
+	}
+
+	checks := recorder.Checks()
+	if len(checks) != 2 {
+		t.Fatalf("recorded checks = %+v, want memory replay and schedule evidence", checks)
+	}
+	if checks[0].Evidence[0].Type != memory.VerificationEvidenceTypeMemoryReplay ||
+		checks[1].Evidence[0].Type != VerificationEvidenceTypeDeferredMemoryWorkSchedule {
+		t.Fatalf("recorded checks = %+v, want replay evidence before schedule evidence", checks)
+	}
+}
+
 func TestDeferredMemoryWorkWorkerRunOnceUsesDefaultRetryDecider(t *testing.T) {
 	queue := NewMemoryDeferredMemoryWorkQueue(DeferredMemoryWorkJob{
 		ID:          "job-1",
