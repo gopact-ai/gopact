@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gopact-ai/gopact"
+	"github.com/gopact-ai/gopact/memory"
 )
 
 var (
@@ -79,15 +80,16 @@ func (f DeferredMemoryWorkScheduleDeciderFunc) DecideDeferredMemoryWorkSchedule(
 
 // DeferredMemoryWorkWorker consumes host-queued deferred memory jobs one at a time.
 type DeferredMemoryWorkWorker struct {
-	queue        DeferredMemoryWorkQueue
-	executor     gopact.EffectReplayExecutor
-	decider      DeferredMemoryWorkScheduleDecider
-	recorder     *gopact.VerificationRecorder
-	leaseBackend gopact.LeaseBackend
-	leaseRequest gopact.LeaseRequest
-	useLease     bool
-	renewLease   bool
-	renewEvery   time.Duration
+	queue          DeferredMemoryWorkQueue
+	executor       gopact.EffectReplayExecutor
+	decider        DeferredMemoryWorkScheduleDecider
+	recorder       *gopact.VerificationRecorder
+	reportRecorder *gopact.VerificationRecorder
+	leaseBackend   gopact.LeaseBackend
+	leaseRequest   gopact.LeaseRequest
+	useLease       bool
+	renewLease     bool
+	renewEvery     time.Duration
 }
 
 // DeferredMemoryWorkWorkerOption configures DeferredMemoryWorkWorker.
@@ -104,6 +106,13 @@ func WithDeferredMemoryWorkScheduleDecider(decider DeferredMemoryWorkScheduleDec
 func WithDeferredMemoryWorkScheduleRecorder(recorder *gopact.VerificationRecorder) DeferredMemoryWorkWorkerOption {
 	return func(w *DeferredMemoryWorkWorker) {
 		w.recorder = recorder
+	}
+}
+
+// WithDeferredMemoryWorkReportRecorder records each dequeued worker pass as memory replay verification evidence.
+func WithDeferredMemoryWorkReportRecorder(recorder *gopact.VerificationRecorder) DeferredMemoryWorkWorkerOption {
+	return func(w *DeferredMemoryWorkWorker) {
+		w.reportRecorder = recorder
 	}
 }
 
@@ -253,6 +262,9 @@ func (w *DeferredMemoryWorkWorker) RunOnce(ctx context.Context) (result Deferred
 	}
 	report, runErr := RunDeferredMemoryWork(ctx, job.Export, w.executor)
 	result.Report = report
+	if err := w.recordDeferredMemoryWorkReport(report); err != nil {
+		return result, err
+	}
 	if report.Status != DeferredMemoryWorkFailed {
 		if err := ensureDeferredMemoryWorkLease(ctx, lease); err != nil {
 			return result, err
@@ -292,6 +304,17 @@ func (w *DeferredMemoryWorkWorker) RunOnce(ctx context.Context) (result Deferred
 		}
 	}
 	return result, deferredMemoryWorkScheduleTerminalError(report, decision)
+}
+
+func (w *DeferredMemoryWorkWorker) recordDeferredMemoryWorkReport(report DeferredMemoryWorkReport) error {
+	if w.reportRecorder == nil {
+		return nil
+	}
+	err := RecordDeferredMemoryWorkCheck(w.reportRecorder, report)
+	if errors.Is(err, memory.ErrReplayVerificationFailed) {
+		return nil
+	}
+	return err
 }
 
 func (w *DeferredMemoryWorkWorker) applyScheduleDecision(ctx context.Context, job DeferredMemoryWorkJob, report DeferredMemoryWorkReport, decision DeferredMemoryWorkScheduleDecision, lease *deferredMemoryWorkLeaseSession) error {
