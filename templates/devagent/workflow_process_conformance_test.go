@@ -84,6 +84,20 @@ func TestCheckWorkflowProcessConformanceReportsWorkflowCountDrift(t *testing.T) 
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsWorkflowTaskInputDrift(t *testing.T) {
+	records := workflowProcessConformanceFixture(t)
+	input, ok := records.Task.Input.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow input = %T, want map", records.Task.Input)
+	}
+	input["action_count"] = 1
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "workflow-task-io") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report workflow task input drift: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsChildSummaryCountDrift(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	output, ok := records.Task.Output.(map[string]any)
@@ -181,6 +195,20 @@ func TestCheckWorkflowProcessConformanceReportsChildTaskOutputDrift(t *testing.T
 	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
 	if !hasFailedWorkflowProcessConformanceCase(results, "child-task-io") {
 		t.Fatalf("CheckWorkflowProcessConformance() did not report child task output drift: %+v", results)
+	}
+}
+
+func TestCheckWorkflowProcessConformanceReportsChildTaskReasonCountDrift(t *testing.T) {
+	records := workflowProcessConformanceRejectedFixture(t)
+	input, ok := records.Tasks[1].Input.(map[string]any)
+	if !ok {
+		t.Fatalf("child task input = %T, want map", records.Tasks[1].Input)
+	}
+	input["reason_count"] = 0
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "child-task-io") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report child task reason count drift: %+v", results)
 	}
 }
 
