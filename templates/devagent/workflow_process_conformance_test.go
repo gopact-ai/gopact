@@ -138,6 +138,24 @@ func TestCheckWorkflowProcessConformanceReportsChildSummaryActionStatusDrift(t *
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsChildSummaryReasonCountDrift(t *testing.T) {
+	records := workflowProcessConformanceRejectedFixture(t)
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow output = %T, want map", records.Task.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[1]["reason_count"] = 0
+
+	results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+	if !hasFailedWorkflowProcessConformanceCase(results, "workflow-summary") {
+		t.Fatalf("CheckWorkflowProcessConformance() did not report child summary reason count drift: %+v", results)
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsReleaseSummaryBoundaryDrift(t *testing.T) {
 	for _, tt := range []struct {
 		name string

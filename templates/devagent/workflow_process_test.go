@@ -267,6 +267,7 @@ func TestBuildWorkflowProcessRecordsSummarizesRejectedChildAction(t *testing.T) 
 		rejected["mode"] != string(ModeWrite) ||
 		rejected["action"] != string(ActionApplyPatch) ||
 		rejected["action_status"] != string(ActionRejected) ||
+		rejected["reason_count"] != 1 ||
 		rejected["input_count"] != 1 ||
 		rejected["intervention_count"] != 0 {
 		t.Fatalf("rejected action summary = %+v, want failed write/apply_patch summary", rejected)

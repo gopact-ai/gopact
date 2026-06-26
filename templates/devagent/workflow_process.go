@@ -209,6 +209,9 @@ func workflowActionSummaries(records []ProcessRecords) []map[string]any {
 		if actionStatus, ok := record.Task.Metadata["action_status"].(string); ok && actionStatus != "" {
 			summary["action_status"] = actionStatus
 		}
+		if reasonCount, ok := workflowProcessOutputReasonCount(record.Task.Output); ok {
+			summary["reason_count"] = reasonCount
+		}
 		if action, ok := summary["action"].(string); ok && ActionKind(action) == ActionRelease {
 			if id := workflowReleaseGateInputID(record.Inputs); id != "" {
 				summary["release_gate_input_id"] = id
@@ -220,6 +223,21 @@ func workflowActionSummaries(records []ProcessRecords) []map[string]any {
 		out = append(out, summary)
 	}
 	return out
+}
+
+func workflowProcessOutputReasonCount(output any) (int, bool) {
+	value, ok := output.(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	switch reasons := value["reasons"].(type) {
+	case []string:
+		return len(reasons), len(reasons) > 0
+	case []any:
+		return len(reasons), len(reasons) > 0
+	default:
+		return 0, false
+	}
 }
 
 func workflowReleaseGateInputID(records []gopact.InputRecord) string {
