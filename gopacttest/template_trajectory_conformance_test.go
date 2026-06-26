@@ -69,6 +69,33 @@ func TestCheckTemplateTrajectoryConformanceReportsMissingRequiredFrame(t *testin
 	}
 }
 
+func TestCheckTemplateTrajectoryConformanceReportsMixedRuntimeIdentity(t *testing.T) {
+	harness := TemplateTrajectoryConformanceHarness{
+		Name: "react",
+		Events: []gopact.Event{
+			{
+				Type: gopact.EventRunStarted,
+				IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+			},
+			{
+				Type: gopact.EventNodeCompleted,
+				Node: "call_model",
+				Step: 1,
+				IDs:  gopact.RuntimeIDs{RunID: "run-2", ThreadID: "thread-1"},
+			},
+			{
+				Type: gopact.EventRunCompleted,
+				IDs:  gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+			},
+		},
+	}
+
+	results := CheckTemplateTrajectoryConformance(context.Background(), harness)
+	if !hasFailedTemplateTrajectoryConformanceCase(results, "runtime-identity") {
+		t.Fatalf("CheckTemplateTrajectoryConformance() did not report mixed runtime identity: %+v", results)
+	}
+}
+
 func failedTemplateTrajectoryConformanceCases(results []TemplateTrajectoryConformanceResult) []string {
 	var failed []string
 	for _, result := range results {

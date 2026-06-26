@@ -51,6 +51,7 @@ func CheckTemplateTrajectoryConformance(ctx context.Context, harness TemplateTra
 		checkTemplateTrajectoryName(harness.Name),
 		checkTemplateTrajectoryRunExport(harness.RunExport),
 		checkTemplateTrajectoryHasEvents(events),
+		checkTemplateTrajectoryRuntimeIdentity(events),
 		checkTemplateTrajectoryTerminalEvent(events),
 		checkTemplateTrajectoryRequiredEventTypes(events, harness.RequiredEventTypes),
 		checkTemplateTrajectoryRequiredFrames(EventFrames(events), harness.RequiredFrames),
@@ -90,6 +91,29 @@ func checkTemplateTrajectoryHasEvents(events []gopact.Event) TemplateTrajectoryC
 		return failedTemplateTrajectoryConformance("has-events", errors.New("trajectory has no events"))
 	}
 	return passedTemplateTrajectoryConformance("has-events")
+}
+
+func checkTemplateTrajectoryRuntimeIdentity(events []gopact.Event) TemplateTrajectoryConformanceResult {
+	seen := map[string]string{}
+	for i, event := range events {
+		for _, field := range templateTrajectoryRuntimeIdentityFields(event.RuntimeIDs()) {
+			if field.value == "" {
+				continue
+			}
+			want, ok := seen[field.name]
+			if !ok {
+				seen[field.name] = field.value
+				continue
+			}
+			if field.value != want {
+				return failedTemplateTrajectoryConformance(
+					"runtime-identity",
+					fmt.Errorf("event %d %s = %q, want %q", i, field.name, field.value, want),
+				)
+			}
+		}
+	}
+	return passedTemplateTrajectoryConformance("runtime-identity")
 }
 
 func checkTemplateTrajectoryTerminalEvent(events []gopact.Event) TemplateTrajectoryConformanceResult {
@@ -144,6 +168,26 @@ func trajectoryFrameMatchesPattern(frame TrajectoryFrame, pattern TrajectoryFram
 		return false
 	}
 	return true
+}
+
+func templateTrajectoryRuntimeIdentityFields(ids gopact.RuntimeIDs) []struct {
+	name  string
+	value string
+} {
+	return []struct {
+		name  string
+		value string
+	}{
+		{name: "user_id", value: ids.UserID},
+		{name: "session_id", value: ids.SessionID},
+		{name: "thread_id", value: ids.ThreadID},
+		{name: "run_id", value: ids.RunID},
+		{name: "agent_id", value: ids.AgentID},
+		{name: "app_id", value: ids.AppID},
+		{name: "call_id", value: ids.CallID},
+		{name: "parent_call_id", value: ids.ParentCallID},
+		{name: "trace_id", value: ids.TraceID},
+	}
 }
 
 func isTemplateTrajectoryTerminalEvent(eventType gopact.EventType) bool {
