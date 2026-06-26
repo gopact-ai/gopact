@@ -107,11 +107,11 @@
           "scope": "core-ci",
           "repository": "gopact-ai/gopact",
           "workflow": "ci",
-          "run_id": 28267609577,
+          "run_id": 28268698213,
           "head_branch": "main",
-          "head_sha": "9778307dab6b40c707f8b657b46fda8c751f97c5",
+          "head_sha": "3e5a4d1759f26b0e6fff34238b532ebed56caf49",
           "conclusion": "success",
-          "observed_at": "2026-06-27T06:04:28+08:00",
+          "observed_at": "2026-06-27T06:30:39+08:00",
           "required_gates": [
             "whitespace",
             "unit",
@@ -122,7 +122,7 @@
             "examples",
             "security"
           ],
-          "notes": "GitHub Actions run 28267609577 completed successfully on main after binding v1 release gates to required_check_ids and required_ci_gates; run steps Check whitespace, Test, Race, Vet, Lint, Coverage, Examples, and Security were all success."
+          "notes": "GitHub Actions run 28268698213 completed successfully on main after requiring gopacttest verification evidence conformance required_check_ids to reference passed checks; run steps Check whitespace, Test, Race, Vet, Lint, Coverage, Examples, and Security were all success."
         },
         {
           "type": "remote_extension_ci_blocker",
