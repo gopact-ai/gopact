@@ -66,8 +66,8 @@ func TestRecordReleaseBundleCheckRecordsPassedBundleEvidence(t *testing.T) {
 		metadata["process_intervention_count"] != 1 {
 		t.Fatalf("evidence metadata = %+v, want release bundle metadata", metadata)
 	}
-	if _, ok := metadata["release"]; ok {
-		t.Fatalf("evidence metadata = %+v, did not expect caller metadata", metadata)
+	if metadata["release"] != "m5" {
+		t.Fatalf("evidence metadata = %+v, want copied release metadata", metadata)
 	}
 }
 
@@ -91,6 +91,15 @@ func TestRecordReleaseBundleCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if check.Metadata["release"] != "m5" {
 		t.Fatalf("check metadata = %+v, want non-conflicting caller metadata preserved", check.Metadata)
+	}
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["gate_status"] != string(GatePassed) ||
+		evidenceMetadata["reviewer"] != "reviewer-1" {
+		t.Fatalf("evidence metadata = %+v, want canonical release bundle fields preserved", evidenceMetadata)
+	}
+	if evidenceMetadata["release"] != "m5" {
+		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
 	}
 }
 
@@ -257,6 +266,9 @@ func TestRecordReleaseBundleCheckCapturesObservedWorkflowRelease(t *testing.T) {
 		metadata["review_intervention_id"] != "devagent:run-self-bootstrap-1:review:human" ||
 		metadata["max_entropy_severity"] != string(gopact.EntropySeverityLow) {
 		t.Fatalf("evidence metadata = %+v, want workflow release metadata", metadata)
+	}
+	if metadata["release"] != "self-bootstrap" {
+		t.Fatalf("evidence metadata = %+v, want caller release metadata", metadata)
 	}
 }
 
