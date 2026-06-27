@@ -105,6 +105,21 @@ func TestRecordRunExportCheckPreservesCanonicalMetadata(t *testing.T) {
 	if check.Metadata["source"] != "react" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", check.Metadata)
 	}
+
+	evidence := check.Evidence[0]
+	if evidence.Metadata["ref"] != "run-1" ||
+		evidence.Metadata["outcome"] != string(RunCompleted) ||
+		evidence.Metadata["event_count"] != 1 ||
+		evidence.Metadata["step_count"] != 1 ||
+		evidence.Metadata["run_id"] != "run-1" ||
+		evidence.Metadata["thread_id"] != "thread-1" ||
+		evidence.Metadata["user_id"] != "user-1" ||
+		evidence.Metadata["run_export_version"] != RunExportVersion {
+		t.Fatalf("evidence metadata = %+v, want canonical run export fields preserved", evidence.Metadata)
+	}
+	if evidence.Metadata["source"] != "react" {
+		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidence.Metadata)
+	}
 }
 
 func TestRecordRunExportCheckRecordsFailedCheckBeforeReturningError(t *testing.T) {
