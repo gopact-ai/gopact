@@ -788,6 +788,68 @@ func TestRemoteA2AToolStreamPolicyDenySkipsStreamAndReturnsPolicyEvents(t *testi
 	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_stream_policy_deny.golden.json", events)
 }
 
+func TestRemoteA2AToolStreamPolicyReviewReturnsApprovalInterrupt(t *testing.T) {
+	ctx := context.Background()
+	streamCalled := false
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		StreamFunc: func(ctx context.Context, _ a2a.Task) iter.Seq2[a2a.TaskEvent, error] {
+			streamCalled = true
+			return func(_ func(a2a.TaskEvent, error) bool) {}
+		},
+	}
+	policy := gopact.PolicyFunc(func(ctx context.Context, req gopact.PolicyRequest) (gopact.PolicyDecision, error) {
+		if req.Action != gopact.PolicyActionSend {
+			t.Fatalf("action = %q, want %q", req.Action, gopact.PolicyActionSend)
+		}
+		input, ok := req.Input.(A2APolicyInput)
+		if !ok {
+			t.Fatalf("policy input type = %T, want A2APolicyInput", req.Input)
+		}
+		if input.AgentName != "planner" || input.Task.Input != "write tests" {
+			t.Fatalf("policy input = %+v, want planner stream task", input)
+		}
+		return gopact.PolicyDecision{
+			Action: gopact.PolicyReview,
+			Reason: "remote stream needs approval",
+			Metadata: map[string]any{
+				"risk": "medium",
+			},
+		}, nil
+	})
+	tool, err := NewA2A(remote, WithPolicy(policy))
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	events, err := collectEvents(tool.Stream(gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{
+		RunID:  "run-1",
+		CallID: "parent-call",
+	}), json.RawMessage(`{"input":"write tests"}`)))
+	if !errors.Is(err, gopact.ErrInterrupted) {
+		t.Fatalf("Stream() error = %v, want interrupt", err)
+	}
+	var interruptErr *gopact.InterruptError
+	if !errors.As(err, &interruptErr) {
+		t.Fatalf("Stream() error = %T, want *InterruptError", err)
+	}
+	if interruptErr.Record.Type != gopact.InterruptApproval || interruptErr.Record.RequiredBy != string(gopact.PolicyBoundaryA2A) {
+		t.Fatalf("interrupt record = %+v, want A2A approval", interruptErr.Record)
+	}
+	if interruptErr.Record.Metadata["policy_request_action"] != gopact.PolicyActionSend {
+		t.Fatalf("interrupt metadata = %+v, want send action", interruptErr.Record.Metadata)
+	}
+	if streamCalled {
+		t.Fatal("remote Stream should not run before approval")
+	}
+	if len(events) != 2 ||
+		events[0].Type != gopact.EventPolicyRequested ||
+		events[1].Type != gopact.EventPolicyDecided {
+		t.Fatalf("Stream() events = %+v, want policy requested/decided", events)
+	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_stream_policy_review.golden.json", events)
+}
+
 func TestRemoteA2AToolCancelTaskReturnsCanceledEvent(t *testing.T) {
 	ctx := context.Background()
 	var canceledTaskID string
@@ -904,6 +966,68 @@ func TestRemoteA2AToolCancelPolicyDenySkipsCancelAndReturnsPolicyEvents(t *testi
 		t.Fatalf("result events = %+v, want policy requested/decided", result.Events)
 	}
 	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_cancel_policy_deny.golden.json", result.Events)
+}
+
+func TestRemoteA2AToolCancelPolicyReviewSkipsCancelAndReturnsApprovalInterrupt(t *testing.T) {
+	ctx := context.Background()
+	cancelCalled := false
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		CancelFunc: func(ctx context.Context, taskID string) error {
+			cancelCalled = true
+			return nil
+		},
+	}
+	policy := gopact.PolicyFunc(func(ctx context.Context, req gopact.PolicyRequest) (gopact.PolicyDecision, error) {
+		if req.Boundary != gopact.PolicyBoundaryA2A {
+			t.Fatalf("boundary = %q, want %q", req.Boundary, gopact.PolicyBoundaryA2A)
+		}
+		if req.Action != gopact.PolicyActionCancel {
+			t.Fatalf("action = %q, want %q", req.Action, gopact.PolicyActionCancel)
+		}
+		input, ok := req.Input.(A2ACancelPolicyInput)
+		if !ok {
+			t.Fatalf("policy input type = %T, want A2ACancelPolicyInput", req.Input)
+		}
+		if input.AgentName != "planner" || input.TaskID != "task-1" {
+			t.Fatalf("policy input = %+v, want planner task cancel", input)
+		}
+		return gopact.PolicyDecision{
+			Action: gopact.PolicyReview,
+			Reason: "cancel needs approval",
+			Metadata: map[string]any{
+				"risk": "medium",
+			},
+		}, nil
+	})
+	tool, err := NewA2A(remote, WithPolicy(policy))
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	result, err := tool.Cancel(gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{RunID: "run-1", CallID: "parent-call"}), "task-1")
+	if !errors.Is(err, gopact.ErrInterrupted) {
+		t.Fatalf("Cancel() error = %v, want interrupt", err)
+	}
+	var interruptErr *gopact.InterruptError
+	if !errors.As(err, &interruptErr) {
+		t.Fatalf("Cancel() error = %T, want *InterruptError", err)
+	}
+	if interruptErr.Record.Type != gopact.InterruptApproval || interruptErr.Record.RequiredBy != string(gopact.PolicyBoundaryA2A) {
+		t.Fatalf("interrupt record = %+v, want A2A approval", interruptErr.Record)
+	}
+	if interruptErr.Record.Metadata["policy_request_action"] != gopact.PolicyActionCancel {
+		t.Fatalf("interrupt metadata = %+v, want cancel action", interruptErr.Record.Metadata)
+	}
+	if cancelCalled {
+		t.Fatal("remote Cancel should not run before approval")
+	}
+	if len(result.Events) != 2 ||
+		result.Events[0].Type != gopact.EventPolicyRequested ||
+		result.Events[1].Type != gopact.EventPolicyDecided {
+		t.Fatalf("result events = %+v, want policy requested/decided", result.Events)
+	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_cancel_policy_review.golden.json", result.Events)
 }
 
 func TestNewA2ARejectsInvalidAgent(t *testing.T) {
