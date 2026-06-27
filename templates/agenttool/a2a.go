@@ -167,11 +167,11 @@ func (t *A2ATool) Invoke(ctx context.Context, args json.RawMessage) (gopact.Tool
 	}
 	result, sendErr := t.agent.Send(sendCtx, task)
 	if sendErr != nil {
-		failed := a2aEvent(gopact.EventA2ATaskFailed, ids, task.ID, t.card.Name, nil, nil, sendErr)
+		failed := a2aEvent(gopact.EventA2ATaskFailed, ids, task.ID, t.card.Name, authMetadata, nil, sendErr)
 		events = append(events, failed)
 		toolResult := gopact.ToolResult{
 			Events:   events,
-			Metadata: a2aMetadata(t.card.Name, ids, task.ID, nil),
+			Metadata: a2aMetadata(t.card.Name, ids, task.ID, authMetadata),
 		}
 		return toolResult, fmt.Errorf("agenttool: send a2a task %q to agent %q: %w", task.ID, t.card.Name, sendErr)
 	}
@@ -181,13 +181,14 @@ func (t *A2ATool) Invoke(ctx context.Context, args json.RawMessage) (gopact.Tool
 		taskID = task.ID
 	}
 	artifacts := copyArtifactRefs(result.Artifacts)
-	completed := a2aEvent(gopact.EventA2ATaskCompleted, ids, taskID, t.card.Name, result.Metadata, artifacts, nil)
+	resultMetadata := mergeAnyMap(result.Metadata, authMetadata)
+	completed := a2aEvent(gopact.EventA2ATaskCompleted, ids, taskID, t.card.Name, resultMetadata, artifacts, nil)
 	events = append(events, completed)
 	return gopact.ToolResult{
 		Content:   result.Output,
 		Artifacts: artifacts,
 		Events:    events,
-		Metadata:  a2aMetadata(t.card.Name, ids, taskID, result.Metadata),
+		Metadata:  a2aMetadata(t.card.Name, ids, taskID, resultMetadata),
 	}, nil
 }
 
