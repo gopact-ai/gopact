@@ -59,6 +59,9 @@ func CheckDeferredMemoryWorkQueueConformance(ctx context.Context, harness Deferr
 		checkDeferredMemoryWorkQueueDeadLetterRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueStopRemovesJob(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueCompleteDoesNotMutateInput(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueRetryDoesNotMutateInput(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueDeadLetterDoesNotMutateInput(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
+		checkDeferredMemoryWorkQueueStopDoesNotMutateInput(ctx, harness.NewQueue, copyDeferredMemoryWorkQueueConformanceJob(jobs[0])),
 		checkDeferredMemoryWorkQueueConcurrentDequeueDeliversEachJobOnce(ctx, harness.NewQueue, deferredMemoryWorkQueueConformanceConcurrentJobs(jobs)),
 	}
 }
@@ -347,6 +350,71 @@ func checkDeferredMemoryWorkQueueCompleteDoesNotMutateInput(ctx context.Context,
 		return failedDeferredMemoryWorkQueueConformance("complete-does-not-mutate-input", errors.New("Complete mutated input report"))
 	}
 	return passedDeferredMemoryWorkQueueConformance("complete-does-not-mutate-input")
+}
+
+func checkDeferredMemoryWorkQueueRetryDoesNotMutateInput(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	queue, err := newDeferredMemoryWorkQueueConformanceQueue(newQueue, []react.DeferredMemoryWorkJob{job})
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("retry-does-not-mutate-input", err)
+	}
+	decision := defaultDeferredMemoryWorkQueueConformanceRetryDecision(job)
+	beforeJob := copyDeferredMemoryWorkQueueConformanceJob(job)
+	beforeDecision := copyDeferredMemoryWorkQueueConformanceScheduleDecision(decision)
+	if err := queue.Retry(ctx, job, decision); err != nil {
+		return failedDeferredMemoryWorkQueueConformance("retry-does-not-mutate-input", err)
+	}
+	if !reflect.DeepEqual(job, beforeJob) {
+		return failedDeferredMemoryWorkQueueConformance("retry-does-not-mutate-input", errors.New("Retry mutated input job"))
+	}
+	if !reflect.DeepEqual(decision, beforeDecision) {
+		return failedDeferredMemoryWorkQueueConformance("retry-does-not-mutate-input", errors.New("Retry mutated input decision"))
+	}
+	return passedDeferredMemoryWorkQueueConformance("retry-does-not-mutate-input")
+}
+
+func checkDeferredMemoryWorkQueueDeadLetterDoesNotMutateInput(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	queue, err := newDeferredMemoryWorkQueueConformanceQueue(newQueue, []react.DeferredMemoryWorkJob{job})
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("dead-letter-does-not-mutate-input", err)
+	}
+	decision := defaultDeferredMemoryWorkQueueConformanceDeadLetterDecision(job)
+	beforeJob := copyDeferredMemoryWorkQueueConformanceJob(job)
+	beforeDecision := copyDeferredMemoryWorkQueueConformanceScheduleDecision(decision)
+	if err := queue.DeadLetter(ctx, job, decision); err != nil {
+		return failedDeferredMemoryWorkQueueConformance("dead-letter-does-not-mutate-input", err)
+	}
+	if !reflect.DeepEqual(job, beforeJob) {
+		return failedDeferredMemoryWorkQueueConformance("dead-letter-does-not-mutate-input", errors.New("DeadLetter mutated input job"))
+	}
+	if !reflect.DeepEqual(decision, beforeDecision) {
+		return failedDeferredMemoryWorkQueueConformance("dead-letter-does-not-mutate-input", errors.New("DeadLetter mutated input decision"))
+	}
+	return passedDeferredMemoryWorkQueueConformance("dead-letter-does-not-mutate-input")
+}
+
+func checkDeferredMemoryWorkQueueStopDoesNotMutateInput(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), job react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
+	queue, err := newDeferredMemoryWorkQueueConformanceQueue(newQueue, []react.DeferredMemoryWorkJob{job})
+	if err != nil {
+		return failedDeferredMemoryWorkQueueConformance("stop-does-not-mutate-input", err)
+	}
+	report := defaultDeferredMemoryWorkQueueConformanceReport()
+	decision := defaultDeferredMemoryWorkQueueConformanceStopDecision(job)
+	beforeJob := copyDeferredMemoryWorkQueueConformanceJob(job)
+	beforeReport := copyDeferredMemoryWorkQueueConformanceReport(report)
+	beforeDecision := copyDeferredMemoryWorkQueueConformanceScheduleDecision(decision)
+	if err := queue.Stop(ctx, job, report, decision); err != nil {
+		return failedDeferredMemoryWorkQueueConformance("stop-does-not-mutate-input", err)
+	}
+	if !reflect.DeepEqual(job, beforeJob) {
+		return failedDeferredMemoryWorkQueueConformance("stop-does-not-mutate-input", errors.New("Stop mutated input job"))
+	}
+	if !reflect.DeepEqual(report, beforeReport) {
+		return failedDeferredMemoryWorkQueueConformance("stop-does-not-mutate-input", errors.New("Stop mutated input report"))
+	}
+	if !reflect.DeepEqual(decision, beforeDecision) {
+		return failedDeferredMemoryWorkQueueConformance("stop-does-not-mutate-input", errors.New("Stop mutated input decision"))
+	}
+	return passedDeferredMemoryWorkQueueConformance("stop-does-not-mutate-input")
 }
 
 func checkDeferredMemoryWorkQueueConcurrentDequeueDeliversEachJobOnce(ctx context.Context, newQueue func([]react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error), jobs []react.DeferredMemoryWorkJob) DeferredMemoryWorkQueueConformanceResult {
@@ -659,6 +727,13 @@ func copyDeferredMemoryWorkQueueConformanceJob(in react.DeferredMemoryWorkJob) r
 func copyDeferredMemoryWorkQueueConformanceReport(in react.DeferredMemoryWorkReport) react.DeferredMemoryWorkReport {
 	out := in
 	out.Results = append([]gopact.RunEffectReplayResult(nil), in.Results...)
+	return out
+}
+
+func copyDeferredMemoryWorkQueueConformanceScheduleDecision(in react.DeferredMemoryWorkScheduleDecision) react.DeferredMemoryWorkScheduleDecision {
+	out := in
+	out.Report = copyDeferredMemoryWorkQueueConformanceReport(in.Report)
+	out.Metadata = copyDeferredMemoryWorkQueueConformanceAnyMap(in.Metadata)
 	return out
 }
 
