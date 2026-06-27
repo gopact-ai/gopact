@@ -151,9 +151,38 @@ func TestReadmeHasPublicSDKEntryPath(t *testing.T) {
 	}
 }
 
+func TestReadmeKeepsInternalCapabilityLedgerInDesignDocs(t *testing.T) {
+	body := readReleaseDoc(t, "README.md")
+
+	for _, forbidden := range []string{
+		"## 当前形态",
+		"`gopacttest`：",
+		"`templates/react`：",
+		"`templates/devagent`：",
+		"`cmd/gopact-extscaffold`：",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("README.md still exposes internal capability ledger entry %q", forbidden)
+		}
+	}
+
+	for _, requirement := range []string{
+		"docs/design/templates.md",
+		"docs/design/modules.md",
+		"docs/design/external-integration-roadmap.json",
+	} {
+		if !strings.Contains(body, requirement) {
+			t.Fatalf("README.md missing design-doc handoff %q", requirement)
+		}
+	}
+
+	if lineCount := strings.Count(body, "\n") + 1; lineCount > 130 {
+		t.Fatalf("README.md has %d lines, want <= 130 after moving capability ledger to design docs", lineCount)
+	}
+}
+
 func TestDevAgentProcessRecordsAreDocumented(t *testing.T) {
 	for _, path := range []string{
-		"README.md",
 		filepath.Join("docs", "design", "templates.md"),
 		filepath.Join("docs", "design", "development-plan.md"),
 		filepath.Join("docs", "design", "index.md"),
