@@ -323,7 +323,7 @@
 - `[done: first slice]` A2A policy deny/review 不会越过本地授权边界；send timeout 会向父 tool result 返回失败事件；显式 cancel 成功会返回 canceled event，cancel policy deny 不会触发 remote cancel；task streaming policy deny 不会触发 remote stream；auth 注入发生在 policy 和 remote send/stream 前，policy 可审计 sanitized auth context。
 - `[done: first slice]` A2A message/artifact/status/completed stream 事件顺序有 golden trajectory fixture 覆盖，call chain 由普通断言覆盖。
 - `[done: second slice]` remote A2A send failure 已通过 `a2a_send_failure.golden.json` 固定 sent/failed 事件顺序，remote A2A policy deny 已通过 `a2a_policy_deny.golden.json` 固定 policy requested/decided 事件顺序；二者只固定 SDK 可观察边界，不要求父 template 如何重试、终止或转人工。
-- `[done: third slice]` local child failure、remote A2A send timeout、stream policy deny、cancel success 和 cancel policy deny 已分别通过 `local_child_failure.golden.json`、`a2a_timeout.golden.json`、`a2a_stream_policy_deny.golden.json`、`a2a_cancel.golden.json`、`a2a_cancel_policy_deny.golden.json` 固定事件顺序。
+- `[done: third slice]` local child failure、remote A2A send timeout、send policy review、stream policy deny、cancel success 和 cancel policy deny 已分别通过 `local_child_failure.golden.json`、`a2a_timeout.golden.json`、`a2a_policy_review.golden.json`、`a2a_stream_policy_deny.golden.json`、`a2a_cancel.golden.json`、`a2a_cancel_policy_deny.golden.json` 固定事件顺序。
 - `[done: first slice]` 子 agent 失败时 tool result 仍保留 child events，错误向父 agent 的 tool 调用边界传播。
 - `[done: first slice]` 子 agent 失败不会污染父 graph 状态。
 

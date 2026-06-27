@@ -385,6 +385,7 @@ func TestRemoteA2AToolPolicyReviewReturnsApprovalInterrupt(t *testing.T) {
 		result.Events[1].Type != gopact.EventPolicyDecided {
 		t.Fatalf("result events = %+v, want policy requested/decided", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_policy_review.golden.json", result.Events)
 }
 
 func TestRemoteA2AToolAuthAttachesAuthBeforePolicyAndSend(t *testing.T) {
