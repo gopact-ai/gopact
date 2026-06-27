@@ -112,6 +112,18 @@ func TestRecordReleaseBundleCheckCapturesReviewGovernanceMetadata(t *testing.T) 
 		"review_eval_version":   "v1",
 		"review_policy_ref":     "release-policy-v1",
 	}
+	process, err := BuildProcessRecords(ProcessInput{
+		IDs:       bundle.IDs,
+		Action:    bundle.Action,
+		Review:    bundle.Review,
+		Gate:      &bundle.Gate,
+		CreatedAt: bundle.CreatedAt,
+		Metadata:  bundle.Metadata,
+	})
+	if err != nil {
+		t.Fatalf("BuildProcessRecords() error = %v", err)
+	}
+	bundle.Process = process
 	bundle.Metadata["review_prompt_id"] = "spoofed-release-metadata"
 	recorder := gopact.NewVerificationRecorder()
 
