@@ -431,6 +431,61 @@ func TestSelfBootstrapRejectedApplyMatchesGoldenTrajectory(t *testing.T) {
 	}
 }
 
+func TestSelfBootstrapCanceledApplyMatchesGoldenTrajectory(t *testing.T) {
+	const goldenPath = "testdata/self_bootstrap_canceled_apply.golden.json"
+
+	export, workflow := selfBootstrapCanceledApplyTrajectoryFixture(t)
+
+	gopacttest.RequireRunExportGoldenTrajectoryFrames(t, goldenPath, export)
+	gopacttest.RequireTemplateTrajectoryConformance(t, gopacttest.TemplateTrajectoryConformanceHarness{
+		Name:      "devagent.self-bootstrap-canceled-apply",
+		RunExport: &export,
+		RequiredEventTypes: []gopact.EventType{
+			gopact.EventRunStarted,
+			gopact.EventNodeCompleted,
+			gopact.EventNodeCompleted,
+			gopact.EventRunCanceled,
+		},
+		RequiredFrames: []gopacttest.TrajectoryFramePattern{
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.analyze", 1),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.plan", 2),
+			devAgentFramePattern(gopact.EventRunCanceled, "devagent.apply_patch", 3),
+		},
+	})
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: workflow,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionApplyPatch,
+		},
+		RequiredInputSources: []string{"devagent.patch"},
+	})
+
+	if export.Outcome != gopact.RunCanceled {
+		t.Fatalf("export outcome = %q, want canceled", export.Outcome)
+	}
+	if len(export.Steps) != 3 ||
+		export.Steps[2].Phase != gopact.StepCanceled ||
+		export.Steps[2].Error != "context canceled" {
+		t.Fatalf("exported steps = %+v, want canceled apply_patch step", export.Steps)
+	}
+	if workflow.Task.Status != gopact.TaskCanceled {
+		t.Fatalf("workflow task status = %q, want canceled", workflow.Task.Status)
+	}
+	apply, err := WorkflowActionProcessRecordsFromRunExportByAction(export, "", ActionApplyPatch)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecordsFromRunExportByAction(apply) error = %v", err)
+	}
+	if apply.Task.Status != gopact.TaskCanceled ||
+		apply.Task.Metadata["action_status"] != string(ActionCanceled) ||
+		len(apply.Inputs) != 1 ||
+		apply.Inputs[0].Source != "devagent.patch" ||
+		len(apply.Interventions) != 0 {
+		t.Fatalf("apply process = %+v, want canceled apply process without review intervention", apply)
+	}
+}
+
 func selfBootstrapReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gopact.RunExport, ReleaseBundle) {
 	t.Helper()
 
@@ -1378,6 +1433,63 @@ func selfBootstrapRejectedApplyTrajectoryFixture(t *testing.T) (gopact.RunExport
 	return export, applyAction, workflow
 }
 
+func selfBootstrapCanceledApplyTrajectoryFixture(t *testing.T) (gopact.RunExport, WorkflowRecords) {
+	t.Helper()
+
+	createdAt := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	ids := selfBootstrapRuntimeIDs()
+	patch := selfBootstrapPatchProposal("cancel self-bootstrap apply while preserving process evidence")
+	recorder := gopact.NewRunRecorder()
+	for _, event := range selfBootstrapCanceledApplyEvents(ids, createdAt) {
+		if err := recorder.Record(event); err != nil {
+			t.Fatalf("Record(event) error = %v", err)
+		}
+	}
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       ids,
+		Name:      "self-bootstrap canceled apply workflow",
+		CreatedAt: createdAt,
+		Metadata:  map[string]any{"scope": "m5-workflow"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: patch,
+			},
+			{
+				Action: ActionResult{
+					Status: ActionCanceled,
+					Mode:   ModeWrite,
+					Action: ActionApplyPatch,
+					Reasons: []string{
+						"context canceled",
+					},
+				},
+				Patch: patch,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	recordWorkflowRecords(t, recorder, workflow)
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+	return export, workflow
+}
+
 func selfBootstrapRuntimeIDs() gopact.RuntimeIDs {
 	return gopact.RuntimeIDs{
 		RunID:     "run-self-bootstrap-1",
@@ -1569,6 +1681,18 @@ func selfBootstrapRejectedApplyEvents(ids gopact.RuntimeIDs, createdAt time.Time
 	}
 }
 
+func selfBootstrapCanceledApplyEvents(ids gopact.RuntimeIDs, createdAt time.Time) []gopact.Event {
+	return []gopact.Event{
+		{Type: gopact.EventRunStarted, IDs: ids, CreatedAt: createdAt},
+		devAgentStepEvent(ids, createdAt.Add(time.Second), gopact.EventNodeStarted, 1, "devagent.analyze", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(2*time.Second), gopact.EventNodeCompleted, 1, "devagent.analyze", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(3*time.Second), gopact.EventNodeStarted, 2, "devagent.plan", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(4*time.Second), gopact.EventNodeCompleted, 2, "devagent.plan", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(5*time.Second), gopact.EventNodeStarted, 3, "devagent.apply_patch", gopact.StepRunning),
+		devAgentCanceledStepEvent(ids, createdAt.Add(6*time.Second), 3, "devagent.apply_patch"),
+	}
+}
+
 func selfBootstrapApplyPatchEvents(ids gopact.RuntimeIDs, createdAt time.Time) []gopact.Event {
 	return []gopact.Event{
 		{
@@ -1712,6 +1836,30 @@ func devAgentInterruptedStepEvent(
 			Phase:       gopact.StepInterrupted,
 			IDs:         ids,
 			Pending:     &pending,
+			Metadata:    copyDevAgentMetadata(metadata),
+			StartedAt:   at,
+			CompletedAt: at,
+		},
+	}
+}
+
+func devAgentCanceledStepEvent(ids gopact.RuntimeIDs, at time.Time, step int, node string) gopact.Event {
+	metadata := devAgentStepMetadata(node)
+	return gopact.Event{
+		Type:      gopact.EventRunCanceled,
+		IDs:       ids,
+		Node:      node,
+		Step:      step,
+		CreatedAt: at,
+		Err:       errors.New("context canceled"),
+		Metadata:  copyDevAgentMetadata(metadata),
+		StepSnapshot: &gopact.StepSnapshot{
+			ID:          "devagent:" + ids.RunID + ":step:" + node,
+			Step:        step,
+			Node:        node,
+			Phase:       gopact.StepCanceled,
+			IDs:         ids,
+			Error:       "context canceled",
 			Metadata:    copyDevAgentMetadata(metadata),
 			StartedAt:   at,
 			CompletedAt: at,
