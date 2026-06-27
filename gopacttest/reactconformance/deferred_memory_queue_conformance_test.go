@@ -110,6 +110,32 @@ func TestCheckDeferredMemoryWorkQueueConformanceReportsInputMutation(t *testing.
 	}
 }
 
+func TestCheckDeferredMemoryWorkQueueConformanceReportsScheduleInputMutation(t *testing.T) {
+	tests := []struct {
+		name  string
+		fault string
+		want  string
+	}{
+		{name: "retry", fault: "retry_mutates_decision", want: "retry-does-not-mutate-input"},
+		{name: "dead letter", fault: "dead_letter_mutates_decision", want: "dead-letter-does-not-mutate-input"},
+		{name: "stop", fault: "stop_mutates_decision", want: "stop-does-not-mutate-input"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			harness := DeferredMemoryWorkQueueConformanceHarness{
+				NewQueue: func(jobs []react.DeferredMemoryWorkJob) (react.DeferredMemoryWorkQueue, error) {
+					return newConformanceMemoryQueue(jobs, map[string]bool{tt.fault: true}), nil
+				},
+			}
+
+			results := CheckDeferredMemoryWorkQueueConformance(context.Background(), harness)
+			if !hasFailedDeferredMemoryWorkQueueConformanceCase(results, tt.want) {
+				t.Fatalf("CheckDeferredMemoryWorkQueueConformance() did not report %s input mutation: %+v", tt.name, results)
+			}
+		})
+	}
+}
+
 func TestCheckDeferredMemoryWorkQueueVisibilityConformancePassesWellBehavedQueue(t *testing.T) {
 	clock := time.Unix(100, 0)
 	harness := DeferredMemoryWorkQueueVisibilityConformanceHarness{
@@ -249,6 +275,9 @@ func (q *conformanceMemoryQueue) Retry(ctx context.Context, job react.DeferredMe
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if q.fault["retry_mutates_decision"] {
+		decision.Metadata["mutated"] = true
+	}
 	if q.fault["retry"] {
 		return nil
 	}
@@ -267,10 +296,16 @@ func (q *conformanceMemoryQueue) Retry(ctx context.Context, job react.DeferredMe
 }
 
 func (q *conformanceMemoryQueue) DeadLetter(ctx context.Context, job react.DeferredMemoryWorkJob, decision react.DeferredMemoryWorkScheduleDecision) error {
+	if q.fault["dead_letter_mutates_decision"] {
+		decision.Metadata["mutated"] = true
+	}
 	return ctx.Err()
 }
 
 func (q *conformanceMemoryQueue) Stop(ctx context.Context, job react.DeferredMemoryWorkJob, report react.DeferredMemoryWorkReport, decision react.DeferredMemoryWorkScheduleDecision) error {
+	if q.fault["stop_mutates_decision"] {
+		decision.Metadata["mutated"] = true
+	}
 	return ctx.Err()
 }
 
