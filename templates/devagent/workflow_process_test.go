@@ -225,6 +225,90 @@ func TestBuildWorkflowProcessRecordsDisambiguatesRepeatedActionTaskIDs(t *testin
 	}
 }
 
+func TestBuildWorkflowProcessRecordsStampsWorkflowTaskIDOnBoundaries(t *testing.T) {
+	records, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-1",
+					Summary: "prepare first patch",
+					Files: []PatchFile{
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: PatchProposal{
+					ID:      "patch-2",
+					Summary: "prepare second patch",
+					Files: []PatchFile{
+					},
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Gate: &GateResult{
+					Status:       GatePassed,
+					Mode:         ModeWrite,
+					ReportStatus: gopact.VerificationStatusPassed,
+					ReviewStatus: ReviewApproved,
+				},
+				Review: ReviewDecision{
+					Status:   ReviewApproved,
+					Reviewer: "human",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+
+	for _, input := range records.Inputs {
+		index, ok := workflowProcessIntMetadata(input.Metadata, "workflow_action_index")
+		if !ok {
+			t.Fatalf("input metadata = %+v, want workflow_action_index", input.Metadata)
+		}
+		if input.Metadata["workflow_task_id"] != records.Tasks[index-1].ID {
+			t.Fatalf("input metadata = %+v, want workflow_task_id %q", input.Metadata, records.Tasks[index-1].ID)
+		}
+	}
+	for _, intervention := range records.Interventions {
+		index, ok := workflowProcessIntMetadata(intervention.Metadata, "workflow_action_index")
+		if !ok {
+			t.Fatalf("intervention metadata = %+v, want workflow_action_index", intervention.Metadata)
+		}
+		if intervention.Metadata["workflow_task_id"] != records.Tasks[index-1].ID {
+			t.Fatalf(
+				"intervention metadata = %+v, want workflow_task_id %q",
+				intervention.Metadata,
+				records.Tasks[index-1].ID,
+			)
+		}
+	}
+}
+
 func TestBuildWorkflowProcessRecordsPreservesActionMetadataOnChildBoundaries(t *testing.T) {
 	records, err := BuildWorkflowProcessRecords(WorkflowInput{
 		IDs:  gopact.RuntimeIDs{RunID: "run-1"},

@@ -348,6 +348,41 @@ func TestCheckWorkflowProcessConformanceReportsInputActionIndexDrift(t *testing.
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsBoundaryTaskIDDrift(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(WorkflowRecords) WorkflowRecords
+		want string
+	}{
+		{
+			name: "input",
+			edit: func(records WorkflowRecords) WorkflowRecords {
+				records.Inputs[0].Metadata["workflow_task_id"] = records.Tasks[0].ID
+				return records
+			},
+			want: "input-boundaries",
+		},
+		{
+			name: "intervention",
+			edit: func(records WorkflowRecords) WorkflowRecords {
+				records.Interventions[0].Metadata["workflow_task_id"] = records.Tasks[0].ID
+				return records
+			},
+			want: "intervention-boundaries",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			records := tt.edit(workflowProcessConformanceFixture(t))
+
+			results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+			if !hasFailedWorkflowProcessConformanceCase(results, tt.want) {
+				t.Fatalf("CheckWorkflowProcessConformance() did not report boundary task id drift: %+v", results)
+			}
+		})
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsResumeInputWithoutReviewResume(t *testing.T) {
 	records, err := BuildWorkflowProcessRecords(WorkflowInput{
 		IDs: gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},

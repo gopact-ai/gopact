@@ -754,6 +754,9 @@ func validateWorkflowProcessBoundaryMetadata(records WorkflowRecords, metadata m
 		return fmt.Errorf("%s %d workflow_action_index = %d, want 1..%d", label, index, actionIndex, len(records.Tasks))
 	}
 	task := records.Tasks[actionIndex-1]
+	if got := workflowProcessStringMetadata(metadata, "workflow_task_id"); got != task.ID {
+		return fmt.Errorf("%s %d workflow_task_id = %q, want %q", label, index, got, task.ID)
+	}
 	for _, field := range []string{"mode", "action", "action_status"} {
 		got := workflowProcessStringMetadata(metadata, field)
 		want := workflowProcessStringMetadata(task.Metadata, field)
