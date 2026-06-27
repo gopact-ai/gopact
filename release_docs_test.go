@@ -64,6 +64,67 @@ func TestReleaseReadinessDocsAreIndexed(t *testing.T) {
 	}
 }
 
+func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
+	docs := []struct {
+		path     string
+		sections []string
+	}{
+		{
+			path: "CONTRIBUTING.md",
+			sections: []string{
+				"# Contributing to gopact",
+				"## Development Setup",
+				"## Verification",
+				"## Pull Request Checklist",
+			},
+		},
+		{
+			path: "SECURITY.md",
+			sections: []string{
+				"# Security Policy",
+				"## Supported Versions",
+				"## Reporting a Vulnerability",
+			},
+		},
+		{
+			path: "CHANGELOG.md",
+			sections: []string{
+				"# Changelog",
+				"## Unreleased",
+			},
+		},
+	}
+
+	readme := readReleaseDoc(t, "README.md")
+	plan := readReleaseDoc(t, filepath.Join("docs", "design", "development-plan.md"))
+
+	for _, doc := range docs {
+		body := readReleaseDoc(t, doc.path)
+		for _, section := range doc.sections {
+			if !strings.Contains(body, section) {
+				t.Fatalf("%s missing section %q", doc.path, section)
+			}
+		}
+
+		name := filepath.Base(doc.path)
+		for _, indexed := range []struct {
+			path string
+			body string
+		}{
+			{path: "README.md", body: readme},
+			{path: filepath.Join("docs", "design", "development-plan.md"), body: plan},
+		} {
+			if !strings.Contains(indexed.body, name) {
+				t.Fatalf("%s does not index %s", indexed.path, name)
+			}
+		}
+	}
+
+	if !strings.Contains(plan, "LICENSE") {
+		t.Fatal("development plan does not track LICENSE release requirement")
+	}
+}
+
 func TestDevAgentProcessRecordsAreDocumented(t *testing.T) {
 	for _, path := range []string{
 		"README.md",

@@ -14,6 +14,8 @@
 
 调研记录见 [docs/research/agent-sdk-landscape.md](docs/research/agent-sdk-landscape.md) 和 [docs/research/harness-loop-engineering.md](docs/research/harness-loop-engineering.md)。
 
+开源治理入口见 [CONTRIBUTING.md](CONTRIBUTING.md)、[SECURITY.md](SECURITY.md) 和 [CHANGELOG.md](CHANGELOG.md)；公开发布前仍需要项目 owner 确认并添加 `LICENSE`。
+
 `gopact` 从第一版运行时开始就要具备 model provider routing、tool registry、sandbox、memory、skill、MCP、A2A 的 core contract 和默认实现。`artifact`、`policy`、typed options/config snapshot 是基础契约和支撑能力，不归入业务运行时模块；生产后端通过 adapter 或 plugin 接入。
 
 ## 当前形态
