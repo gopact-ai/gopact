@@ -106,7 +106,7 @@ func entropyAuditCheckMetadata(audit EntropyAudit) map[string]any {
 }
 
 func entropyAuditEvidenceMetadata(audit EntropyAudit) map[string]any {
-	return entropyAuditBaseMetadata(audit)
+	return entropyAuditCheckMetadata(audit)
 }
 
 func entropyAuditBaseMetadata(audit EntropyAudit) map[string]any {

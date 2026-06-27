@@ -131,7 +131,7 @@ func diffCheckMetadata(snapshot DiffSnapshot) map[string]any {
 }
 
 func diffEvidenceMetadata(snapshot DiffSnapshot) map[string]any {
-	return diffBaseMetadata(snapshot)
+	return diffCheckMetadata(snapshot)
 }
 
 func diffBaseMetadata(snapshot DiffSnapshot) map[string]any {

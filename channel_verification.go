@@ -150,7 +150,7 @@ func channelEventCheckMetadata(snapshot ChannelEventSnapshot) map[string]any {
 }
 
 func channelEventEvidenceMetadata(snapshot ChannelEventSnapshot) map[string]any {
-	return channelEventBaseMetadata(snapshot)
+	return channelEventCheckMetadata(snapshot)
 }
 
 func channelEventBaseMetadata(snapshot ChannelEventSnapshot) map[string]any {

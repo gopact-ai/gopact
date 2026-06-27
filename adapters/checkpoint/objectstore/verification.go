@@ -86,7 +86,7 @@ func indexConsistencyCheck(snapshot IndexConsistencySnapshot) gopact.Verificatio
 				Type:     VerificationEvidenceTypeIndexConsistency,
 				Ref:      ref,
 				Summary:  indexConsistencyEvidenceSummary(status, snapshot),
-				Metadata: indexConsistencyBaseMetadata(snapshot),
+				Metadata: indexConsistencyCheckMetadata(snapshot),
 			},
 		},
 		Metadata: indexConsistencyCheckMetadata(snapshot),

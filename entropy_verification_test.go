@@ -99,7 +99,8 @@ func TestRecordEntropyAuditCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordEntropyAuditCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["ref"] != "entropy-1" ||
 		metadata["audit_id"] != "entropy-1" ||
 		metadata["audit_status"] != string(VerificationStatusPartial) ||
@@ -117,6 +118,26 @@ func TestRecordEntropyAuditCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if metadata["source"] != "devagent" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "entropy-1" ||
+		evidenceMetadata["audit_id"] != "entropy-1" ||
+		evidenceMetadata["audit_status"] != string(VerificationStatusPartial) ||
+		evidenceMetadata["finding_count"] != 1 ||
+		evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["thread_id"] != "thread-1" ||
+		evidenceMetadata["user_id"] != "user-1" ||
+		evidenceMetadata["created_at"] != createdAt.Format(time.RFC3339Nano) ||
+		evidenceMetadata["max_entropy_severity"] != string(EntropySeverityLow) {
+		t.Fatalf("evidence metadata = %+v, want canonical entropy audit fields preserved", evidenceMetadata)
+	}
+	evidenceFindings, ok := evidenceMetadata["findings"].([]map[string]any)
+	if !ok || len(evidenceFindings) != 1 || evidenceFindings[0]["id"] != "finding-1" {
+		t.Fatalf("evidence metadata findings = %#v, want canonical findings", evidenceMetadata["findings"])
+	}
+	if evidenceMetadata["source"] != "devagent" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
 

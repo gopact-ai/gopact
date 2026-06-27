@@ -64,7 +64,8 @@ func TestRecordCommandCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordCommandCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["dir"] != "/repo" ||
 		metadata["exit_code"] != 0 ||
 		metadata["stdout"] != "ok" ||
@@ -77,6 +78,21 @@ func TestRecordCommandCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if metadata["gate"] != "unit" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["dir"] != "/repo" ||
+		evidenceMetadata["exit_code"] != 0 ||
+		evidenceMetadata["stdout"] != "ok" ||
+		evidenceMetadata["duration_ms"] != int64(1500) {
+		t.Fatalf("evidence metadata = %+v, want canonical command fields preserved", evidenceMetadata)
+	}
+	evidenceCommand, ok := evidenceMetadata["command"].([]string)
+	if !ok || !reflect.DeepEqual(evidenceCommand, []string{"go", "test", "./..."}) {
+		t.Fatalf("evidence metadata command = %#v, want canonical command", evidenceMetadata["command"])
+	}
+	if evidenceMetadata["gate"] != "unit" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
 

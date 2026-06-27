@@ -3,6 +3,7 @@ package react
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -70,6 +71,32 @@ func TestRecordDeferredMemoryWorkScheduleCheckRecordsRetryDecision(t *testing.T)
 	}
 	if metadata["queue"] != "memory-default" {
 		t.Fatalf("metadata = %+v, want supplemental queue metadata", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["action"] != string(DeferredMemoryWorkScheduleRetry) ||
+		evidenceMetadata["attempt"] != 2 ||
+		evidenceMetadata["next_attempt"] != 3 ||
+		evidenceMetadata["max_attempts"] != 5 ||
+		evidenceMetadata["delay_ms"] != int64(250) ||
+		evidenceMetadata["worker_status"] != string(DeferredMemoryWorkFailed) ||
+		evidenceMetadata["report_replay_count"] != 2 ||
+		evidenceMetadata["report_result_count"] != 1 ||
+		evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["thread_id"] != "thread-1" ||
+		evidenceMetadata["error"] != report.Error {
+		t.Fatalf("evidence metadata = %+v, want canonical schedule fields preserved", evidenceMetadata)
+	}
+	if planned, ok := evidenceMetadata["planned_effect_ids"].([]string); !ok ||
+		!reflect.DeepEqual(planned, []string{"pending-1", "pending-2"}) {
+		t.Fatalf("evidence planned effect ids = %#v, want canonical planned ids", evidenceMetadata["planned_effect_ids"])
+	}
+	if results, ok := evidenceMetadata["result_effect_ids"].([]string); !ok ||
+		!reflect.DeepEqual(results, []string{"pending-1"}) {
+		t.Fatalf("evidence result effect ids = %#v, want canonical result ids", evidenceMetadata["result_effect_ids"])
+	}
+	if evidenceMetadata["queue"] != "memory-default" {
+		t.Fatalf("evidence metadata = %+v, want supplemental queue metadata", evidenceMetadata)
 	}
 }
 
