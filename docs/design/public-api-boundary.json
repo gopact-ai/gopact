@@ -1480,6 +1480,10 @@
           "kind": "const"
         },
         {
+          "name": "PolicyActionInspect",
+          "kind": "const"
+        },
+        {
           "name": "PolicyActionInvoke",
           "kind": "const"
         },
@@ -1818,6 +1822,106 @@
         {
           "name": "TaskStatus",
           "kind": "type"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "prompt_injection.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ErrPromptInjectionDetectorRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrPromptInjectionPolicyRequired",
+          "kind": "var"
+        },
+        {
+          "name": "PromptInjectionDetector",
+          "kind": "type"
+        },
+        {
+          "name": "PromptInjectionDetectorFunc",
+          "kind": "type"
+        },
+        {
+          "name": "PromptInjectionFinding",
+          "kind": "type"
+        },
+        {
+          "name": "PromptInjectionGuardMiddleware",
+          "kind": "func"
+        },
+        {
+          "name": "PromptInjectionPolicyInput",
+          "kind": "type"
+        },
+        {
+          "name": "PromptInjectionReport",
+          "kind": "type"
+        },
+        {
+          "name": "PromptInjectionSeverity",
+          "kind": "type"
+        },
+        {
+          "name": "PromptInjectionSeverityCritical",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSeverityHigh",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSeverityLow",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSeverityMedium",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSource",
+          "kind": "type"
+        },
+        {
+          "name": "PromptInjectionSourceA2A",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceArtifact",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceMCP",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceMemory",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceSkill",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceSystem",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceToolResult",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceUnknown",
+          "kind": "const"
+        },
+        {
+          "name": "PromptInjectionSourceUserMessage",
+          "kind": "const"
         }
       ]
     },
