@@ -141,14 +141,14 @@ func (t *A2ATool) Invoke(ctx context.Context, args json.RawMessage) (gopact.Tool
 		Input:    inputText(input),
 		Metadata: a2aMetadata(t.card.Name, ids, ids.CallID, input.Metadata),
 	}
-	sendCtx, err := t.authenticate(ctx, gopact.PolicyActionSend, &task, "")
+	sendCtx, _, err := t.authenticate(ctx, gopact.PolicyActionSend, &task, "")
 	if err != nil {
 		return gopact.ToolResult{
 			Metadata: a2aMetadata(t.card.Name, ids, task.ID, nil),
 		}, err
 	}
 	var events []gopact.Event
-	policyEvents, policyErr := t.authorize(ctx, task)
+	policyEvents, policyErr := t.authorize(sendCtx, task)
 	events = append(events, policyEvents...)
 	if policyErr != nil {
 		return gopact.ToolResult{
@@ -214,12 +214,12 @@ func (t *A2ATool) Stream(ctx context.Context, args json.RawMessage) iter.Seq2[go
 			Input:    inputText(input),
 			Metadata: a2aMetadata(t.card.Name, ids, ids.CallID, input.Metadata),
 		}
-		streamCtx, err := t.authenticate(ctx, gopact.PolicyActionSend, &task, "")
+		streamCtx, _, err := t.authenticate(ctx, gopact.PolicyActionSend, &task, "")
 		if err != nil {
 			yield(gopact.Event{}, err)
 			return
 		}
-		policyEvents, policyErr := t.authorize(ctx, task)
+		policyEvents, policyErr := t.authorize(streamCtx, task)
 		for i, event := range policyEvents {
 			eventErr := error(nil)
 			if policyErr != nil && i == len(policyEvents)-1 {
@@ -271,36 +271,36 @@ func (t *A2ATool) Cancel(ctx context.Context, taskID string) (gopact.ToolResult,
 	}
 
 	ids := childRuntimeIDs(ctx, t.card.Name)
-	cancelCtx, err := t.authenticate(ctx, gopact.PolicyActionCancel, nil, taskID)
+	cancelCtx, authMetadata, err := t.authenticate(ctx, gopact.PolicyActionCancel, nil, taskID)
 	if err != nil {
 		return gopact.ToolResult{
 			Metadata: a2aMetadata(t.card.Name, ids, taskID, nil),
 		}, err
 	}
 	var events []gopact.Event
-	policyEvents, policyErr := t.authorizeCancel(ctx, taskID, ids)
+	policyEvents, policyErr := t.authorizeCancel(cancelCtx, taskID, ids)
 	events = append(events, policyEvents...)
 	if policyErr != nil {
 		return gopact.ToolResult{
 			Events:   events,
-			Metadata: a2aMetadata(t.card.Name, ids, taskID, nil),
+			Metadata: a2aMetadata(t.card.Name, ids, taskID, authMetadata),
 		}, policyErr
 	}
 
 	if err := t.agent.Cancel(cancelCtx, taskID); err != nil {
-		failed := a2aEvent(gopact.EventA2ATaskFailed, ids, taskID, t.card.Name, nil, nil, err)
+		failed := a2aEvent(gopact.EventA2ATaskFailed, ids, taskID, t.card.Name, authMetadata, nil, err)
 		events = append(events, failed)
 		return gopact.ToolResult{
 			Events:   events,
-			Metadata: a2aMetadata(t.card.Name, ids, taskID, nil),
+			Metadata: a2aMetadata(t.card.Name, ids, taskID, authMetadata),
 		}, fmt.Errorf("agenttool: cancel a2a task %q on agent %q: %w", taskID, t.card.Name, err)
 	}
 
-	canceled := a2aEvent(gopact.EventA2ATaskCanceled, ids, taskID, t.card.Name, nil, nil, nil)
+	canceled := a2aEvent(gopact.EventA2ATaskCanceled, ids, taskID, t.card.Name, authMetadata, nil, nil)
 	events = append(events, canceled)
 	return gopact.ToolResult{
 		Events:   events,
-		Metadata: a2aMetadata(t.card.Name, ids, taskID, nil),
+		Metadata: a2aMetadata(t.card.Name, ids, taskID, authMetadata),
 	}, nil
 }
 
@@ -335,9 +335,14 @@ func (t *A2ATool) authorize(ctx context.Context, task a2a.Task) ([]gopact.Event,
 	return events, nil
 }
 
-func (t *A2ATool) authenticate(ctx context.Context, action gopact.PolicyRequestAction, task *a2a.Task, taskID string) (context.Context, error) {
+func (t *A2ATool) authenticate(
+	ctx context.Context,
+	action gopact.PolicyRequestAction,
+	task *a2a.Task,
+	taskID string,
+) (context.Context, map[string]any, error) {
 	if t.auth == nil {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 	req := a2a.AuthRequest{
 		IDs:       childRuntimeIDs(ctx, t.card.Name),
@@ -353,17 +358,18 @@ func (t *A2ATool) authenticate(ctx context.Context, action gopact.PolicyRequestA
 	}
 	auth, err := t.auth.Authenticate(ctx, req)
 	if err != nil {
-		return ctx, fmt.Errorf("agenttool: a2a auth: %w", err)
+		return ctx, nil, fmt.Errorf("agenttool: a2a auth: %w", err)
 	}
 	if auth.IsZero() {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 	auth = copyAuth(auth)
+	auditMetadata := authAuditMetadata(auth)
 	if task != nil {
 		task.Auth = &auth
-		task.Metadata = mergeAnyMap(task.Metadata, authAuditMetadata(auth))
+		task.Metadata = mergeAnyMap(task.Metadata, auditMetadata)
 	}
-	return a2a.ContextWithAuth(ctx, auth), nil
+	return a2a.ContextWithAuth(ctx, auth), auditMetadata, nil
 }
 
 func (t *A2ATool) authorizeCancel(ctx context.Context, taskID string, ids gopact.RuntimeIDs) ([]gopact.Event, error) {
