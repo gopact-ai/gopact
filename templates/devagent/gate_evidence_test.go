@@ -81,6 +81,15 @@ func TestRecordReleaseGateCheckPreservesCanonicalMetadata(t *testing.T) {
 	if check.Metadata["release"] != "docs" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", check.Metadata)
 	}
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["gate_status"] != string(GatePassed) ||
+		evidenceMetadata["mode"] != string(ModeWrite) ||
+		evidenceMetadata["ref"] != "release-gate:write" {
+		t.Fatalf("evidence metadata = %+v, want canonical release gate fields preserved", evidenceMetadata)
+	}
+	if evidenceMetadata["release"] != "docs" {
+		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
+	}
 }
 
 func TestRecordReleaseGateCheckRecordsRejectedCheckBeforeReturningError(t *testing.T) {
