@@ -218,6 +218,7 @@ func TestRemoteA2AToolSendsTaskWithRuntimeIDsAndReturnsArtifacts(t *testing.T) {
 		result.Events[1].Type != gopact.EventA2ATaskCompleted {
 		t.Fatalf("result events = %+v, want sent/completed A2A events", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_send_success.golden.json", result.Events)
 	for _, event := range result.Events {
 		ids := event.RuntimeIDs()
 		if ids.ParentCallID != "parent-call" || ids.CallID != sentTask.IDs.CallID {
