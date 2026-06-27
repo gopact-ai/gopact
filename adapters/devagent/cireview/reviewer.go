@@ -18,6 +18,8 @@ var (
 	ErrReportRequired = errors.New("cireview: verification report is required")
 	// ErrRequiredCheckRequired is returned when an empty required check is configured.
 	ErrRequiredCheckRequired = errors.New("cireview: required check is required")
+	// ErrRequiredCIGateRequired is returned when an empty required CI gate is configured.
+	ErrRequiredCIGateRequired = errors.New("cireview: required CI gate is required")
 	// ErrInvalidEntropySeverity is returned when an entropy threshold is not valid.
 	ErrInvalidEntropySeverity = errors.New("cireview: invalid entropy severity")
 )
@@ -25,8 +27,11 @@ var (
 type config struct {
 	reviewer           string
 	requiredChecks     []string
+	requiredCIGates    []string
 	maxEntropySeverity gopact.EntropySeverity
 }
+
+const ciGateEvidenceType = "ci_gate"
 
 // Option configures a CI-backed reviewer.
 type Option func(*config) error
@@ -63,6 +68,30 @@ func WithRequiredChecks(ids ...string) Option {
 			checks = append(checks, id)
 		}
 		cfg.requiredChecks = checks
+		return nil
+	}
+}
+
+// WithRequiredCIGates requires named ci_gate verification evidence to be present and passed.
+func WithRequiredCIGates(gates ...string) Option {
+	return func(cfg *config) error {
+		if len(gates) == 0 {
+			return ErrRequiredCIGateRequired
+		}
+		required := make([]string, 0, len(gates))
+		seen := make(map[string]struct{}, len(gates))
+		for _, gate := range gates {
+			gate = strings.TrimSpace(gate)
+			if gate == "" {
+				return ErrRequiredCIGateRequired
+			}
+			if _, ok := seen[gate]; ok {
+				continue
+			}
+			seen[gate] = struct{}{}
+			required = append(required, gate)
+		}
+		cfg.requiredCIGates = required
 		return nil
 	}
 }
@@ -140,12 +169,13 @@ func (r *Reviewer) Review(ctx context.Context, input devagent.ReviewInput) (deva
 
 func (r *Reviewer) evaluate(input devagent.ReviewInput) ([]string, map[string]any, error) {
 	metadata := map[string]any{
-		"adapter":         "cireview",
-		"report_status":   string(input.Report.Status),
-		"passed_count":    input.Report.PassedCount,
-		"failed_count":    input.Report.FailedCount,
-		"skipped_count":   input.Report.SkippedCount,
-		"required_checks": append([]string(nil), r.cfg.requiredChecks...),
+		"adapter":           "cireview",
+		"report_status":     string(input.Report.Status),
+		"passed_count":      input.Report.PassedCount,
+		"failed_count":      input.Report.FailedCount,
+		"skipped_count":     input.Report.SkippedCount,
+		"required_checks":   append([]string(nil), r.cfg.requiredChecks...),
+		"required_ci_gates": append([]string(nil), r.cfg.requiredCIGates...),
 	}
 	if input.Mode != "" {
 		metadata["mode"] = string(input.Mode)
@@ -177,6 +207,31 @@ func (r *Reviewer) evaluate(input devagent.ReviewInput) ([]string, map[string]an
 			reasons = append(reasons, fmt.Sprintf("check %s skipped", id))
 		}
 		metadata["skipped_checks"] = skippedChecks
+	}
+
+	gateStatuses := ciGateStatuses(input.Report.Checks)
+	missingGates, failedGates, skippedGates := ciGateReasons(gateStatuses, r.cfg.requiredCIGates)
+	if len(missingGates) > 0 {
+		for _, gate := range missingGates {
+			reasons = append(reasons, fmt.Sprintf("required CI gate %s is missing", gate))
+		}
+		metadata["missing_ci_gates"] = missingGates
+	}
+	if len(failedGates) > 0 {
+		for _, gate := range failedGates {
+			reasons = append(reasons, fmt.Sprintf(
+				"required CI gate %s status %s is not passed",
+				gate,
+				gateStatuses[gate],
+			))
+		}
+		metadata["failed_ci_gates"] = failedGates
+	}
+	if len(skippedGates) > 0 {
+		for _, gate := range skippedGates {
+			reasons = append(reasons, fmt.Sprintf("required CI gate %s status skipped is not passed", gate))
+		}
+		metadata["skipped_ci_gates"] = skippedGates
 	}
 
 	maxSeverity, entropyReasons, err := entropyReasons(input.EntropyAudits, r.cfg.maxEntropySeverity)
@@ -219,6 +274,55 @@ func checkReasons(checks []gopact.VerificationCheck, required []string) ([]strin
 		}
 	}
 	return missing, failed, skipped
+}
+
+func ciGateReasons(gates map[string]gopact.VerificationStatus, required []string) ([]string, []string, []string) {
+	var missing []string
+	var failed []string
+	var skipped []string
+	for _, gate := range required {
+		status, ok := gates[gate]
+		if !ok {
+			missing = append(missing, gate)
+			continue
+		}
+		switch status {
+		case gopact.VerificationStatusPassed:
+		case gopact.VerificationStatusSkipped:
+			skipped = append(skipped, gate)
+		default:
+			failed = append(failed, gate)
+		}
+	}
+	return missing, failed, skipped
+}
+
+func ciGateStatuses(checks []gopact.VerificationCheck) map[string]gopact.VerificationStatus {
+	gates := make(map[string]gopact.VerificationStatus)
+	for _, check := range checks {
+		if check.Status != gopact.VerificationStatusPassed {
+			continue
+		}
+		for _, evidence := range check.Evidence {
+			if evidence.Type != ciGateEvidenceType {
+				continue
+			}
+			gate, ok := evidence.Metadata["gate"].(string)
+			if !ok {
+				continue
+			}
+			gate = strings.TrimSpace(gate)
+			if gate == "" {
+				continue
+			}
+			rawStatus, ok := evidence.Metadata["status"].(string)
+			if !ok || rawStatus == "" {
+				continue
+			}
+			gates[gate] = gopact.VerificationStatus(rawStatus)
+		}
+	}
+	return gates
 }
 
 func entropyReasons(audits []gopact.EntropyAudit, maxAllowed gopact.EntropySeverity) (gopact.EntropySeverity, []string, error) {
