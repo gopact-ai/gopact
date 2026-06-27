@@ -405,6 +405,34 @@
 - 核心 package 不依赖具体 SaaS provider。
 - 主仓不再以生产 adapter 数量作为完成标准；完成标准是 contract 稳定、conformance 清晰、外部 adapter 可以无侵入接入。
 
+## 开源化发布手册
+
+`gopact` 的开源质量标准不是“功能足够多”，而是陌生开发者能在 5 分钟内判断项目定位、可用边界和下一步操作。主仓在公开发布前必须从研发仓库收敛成 SDK 用户入口清晰的开源项目。
+
+发布前必须满足：
+
+- 根目录必须具备 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md`、`CHANGELOG.md`；是否增加 `CODE_OF_CONDUCT.md` 可由组织治理决定，但不能缺少贡献、安全和变更入口。
+- `README.md` 必须面向新用户重写为短路径入口：项目定位、安装方式、最小可运行 quickstart、核心概念、当前稳定性声明、文档地图和贡献入口；完整能力清单应移入设计文档，不能让 README 变成内部研发流水账。
+- README 的第一屏必须讲清楚 `gopact` 是 Go-first agent SDK，而不是某个单一 agent template；必须说明 core 只提供过程契约、运行时原子能力、默认轻量实现和扩展点。
+- 必须明确标注包边界：stable core、experimental core、reference-only adapter、transitional adapter/template、external adapter/plugin/template。该边界以 `repository-boundary.json`、`public-api-boundary.json` 和 `v1-migration-plan.json` 为准。
+- 必须提供一条最短可运行路径：至少一个 graph + checkpoint + event stream 的 public example，并保持 `go test -run '^Example' ./...` 通过。
+- 必须保留一组“用户会先复制”的 API 示例：`Setup` / defaults、Runner 或 graph 执行、run export/replay、verification evidence、resume payload schema gate。
+- 文档必须区分“已经可用的第一片”和“后续路线”。M1 complete、M2/M3/M4 first-slice complete、M5 partial、M6 in-progress 这些状态不能在 README 或 release note 中被包装成成熟生产可用。
+- 外部服务型能力必须通过 adapter/plugin/template 仓库表达；主仓不能因为展示效果把 OpenAI/Anthropic/Gemini/OpenRouter、Redis/SQL/S3/GCS/R2/OSS、Lark/A2UI/AG-UI、LangSmith/LangGraph 等生产接入重新沉入 core。
+- 外部仓库 readiness 必须在 release gate 中可见。只要 gopact-ai 外部私有仓库还缺少 `GOPACT_GITHUB_TOKEN`、CI 未通过或 `external_repository_readiness` / `external-ci:gopact-ai` evidence 未 passed，就不能把 M6 判为完成。
+- 每个新 public API 必须同时更新 public API boundary、必要的 executable example、godoc 注释和迁移/废弃策略；不能只新增代码符号。
+- 文档措辞必须避免营销化承诺。可以写“第一片”“reference-only”“experimental”“transitional”，不能写 unsupported 的 “production ready”“enterprise grade”。
+- 发布说明必须说明当前适合的使用方式：内部实验、SDK API 评审、template/conformance 开发、外部 adapter scaffold；不应暗示所有 adapter/template 都是长期主仓承诺。
+
+开源发布整理顺序：
+
+1. 收敛 README：保留 quickstart 和核心概念，把长能力清单移到 `docs/design/index.md` 或专题文档。
+2. 补齐根目录治理文件：license、contributing、安全策略、changelog。
+3. 标注 package status：stable/experimental/reference-only/transitional/external target，并保证状态与 manifest 一致。
+4. 检查 public examples：用户复制的最短路径必须可编译、可运行、输出稳定。
+5. 跑完整 release gate：whitespace、unit、race、vet、lint、coverage、examples、security、public API boundary、repository boundary、v1 migration gate、external repository readiness。
+6. 只在所有 gate 通过后准备 `v0.1.0`；若外部仓库或 public API 仍有 blocker，只能发布内部 tag 或 prerelease 说明。
+
 ## 自举门槛
 
 自举分三级：
