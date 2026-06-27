@@ -219,6 +219,8 @@ func TestBuildProcessRecordsRecordsResumeInputForReviewDecision(t *testing.T) {
 		resumeInput.Resume.InterruptID != "approval-1" ||
 		resumeInput.Resume.Payload.(map[string]any)["decision"] != "approved" ||
 		resumeInput.Metadata["resume_interrupt_id"] != "approval-1" ||
+		resumeInput.Metadata["resume_checkpoint_id"] != "checkpoint-1" ||
+		resumeInput.Metadata["resume_step_id"] != "release-gate" ||
 		resumeInput.Metadata["resume_payload_codec"] != "application/json" {
 		t.Fatalf("resume input = %+v, want copied resume boundary", resumeInput)
 	}
@@ -230,7 +232,10 @@ func TestBuildProcessRecordsRecordsResumeInputForReviewDecision(t *testing.T) {
 	if intervention.Resume == nil ||
 		intervention.Resume.InterruptID != "approval-1" ||
 		intervention.Resume.Payload.(map[string]any)["decision"] != "approved" ||
-		intervention.Metadata["resume_interrupt_id"] != "approval-1" {
+		intervention.Metadata["resume_interrupt_id"] != "approval-1" ||
+		intervention.Metadata["resume_checkpoint_id"] != "checkpoint-1" ||
+		intervention.Metadata["resume_step_id"] != "release-gate" ||
+		intervention.Metadata["resume_payload_codec"] != "application/json" {
 		t.Fatalf("intervention = %+v, want review intervention linked to resume", intervention)
 	}
 }
