@@ -121,6 +121,23 @@ func TestRecordToolCallCheckPreservesCanonicalMetadata(t *testing.T) {
 	if metadata["phase"] != "call_tool" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
+
+	evidenceMetadata := recorder.Checks()[0].Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "tool-call-1" ||
+		evidenceMetadata["argument_bytes"] != len(call.Arguments) ||
+		evidenceMetadata["result_content_bytes"] != len(result.Content) ||
+		evidenceMetadata["artifact_count"] != 1 ||
+		evidenceMetadata["effect_count"] != 1 ||
+		evidenceMetadata["event_count"] != 1 ||
+		evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["call_id"] != "call-1" ||
+		evidenceMetadata["tool_call_id"] != "tool-call-1" ||
+		evidenceMetadata["tool_name"] != "repo.search" {
+		t.Fatalf("evidence metadata = %+v, want canonical tool call fields preserved", evidenceMetadata)
+	}
+	if evidenceMetadata["phase"] != "call_tool" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
+	}
 }
 
 func TestRecordToolCallCheckRecordsFailure(t *testing.T) {
