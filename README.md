@@ -4,6 +4,51 @@
 
 这个仓库仍处于早期阶段。当前目标是先确定 SDK 的公共形态，再增加模型适配器或完整的 ReAct 执行能力。
 
+## 安装
+
+```bash
+go get github.com/gopact-ai/gopact
+```
+
+当前仓库仍为私有，安装需要具备 `gopact-ai/gopact` 的访问权限。SDK 自身不读取配置文件、环境变量或本地 secret；provider、backend、channel、plugin 的配置都应由宿主应用通过 Go options、接口或 typed snapshot 注入。
+
+## 快速开始
+
+最短可执行路径是 `example_test.go` 里的 `Example_graphRun`：它创建一个 typed graph，运行单个 node，把事件流收集出来，并通过内存 checkpoint store 持久化 step 边界。
+
+```bash
+go test -run Example_graphRun .
+```
+
+这个 example 覆盖 `graph.New`、`graph.WithRuntimeIDs`、`graph.WithCheckpointer`、事件流和 checkpoint 写入。更多 root facade 示例由 [docs/design/public-api-examples.json](docs/design/public-api-examples.json) 约束，并通过 `go test -run '^Example' ./...` 持续验证。
+
+## 核心概念
+
+- `Setup` / `Defaults`：SDK 级默认值入口，支持宿主注入 logger、log level 和 runtime identity defaults。
+- `Runner` / `TurnLoop`：`Runner` 执行一次 run；`TurnLoop` 处理多轮输入、抢占、取消和恢复。
+- `graph`：类型化 workflow 执行层，负责 node、edge、middleware、event stream 和 step 边界。
+- `RunExport` / `StepExport`：过程导出和恢复契约，目标是在任意稳定 step 边界中断后可以 import/resume。
+- `VerificationRecorder`：记录已观察证据，不替宿主执行隐藏命令，也不保存 raw prompt、raw response 或 secret。
+- adapter / plugin / template：生产 provider、backend、channel、observability 和业务 agent 组装应通过外部 adapter/plugin/template 表达。
+
+## 当前稳定性
+
+`gopact` 仍是 pre-v1 SDK。当前适合内部实验、SDK API 评审、template/conformance 开发和外部 adapter scaffold，不应被包装成生产级完整 agent 平台。
+
+当前路线状态以 [docs/design/milestone-readiness.json](docs/design/milestone-readiness.json) 为准：M1 已完成，M2/M3/M4 是 first-slice complete，M5 partial，M6 in-progress。公开发布前仍需要项目 owner 选择并添加 `LICENSE`，外部私有仓库也必须完成 `GOPACT_GITHUB_TOKEN` secret 配置和 CI readiness。
+
+## 文档地图
+
+- [docs/design/index.md](docs/design/index.md)：总体设计入口、模块关系和路线图。
+- [docs/design/development-plan.md](docs/design/development-plan.md)：研发计划、自举门槛和开源化发布手册。
+- [docs/design/public-api-boundary.json](docs/design/public-api-boundary.json)：root public API 边界清单。
+- [docs/design/public-api-examples.json](docs/design/public-api-examples.json)：root public API executable example 契约。
+- [docs/design/repository-boundary.json](docs/design/repository-boundary.json)：主仓、reference adapter 和外部仓库归属边界。
+
+## 贡献与安全
+
+贡献入口见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全策略见 [SECURITY.md](SECURITY.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。公开发布前仍需要项目 owner 确认并添加 `LICENSE`。
+
 ## 设计哲学
 
 `gopact` 把“契约”视为产品本身。消息、工具、模型请求、事件和检查点都应该是 provider-neutral 的契约，连接应用代码和运行时代码。

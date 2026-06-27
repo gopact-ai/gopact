@@ -125,6 +125,32 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 	}
 }
 
+func TestReadmeHasPublicSDKEntryPath(t *testing.T) {
+	body := readReleaseDoc(t, "README.md")
+	requirements := []string{
+		"## 安装",
+		"go get github.com/gopact-ai/gopact",
+		"## 快速开始",
+		"Example_graphRun",
+		"go test -run Example_graphRun",
+		"## 核心概念",
+		"## 当前稳定性",
+		"## 文档地图",
+		"docs/design/index.md",
+		"docs/design/public-api-examples.json",
+		"## 贡献与安全",
+		"CONTRIBUTING.md",
+		"SECURITY.md",
+		"CHANGELOG.md",
+	}
+
+	for _, requirement := range requirements {
+		if !strings.Contains(body, requirement) {
+			t.Fatalf("README.md missing public SDK entry requirement %q", requirement)
+		}
+	}
+}
+
 func TestDevAgentProcessRecordsAreDocumented(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
