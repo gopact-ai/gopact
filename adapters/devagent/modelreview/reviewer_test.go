@@ -143,6 +143,56 @@ func TestReviewerReviewAnnotatesRequiredPromptAndEvalGovernance(t *testing.T) {
 	}
 }
 
+func TestReviewerReviewPreservesCanonicalMetadata(t *testing.T) {
+	model := &chatModelStub{
+		message: gopact.Message{
+			Role: gopact.RoleAssistant,
+			Content: strings.Join([]string{
+				`{"status":"approved","summary":"governed review",`,
+				`"metadata":{"adapter":"spoofed-model","review_prompt_id":"spoofed-model"}}`,
+			}, ""),
+		},
+	}
+	reviewer, err := New(
+		model,
+		WithGovernance(Governance{
+			PromptID:      "devagent-review",
+			PromptVersion: "2026-06-27",
+			EvalID:        "release-eval",
+			Metadata: map[string]any{
+				"adapter":          "spoofed-governance",
+				"purpose":          "spoofed-purpose",
+				"review_prompt_id": "spoofed-governance",
+				"dataset":          "review-golden",
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	decision, err := reviewer.Review(context.Background(), devagent.ReviewInput{})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+
+	if len(model.requests) != 1 {
+		t.Fatalf("requests = %d, want one model request", len(model.requests))
+	}
+	request := model.requests[0]
+	if request.Metadata["adapter"] != "modelreview" ||
+		request.Metadata["purpose"] != "devagent_review" ||
+		request.Metadata["review_prompt_id"] != "devagent-review" ||
+		request.Metadata["dataset"] != "review-golden" {
+		t.Fatalf("request metadata = %+v, want canonical adapter/purpose and governed prompt metadata", request.Metadata)
+	}
+	if decision.Metadata["adapter"] != "modelreview" ||
+		decision.Metadata["review_prompt_id"] != "devagent-review" ||
+		decision.Metadata["dataset"] != "review-golden" {
+		t.Fatalf("decision metadata = %+v, want canonical adapter and governed prompt metadata", decision.Metadata)
+	}
+}
+
 func TestNewRejectsMissingRequiredGovernanceField(t *testing.T) {
 	_, err := New(
 		&chatModelStub{},

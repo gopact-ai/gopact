@@ -184,7 +184,7 @@ func (r *Reviewer) Review(ctx context.Context, input devagent.ReviewInput) (deva
 		return devagent.ReviewDecision{}, fmt.Errorf("modelreview: build request: %w", err)
 	}
 	reviewGovernanceMetadata := buildGovernanceMetadata(r.cfg.governance)
-	request.Metadata = mergeMetadata(request.Metadata, reviewGovernanceMetadata)
+	request.Metadata = mergeMetadataPreservingBase(request.Metadata, reviewGovernanceMetadata, "adapter", "purpose")
 	message, err := r.model.Generate(ctx, request)
 	if err != nil {
 		return devagent.ReviewDecision{}, fmt.Errorf("modelreview: generate: %w", err)
@@ -207,6 +207,7 @@ func (r *Reviewer) Review(ctx context.Context, input devagent.ReviewInput) (deva
 		decision.Metadata["adapter"] = "modelreview"
 	}
 	decision.Metadata = mergeMetadata(decision.Metadata, reviewGovernanceMetadata)
+	decision.Metadata["adapter"] = "modelreview"
 	return decision, nil
 }
 
@@ -370,6 +371,26 @@ func mergeMetadata(base, extra map[string]any) map[string]any {
 		metadata = map[string]any{}
 	}
 	for key, value := range extra {
+		metadata[key] = value
+	}
+	return metadata
+}
+
+func mergeMetadataPreservingBase(base, extra map[string]any, preservedKeys ...string) map[string]any {
+	metadata := mergeMetadata(base, nil)
+	if metadata == nil && len(extra) > 0 {
+		metadata = map[string]any{}
+	}
+	preserved := make(map[string]struct{}, len(preservedKeys))
+	for _, key := range preservedKeys {
+		if _, ok := base[key]; ok {
+			preserved[key] = struct{}{}
+		}
+	}
+	for key, value := range extra {
+		if _, ok := preserved[key]; ok {
+			continue
+		}
 		metadata[key] = value
 	}
 	return metadata
