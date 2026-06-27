@@ -388,6 +388,9 @@ func reviewInterventionMetadata(input ProcessInput) map[string]any {
 		if input.Resume.StepID != "" {
 			metadata["resume_step_id"] = input.Resume.StepID
 		}
+		if input.Resume.PayloadCodec != "" {
+			metadata["resume_payload_codec"] = input.Resume.PayloadCodec
+		}
 	}
 	return metadata
 }

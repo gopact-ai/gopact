@@ -515,6 +515,74 @@ func TestCheckWorkflowProcessConformanceReportsApplyResumeSummaryBoundaryDrift(t
 	}
 }
 
+func TestCheckWorkflowProcessConformanceReportsResumeMetadataDrift(t *testing.T) {
+	setResumeInputMetadata := func(key, value string) func(WorkflowRecords) WorkflowRecords {
+		return func(records WorkflowRecords) WorkflowRecords {
+			for i := range records.Inputs {
+				if records.Inputs[i].Kind == gopact.InputResume {
+					records.Inputs[i].Metadata[key] = value
+					return records
+				}
+			}
+			t.Fatal("fixture missing resume input")
+			return records
+		}
+	}
+	setReviewInterventionMetadata := func(key, value string) func(WorkflowRecords) WorkflowRecords {
+		return func(records WorkflowRecords) WorkflowRecords {
+			records.Interventions[0].Metadata[key] = value
+			return records
+		}
+	}
+
+	tests := []struct {
+		name string
+		edit func(WorkflowRecords) WorkflowRecords
+		want string
+	}{
+		{
+			name: "resume input checkpoint",
+			edit: setResumeInputMetadata("resume_checkpoint_id", "checkpoint-other"),
+			want: "input-boundaries",
+		},
+		{
+			name: "resume input step",
+			edit: setResumeInputMetadata("resume_step_id", "step-other"),
+			want: "input-boundaries",
+		},
+		{
+			name: "resume input payload codec",
+			edit: setResumeInputMetadata("resume_payload_codec", "text/plain"),
+			want: "input-boundaries",
+		},
+		{
+			name: "review intervention checkpoint",
+			edit: setReviewInterventionMetadata("resume_checkpoint_id", "checkpoint-other"),
+			want: "intervention-boundaries",
+		},
+		{
+			name: "review intervention step",
+			edit: setReviewInterventionMetadata("resume_step_id", "step-other"),
+			want: "intervention-boundaries",
+		},
+		{
+			name: "review intervention payload codec",
+			edit: setReviewInterventionMetadata("resume_payload_codec", "text/plain"),
+			want: "intervention-boundaries",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			records := tt.edit(workflowProcessApplyResumeFixture(t))
+
+			results := CheckWorkflowProcessConformance(context.Background(), WorkflowProcessConformanceHarness{Records: records})
+			if !hasFailedWorkflowProcessConformanceCase(results, tt.want) {
+				t.Fatalf("CheckWorkflowProcessConformance() did not report resume metadata drift: %+v", results)
+			}
+		})
+	}
+}
+
 func TestCheckWorkflowProcessConformanceReportsInterventionActionMetadataDrift(t *testing.T) {
 	records := workflowProcessConformanceFixture(t)
 	records.Interventions[0].Metadata["action"] = string(ActionApplyPatch)

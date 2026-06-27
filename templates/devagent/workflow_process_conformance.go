@@ -663,8 +663,12 @@ func validateWorkflowProcessResumeInput(records WorkflowRecords, record gopact.I
 	if err := validateWorkflowActionRuntimeIDs(record.IDs, record.Resume.IDs); err != nil {
 		return fmt.Errorf("resume input %d resume ids: %w", index, err)
 	}
-	if got := workflowProcessStringMetadata(record.Metadata, "resume_interrupt_id"); got != record.Resume.InterruptID {
-		return fmt.Errorf("resume input %d resume_interrupt_id = %q, want %q", index, got, record.Resume.InterruptID)
+	if err := validateWorkflowProcessResumeMetadata(
+		record.Metadata,
+		*record.Resume,
+		fmt.Sprintf("resume input %d", index),
+	); err != nil {
+		return err
 	}
 	actionIndex, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index")
 	if !ok {
@@ -688,8 +692,12 @@ func validateWorkflowProcessResumeInput(records WorkflowRecords, record gopact.I
 			record.Resume.InterruptID,
 		)
 	}
-	if got := workflowProcessStringMetadata(review.Metadata, "resume_interrupt_id"); got != "" && got != record.Resume.InterruptID {
-		return fmt.Errorf("resume input %d review resume_interrupt_id = %q, want %q", index, got, record.Resume.InterruptID)
+	if err := validateWorkflowProcessResumeMetadata(
+		review.Metadata,
+		*review.Resume,
+		fmt.Sprintf("resume input %d review intervention", index),
+	); err != nil {
+		return err
 	}
 	return nil
 }
@@ -697,6 +705,13 @@ func validateWorkflowProcessResumeInput(records WorkflowRecords, record gopact.I
 func validateWorkflowProcessInterventionResume(records WorkflowRecords, record gopact.InterventionRecord, index int) error {
 	if record.Resume == nil {
 		return nil
+	}
+	if err := validateWorkflowProcessResumeMetadata(
+		record.Metadata,
+		*record.Resume,
+		fmt.Sprintf("intervention %d", index),
+	); err != nil {
+		return err
 	}
 	actionIndex, ok := workflowProcessIntMetadata(record.Metadata, "workflow_action_index")
 	if !ok {
@@ -719,6 +734,24 @@ func validateWorkflowProcessInterventionResume(records WorkflowRecords, record g
 	}
 	if err := validateWorkflowActionRuntimeIDs(input.IDs, input.Resume.IDs); err != nil {
 		return fmt.Errorf("intervention %d resume input ids: %w", index, err)
+	}
+	return nil
+}
+
+func validateWorkflowProcessResumeMetadata(metadata map[string]any, resume gopact.ResumeRequest, label string) error {
+	for _, field := range []struct {
+		name string
+		want string
+	}{
+		{name: "resume_interrupt_id", want: resume.InterruptID},
+		{name: "resume_checkpoint_id", want: resume.CheckpointID},
+		{name: "resume_step_id", want: resume.StepID},
+		{name: "resume_payload_codec", want: resume.PayloadCodec},
+	} {
+		got := workflowProcessStringMetadata(metadata, field.name)
+		if got != field.want && (got != "" || field.want != "") {
+			return fmt.Errorf("%s %s = %q, want %q", label, field.name, got, field.want)
+		}
 	}
 	return nil
 }
