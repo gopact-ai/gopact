@@ -140,7 +140,9 @@ return gopact.ToolResult{
 registry 会把默认 `tool_call` effect 标记为 idempotent，并记录 replay 所需 args。`tools.ReplayHandler`
 可以通过 `WithReplayCommitStore` 接入宿主提供的 `CommitStore`，先查已提交结果，未命中时再重放工具并写回
 commit record；`NewMemoryCommitStore` 只作为测试和单进程参考实现。生产级 exactly-once ledger、
-外部持久化、冲突处理和跨 worker 一致性仍由 adapter 或宿主实现，不进入 core SDK。
+外部持久化、冲突处理和跨 worker 一致性仍由 adapter 或宿主实现，不进入 core SDK。外部 adapter 可以通过
+`gopacttest/toolconformance.CheckCommitStoreConformance` 或 `RequireCommitStoreConformance` 复用 SDK 的最小
+commit store 契约测试。
 
 ## 命名规则
 
