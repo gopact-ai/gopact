@@ -91,6 +91,51 @@ func TestReviewerReviewReturnsRejectedDecisionFromPayload(t *testing.T) {
 	}
 }
 
+func TestReviewerReviewPreservesCanonicalMetadata(t *testing.T) {
+	reviewer, err := New(channelWithEvents(
+		gopact.ChannelEvent{
+			ID:      "event-3",
+			Channel: "lark",
+			Type:    gopact.ChannelEventAction,
+			Action: gopact.SurfaceAction{
+				ID:   "approve",
+				Type: gopact.SurfaceActionSubmit,
+				Metadata: map[string]any{
+					"adapter":   "spoofed-action",
+					"channel":   "spoofed-action",
+					"event_id":  "spoofed-action",
+					"action_id": "spoofed-action",
+					"reviewer":  "alice",
+					"source":    "action-card",
+				},
+			},
+			Metadata: map[string]any{
+				"adapter":   "spoofed-event",
+				"channel":   "spoofed-event",
+				"event_id":  "spoofed-event",
+				"action_id": "spoofed-event",
+				"source":    "event-card",
+			},
+		},
+	))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	decision, err := reviewer.Review(context.Background(), devagent.ReviewInput{})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+
+	if decision.Metadata["adapter"] != "channelreview" ||
+		decision.Metadata["channel"] != "lark" ||
+		decision.Metadata["event_id"] != "event-3" ||
+		decision.Metadata["action_id"] != "approve" ||
+		decision.Metadata["source"] != "action-card" {
+		t.Fatalf("metadata = %+v, want canonical channel review metadata and supplemental action metadata", decision.Metadata)
+	}
+}
+
 func TestReviewerReviewSendsPromptThroughTransferBeforeWaitingForDecision(t *testing.T) {
 	channel := &recordingChannel{
 		name: "tui",

@@ -26,6 +26,13 @@ var (
 	ErrPromptBuilderRequired = errors.New("channelreview: prompt builder is required")
 )
 
+var canonicalMetadataKeys = map[string]struct{}{
+	"adapter":   {},
+	"channel":   {},
+	"event_id":  {},
+	"action_id": {},
+}
+
 // PromptBuilder builds the platform-neutral review prompt sent before waiting for a decision.
 type PromptBuilder func(input devagent.ReviewInput, approveID string, rejectID string) gopact.SurfaceMessage
 
@@ -373,8 +380,8 @@ func (r *Reviewer) metadata(event gopact.ChannelEvent) map[string]any {
 	if event.Action.ID != "" {
 		metadata["action_id"] = event.Action.ID
 	}
-	copyInto(metadata, event.Metadata)
-	copyInto(metadata, event.Action.Metadata)
+	copySupplementalMetadata(metadata, event.Metadata)
+	copySupplementalMetadata(metadata, event.Action.Metadata)
 	return metadata
 }
 
@@ -438,8 +445,11 @@ func firstString(values ...string) string {
 	return ""
 }
 
-func copyInto(dst map[string]any, src map[string]any) {
+func copySupplementalMetadata(dst map[string]any, src map[string]any) {
 	for key, value := range src {
+		if _, ok := canonicalMetadataKeys[key]; ok {
+			continue
+		}
 		dst[key] = value
 	}
 }
