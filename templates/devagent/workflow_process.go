@@ -61,6 +61,7 @@ func BuildWorkflowProcessRecords(input WorkflowInput) (WorkflowRecords, error) {
 				fmt.Sprintf("%d", i+1),
 			)
 		}
+		stampWorkflowActionTaskID(&records)
 		if records.Task.Status == gopact.TaskFailed {
 			failedActions++
 		}
@@ -372,6 +373,20 @@ func WorkflowActionProcessRecords(records WorkflowRecords, actionIndex int) (Pro
 		}
 	}
 	return process, nil
+}
+
+func stampWorkflowActionTaskID(records *ProcessRecords) {
+	if records == nil || strings.TrimSpace(records.Task.ID) == "" {
+		return
+	}
+	metadata := map[string]any{"workflow_task_id": records.Task.ID}
+	records.Task.Metadata = mergeDevAgentMetadata(records.Task.Metadata, metadata)
+	for i := range records.Inputs {
+		records.Inputs[i].Metadata = mergeDevAgentMetadata(records.Inputs[i].Metadata, metadata)
+	}
+	for i := range records.Interventions {
+		records.Interventions[i].Metadata = mergeDevAgentMetadata(records.Interventions[i].Metadata, metadata)
+	}
 }
 
 func validateWorkflowRecordsConformance(records WorkflowRecords) error {

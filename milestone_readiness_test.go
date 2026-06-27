@@ -168,6 +168,20 @@ func TestMilestoneReadinessRecordsM6RemoteCIEvidence(t *testing.T) {
 	}
 }
 
+func TestMilestoneReadinessM5OpenItemsTrackOnlyRemainingWork(t *testing.T) {
+	manifest := loadMilestoneReadinessManifest(t)
+	m5, ok := findMilestoneReadiness(manifest, "M5")
+	if !ok {
+		t.Fatal("milestone readiness missing M5")
+	}
+
+	for _, item := range m5.OpenItems {
+		if strings.Contains(item, "已覆盖：") {
+			t.Fatalf("M5 open item describes completed work instead of remaining work: %q", item)
+		}
+	}
+}
+
 type milestoneReadinessManifest struct {
 	Version               int                  `json:"version"`
 	OverallStatus         string               `json:"overall_status"`
