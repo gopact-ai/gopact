@@ -3,6 +3,7 @@ package gopact
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -671,6 +672,119 @@ func TestRunRecorderRejectsMixedRunIDs(t *testing.T) {
 	}
 	if err := recorder.Record(Event{Type: EventRunStarted, IDs: RuntimeIDs{RunID: "run-2"}}); err == nil {
 		t.Fatal("Record(second) error = nil, want mixed run id error")
+	}
+}
+
+func TestRunRecorderRejectsMixedStableRuntimeIDs(t *testing.T) {
+	base := RuntimeIDs{
+		RunID:     "run-1",
+		ThreadID:  "thread-1",
+		UserID:    "user-1",
+		SessionID: "session-1",
+		AgentID:   "agent-1",
+		AppID:     "app-1",
+		TraceID:   "trace-1",
+	}
+
+	tests := []struct {
+		name    string
+		ids     RuntimeIDs
+		message string
+	}{
+		{
+			name:    "thread id",
+			ids:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-2", UserID: "user-1", SessionID: "session-1", AgentID: "agent-1", AppID: "app-1", TraceID: "trace-1"},
+			message: "mixed thread ids",
+		},
+		{
+			name:    "user id",
+			ids:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-2", SessionID: "session-1", AgentID: "agent-1", AppID: "app-1", TraceID: "trace-1"},
+			message: "mixed user ids",
+		},
+		{
+			name:    "session id",
+			ids:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1", SessionID: "session-2", AgentID: "agent-1", AppID: "app-1", TraceID: "trace-1"},
+			message: "mixed session ids",
+		},
+		{
+			name:    "agent id",
+			ids:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1", SessionID: "session-1", AgentID: "agent-2", AppID: "app-1", TraceID: "trace-1"},
+			message: "mixed agent ids",
+		},
+		{
+			name:    "app id",
+			ids:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1", SessionID: "session-1", AgentID: "agent-1", AppID: "app-2", TraceID: "trace-1"},
+			message: "mixed app ids",
+		},
+		{
+			name:    "trace id",
+			ids:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1", SessionID: "session-1", AgentID: "agent-1", AppID: "app-1", TraceID: "trace-2"},
+			message: "mixed trace ids",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := NewRunRecorder()
+			if err := recorder.Record(Event{Type: EventRunStarted, IDs: base}); err != nil {
+				t.Fatalf("Record(run started) error = %v", err)
+			}
+			err := recorder.RecordTask(TaskRecord{
+				ID:     "task-1",
+				Status: TaskCompleted,
+				IDs:    tt.ids,
+			})
+			if err == nil {
+				t.Fatal("RecordTask() error = nil, want mixed runtime identity error")
+			}
+			if !strings.Contains(err.Error(), tt.message) {
+				t.Fatalf("RecordTask() error = %v, want %q", err, tt.message)
+			}
+			if err := recorder.Record(Event{Type: EventRunCompleted, IDs: base}); err != nil {
+				t.Fatalf("Record(run completed) error = %v", err)
+			}
+			export, err := recorder.Export()
+			if err != nil {
+				t.Fatalf("Export() error = %v", err)
+			}
+			if export.IDs != base {
+				t.Fatalf("export IDs = %+v, want stable base IDs", export.IDs)
+			}
+			if len(export.Tasks) != 0 {
+				t.Fatalf("export tasks = %+v, want rejected task not recorded", export.Tasks)
+			}
+		})
+	}
+}
+
+func TestRunRecorderKeepsCallScopedIDsOutOfRunExportIDs(t *testing.T) {
+	base := RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1"}
+	recorder := NewRunRecorder()
+	events := []Event{
+		{Type: EventRunStarted, IDs: base},
+		{Type: EventModelProviderAttemptStarted, IDs: RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1", CallID: "model-call-1"}},
+		{Type: EventToolCall, IDs: RuntimeIDs{RunID: "run-1", ThreadID: "thread-1", UserID: "user-1", CallID: "tool-call-1", ParentCallID: "model-call-1"}},
+		{Type: EventRunCompleted, IDs: base},
+	}
+
+	for _, event := range events {
+		if err := recorder.Record(event); err != nil {
+			t.Fatalf("Record(%s) error = %v", event.Type, err)
+		}
+	}
+
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+	if export.IDs != base {
+		t.Fatalf("export IDs = %+v, want run-scoped IDs only", export.IDs)
+	}
+	if export.Events[1].IDs.CallID != "model-call-1" || export.Events[2].IDs.CallID != "tool-call-1" {
+		t.Fatalf("event call IDs = %q/%q, want preserved call-scoped IDs", export.Events[1].IDs.CallID, export.Events[2].IDs.CallID)
+	}
+	if export.Events[2].IDs.ParentCallID != "model-call-1" {
+		t.Fatalf("tool parent call ID = %q, want model-call-1", export.Events[2].IDs.ParentCallID)
 	}
 }
 

@@ -56,6 +56,7 @@ type RuntimeIDs struct {
 - `TraceID` 用于 OpenTelemetry、LangSmith 或内部 trace 系统；
 - 简单应用可以让多个字段取同一个值，但 SDK 不能假设它们相同；
 - 事件、checkpoint、artifact、policy request 必须携带同一组身份字段或其稳定子集。
+- `RunRecorder` 的 `RunExport.IDs` 只汇总 run-scope stable identity（user/session/thread/run/agent/app/trace）；这些字段一旦由 recorder 观察到非空值，后续记录不能漂移。`CallID` / `ParentCallID` 是调用级 identity，保留在具体 event、step 或 process record 中，不提升为 run export 顶层身份。
 - `ContextWithRuntimeIDs` / `RuntimeIDsFromContext` 只用于 tool、adapter、middleware 这类下游边界读取 request-scoped runtime identity；业务配置、长期状态和可恢复数据仍必须通过显式参数、事件、checkpoint 或 export 表达。
 
 ## Message 和 ContentPart
