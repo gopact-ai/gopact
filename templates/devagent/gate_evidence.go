@@ -103,17 +103,14 @@ func releaseGateEvidenceSummary(result GateResult) string {
 
 func releaseGateCheckMetadata(result GateResult) map[string]any {
 	metadata := releaseGateBaseMetadata(result)
-	for key, value := range result.Metadata {
-		if releaseGateReservedMetadataKey(key) {
-			continue
-		}
-		metadata[key] = value
-	}
+	mergeReleaseGateSupplementalMetadata(metadata, result.Metadata)
 	return metadata
 }
 
 func releaseGateEvidenceMetadata(result GateResult) map[string]any {
-	return releaseGateBaseMetadata(result)
+	metadata := releaseGateBaseMetadata(result)
+	mergeReleaseGateSupplementalMetadata(metadata, result.Metadata)
+	return metadata
 }
 
 func releaseGateBaseMetadata(result GateResult) map[string]any {
@@ -151,6 +148,15 @@ func releaseGateReservedMetadataKey(key string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func mergeReleaseGateSupplementalMetadata(metadata map[string]any, supplemental map[string]any) {
+	for key, value := range supplemental {
+		if releaseGateReservedMetadataKey(key) {
+			continue
+		}
+		metadata[key] = value
 	}
 }
 
