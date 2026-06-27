@@ -698,6 +698,45 @@ func TestRemoteA2AToolCancelTaskReturnsCanceledEvent(t *testing.T) {
 	}
 }
 
+func TestRemoteA2AToolCancelFailureReturnsFailedEvent(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("remote cancel failed")
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		CancelFunc: func(ctx context.Context, taskID string) error {
+			if taskID != "task-1" {
+				t.Fatalf("cancel task ID = %q, want task-1", taskID)
+			}
+			return wantErr
+		},
+	}
+	tool, err := NewA2A(remote)
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	result, err := tool.Cancel(gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{RunID: "run-1", CallID: "parent-call"}), "task-1")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Cancel() error = %v, want remote cancel error", err)
+	}
+	if len(result.Events) != 1 || result.Events[0].Type != gopact.EventA2ATaskFailed {
+		t.Fatalf("result events = %+v, want failed event", result.Events)
+	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_cancel_failure.golden.json", result.Events)
+	if result.Events[0].Error() == "" {
+		t.Fatal("failure event error is empty, want remote cancel error")
+	}
+	ids := result.Events[0].RuntimeIDs()
+	if ids.ParentCallID != "parent-call" {
+		t.Fatalf("cancel failure ids = %+v, want parent call chain", ids)
+	}
+	if result.Metadata["agent_name"] != "planner" ||
+		result.Metadata["a2a_task_id"] != "task-1" ||
+		result.Metadata["parent_call_id"] != "parent-call" {
+		t.Fatalf("result metadata = %+v, want cancel failure metadata", result.Metadata)
+	}
+}
+
 func TestRemoteA2AToolCancelPolicyDenySkipsCancelAndReturnsPolicyEvents(t *testing.T) {
 	ctx := context.Background()
 	cancelCalled := false
