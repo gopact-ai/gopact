@@ -513,6 +513,70 @@ func TestRemoteA2AToolAuthAttachesAuthBeforePolicyAndSend(t *testing.T) {
 	if result.Events[2].Metadata["auth_principal"] != "svc-planner" {
 		t.Fatalf("sent event metadata = %+v, want auth principal", result.Events[2].Metadata)
 	}
+	if result.Events[3].Metadata["auth_principal"] != "svc-planner" {
+		t.Fatalf("completed event metadata = %+v, want auth principal", result.Events[3].Metadata)
+	}
+	if result.Metadata["auth_principal"] != "svc-planner" {
+		t.Fatalf("result metadata = %+v, want auth principal", result.Metadata)
+	}
+}
+
+func TestRemoteA2AToolAuthSendFailureAttachesAuditMetadata(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("remote send failed")
+	var sentAuth a2a.Auth
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		SendFunc: func(ctx context.Context, task a2a.Task) (a2a.Result, error) {
+			if task.Input != "write tests" {
+				t.Fatalf("sent task input = %q, want write tests", task.Input)
+			}
+			var ok bool
+			sentAuth, ok = a2a.AuthFromContext(ctx)
+			if !ok {
+				t.Fatal("Send context missing A2A auth")
+			}
+			return a2a.Result{}, wantErr
+		},
+	}
+	auth := a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
+		if req.AgentName != "planner" || req.Action != gopact.PolicyActionSend {
+			t.Fatalf("auth request = %+v, want planner send", req)
+		}
+		return a2a.Auth{
+			Scheme:        "bearer",
+			Principal:     "svc-planner",
+			CredentialRef: "secret://a2a/planner",
+		}, nil
+	})
+	tool, err := NewA2A(remote, WithAuth(auth))
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	result, err := tool.Invoke(
+		gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{RunID: "run-1", CallID: "parent-call"}),
+		json.RawMessage(`{"input":"write tests"}`),
+	)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Invoke() error = %v, want remote send error", err)
+	}
+	if sentAuth.Principal != "svc-planner" {
+		t.Fatalf("send context auth = %+v, want injected auth", sentAuth)
+	}
+	if len(result.Events) != 2 ||
+		result.Events[0].Type != gopact.EventA2ATaskSent ||
+		result.Events[1].Type != gopact.EventA2ATaskFailed {
+		t.Fatalf("result events = %+v, want sent/failed events", result.Events)
+	}
+	if result.Events[1].Metadata["auth_scheme"] != "bearer" ||
+		result.Events[1].Metadata["auth_principal"] != "svc-planner" ||
+		result.Events[1].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
+		t.Fatalf("failed event metadata = %+v, want auth audit metadata", result.Events[1].Metadata)
+	}
+	if result.Metadata["auth_principal"] != "svc-planner" {
+		t.Fatalf("result metadata = %+v, want auth principal", result.Metadata)
+	}
 }
 
 func TestRemoteA2AToolCancelAuthAttachesAuditMetadata(t *testing.T) {
