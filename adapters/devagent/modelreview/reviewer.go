@@ -23,6 +23,10 @@ var (
 	ErrParserRequired = errors.New("modelreview: parser is required")
 	// ErrInvalidModelDecision is returned when a model response cannot be parsed into a review decision.
 	ErrInvalidModelDecision = errors.New("modelreview: invalid model decision")
+	// ErrGovernanceFieldRequired is returned when required governance metadata is missing.
+	ErrGovernanceFieldRequired = errors.New("modelreview: governance field is required")
+	// ErrInvalidGovernanceField is returned when an unknown governance field is required.
+	ErrInvalidGovernanceField = errors.New("modelreview: invalid governance field")
 )
 
 // PromptBuilder turns review input evidence into one model request.
@@ -41,11 +45,23 @@ type Governance struct {
 	Metadata      map[string]any
 }
 
+// GovernanceField names model review governance metadata that can be required at construction time.
+type GovernanceField string
+
+const (
+	GovernanceFieldPromptID      GovernanceField = "review_prompt_id"
+	GovernanceFieldPromptVersion GovernanceField = "review_prompt_version"
+	GovernanceFieldEvalID        GovernanceField = "review_eval_id"
+	GovernanceFieldEvalVersion   GovernanceField = "review_eval_version"
+	GovernanceFieldPolicyRef     GovernanceField = "review_policy_ref"
+)
+
 type config struct {
-	reviewer      string
-	promptBuilder PromptBuilder
-	parser        Parser
-	governance    Governance
+	reviewer                 string
+	promptBuilder            PromptBuilder
+	parser                   Parser
+	governance               Governance
+	requiredGovernanceFields []GovernanceField
 }
 
 // Option configures a model-backed reviewer.
@@ -93,6 +109,29 @@ func WithGovernance(governance Governance) Option {
 	}
 }
 
+// WithRequiredGovernanceFields requires governance metadata before model review can be constructed.
+func WithRequiredGovernanceFields(fields ...GovernanceField) Option {
+	return func(cfg *config) error {
+		if len(fields) == 0 {
+			return ErrGovernanceFieldRequired
+		}
+		required := make([]GovernanceField, 0, len(fields))
+		seen := make(map[GovernanceField]struct{}, len(fields))
+		for _, field := range fields {
+			if !field.valid() {
+				return fmt.Errorf("%w: %q", ErrInvalidGovernanceField, field)
+			}
+			if _, ok := seen[field]; ok {
+				continue
+			}
+			seen[field] = struct{}{}
+			required = append(required, field)
+		}
+		cfg.requiredGovernanceFields = required
+		return nil
+	}
+}
+
 // Reviewer calls a host-injected model and parses an explicit review decision from its response.
 type Reviewer struct {
 	model gopact.ChatModel
@@ -118,6 +157,9 @@ func New(model gopact.ChatModel, opts ...Option) (*Reviewer, error) {
 		if err := opt(&cfg); err != nil {
 			return nil, err
 		}
+	}
+	if err := validateRequiredGovernance(cfg.governance, cfg.requiredGovernanceFields); err != nil {
+		return nil, err
 	}
 	return &Reviewer{model: model, cfg: cfg}, nil
 }
@@ -228,6 +270,45 @@ func extractJSONObject(text string) string {
 		return ""
 	}
 	return text[start : end+1]
+}
+
+func (f GovernanceField) valid() bool {
+	switch f {
+	case GovernanceFieldPromptID,
+		GovernanceFieldPromptVersion,
+		GovernanceFieldEvalID,
+		GovernanceFieldEvalVersion,
+		GovernanceFieldPolicyRef:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateRequiredGovernance(governance Governance, required []GovernanceField) error {
+	for _, field := range required {
+		if strings.TrimSpace(governanceValue(governance, field)) == "" {
+			return fmt.Errorf("%w: %s", ErrGovernanceFieldRequired, field)
+		}
+	}
+	return nil
+}
+
+func governanceValue(governance Governance, field GovernanceField) string {
+	switch field {
+	case GovernanceFieldPromptID:
+		return governance.PromptID
+	case GovernanceFieldPromptVersion:
+		return governance.PromptVersion
+	case GovernanceFieldEvalID:
+		return governance.EvalID
+	case GovernanceFieldEvalVersion:
+		return governance.EvalVersion
+	case GovernanceFieldPolicyRef:
+		return governance.PolicyRef
+	default:
+		return ""
+	}
 }
 
 func decisionSchema() gopact.JSONSchema {

@@ -46,7 +46,7 @@
 - `adapters/devagent/gitdiff`：Dev Agent git diff scanner adapter 第一片，支持 worktree/staged diff，调用 git diff 捕获 unified diff 与 numstat，并输出 `gopacttest.DiffSnapshot` 和 `devagent.PatchProposal`，供 verification evidence 和 entropy audit 使用。
 - `adapters/devagent/channelreview`：Dev Agent channel reviewer adapter 第一片，可选通过 `Transfer`/`Channel` 先投递 `SurfaceMessageApproval` review prompt，再消费 `gopact.ChannelEvent` 中的 approve/reject action 或 payload，转换成 `devagent.ReviewDecision`；适合把 Lark/TUI/SSE/CI 等外部审批入口通过统一 channel 边界接入 release gate。
 - `adapters/devagent/cireview`：Dev Agent CI reviewer adapter 第一片，只消费宿主已观察到的 `VerificationReport`、required checks、required `ci_gate` evidence 和 `EntropyAudit`，不执行命令、不连接 CI 系统，把通过/失败/缺失检查、缺失/未通过 CI gate 和 entropy 风险转换成显式 `devagent.ReviewDecision`。
-- `adapters/devagent/modelreview`：Dev Agent model reviewer adapter 第一片，通过宿主注入的 `gopact.ChatModel` 把已观察 review input 序列化成模型请求，只接受显式 JSON approve/reject decision；`WithGovernance` 可把 prompt id/version、eval id/version、policy ref 和宿主 metadata 注入模型请求与 reviewer decision，形成可审计的 prompt/eval governance 边界；不执行命令、不扫描工作区、不替代 release gate。
+- `adapters/devagent/modelreview`：Dev Agent model reviewer adapter 第一片，通过宿主注入的 `gopact.ChatModel` 把已观察 review input 序列化成模型请求，只接受显式 JSON approve/reject decision；`WithGovernance` 可把 prompt id/version、eval id/version、policy ref 和宿主 metadata 注入模型请求与 reviewer decision，`WithRequiredGovernanceFields` 可在构造期强制 prompt/eval/policy governance 字段存在，形成可审计的 prompt/eval governance 边界；不执行命令、不扫描工作区、不替代 release gate。
 - `docs/design/index.md`：总体设计入口、架构图、组件交互和 milestone。
 - `docs/design/milestone-readiness.json`：M1-M6 的状态、证据文档、未完成项和自举级别清单，用于判断路线图是否真的完成。
 - `docs/design/public-api-boundary.json`：root 包顶层导出符号的分类、稳定性、来源文件和导出方法 receiver 继承策略清单，防止新增 public API 绕过 SDK 边界审查。
