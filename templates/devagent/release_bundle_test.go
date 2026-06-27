@@ -198,6 +198,58 @@ func TestBuildReleaseBundleUsesObservedWorkflowProcessRecords(t *testing.T) {
 	}
 }
 
+func TestBuildReleaseBundleRejectsMismatchedReviewGovernanceProcessMetadata(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutate      func(map[string]any)
+		wantMessage string
+	}{
+		{
+			name: "missing review prompt id",
+			mutate: func(metadata map[string]any) {
+				delete(metadata, "review_prompt_id")
+			},
+			wantMessage: "process review intervention review_prompt_id is required",
+		},
+		{
+			name: "mismatched review eval id",
+			mutate: func(metadata map[string]any) {
+				metadata["review_eval_id"] = "other-eval"
+			},
+			wantMessage: "process review intervention review_eval_id \"other-eval\" does not match \"release-eval\"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := validReleaseBundleInput(t)
+			input.Review.Metadata = map[string]any{
+				"review_prompt_id":  "devagent-review",
+				"review_eval_id":    "release-eval",
+				"review_policy_ref": "release-policy-v1",
+			}
+			process, err := BuildProcessRecords(ProcessInput{
+				IDs:    input.Export.IDs,
+				Action: input.Action,
+				Review: input.Review,
+				Gate:   &input.Gate,
+			})
+			if err != nil {
+				t.Fatalf("BuildProcessRecords() error = %v", err)
+			}
+			tt.mutate(process.Interventions[0].Metadata)
+			input.Process = process
+
+			_, err = BuildReleaseBundle(input)
+			if !errors.Is(err, ErrInvalidReleaseBundle) {
+				t.Fatalf("BuildReleaseBundle() error = %v, want ErrInvalidReleaseBundle", err)
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Fatalf("BuildReleaseBundle() error = %v, want %q", err, tt.wantMessage)
+			}
+		})
+	}
+}
+
 func TestBuildReleaseBundleRejectsWorkflowProcessRecordsWithOtherActionBoundaries(t *testing.T) {
 	input := validReleaseBundleInput(t)
 	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{

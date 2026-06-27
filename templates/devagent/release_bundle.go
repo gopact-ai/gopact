@@ -625,7 +625,42 @@ func validateReviewProcessIntervention(record gopact.InterventionRecord, review 
 			return err
 		}
 	}
+	for _, key := range reviewGovernanceMetadataKeys() {
+		want, ok := reviewGovernanceStringMetadata(review.Metadata, key)
+		if !ok {
+			continue
+		}
+		if err := validateProcessStringMapValue("process review intervention", record.Metadata, key, want); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func reviewGovernanceMetadataKeys() []string {
+	return []string{
+		"review_prompt_id",
+		"review_prompt_version",
+		"review_eval_id",
+		"review_eval_version",
+		"review_policy_ref",
+	}
+}
+
+func reviewGovernanceStringMetadata(metadata map[string]any, key string) (string, bool) {
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return "", false
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", false
+	}
+	return text, true
 }
 
 func validateProcessRunID(label, got, want string) error {
