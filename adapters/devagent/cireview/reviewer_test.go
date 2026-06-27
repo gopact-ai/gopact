@@ -112,6 +112,72 @@ func TestReviewerReviewRejectsMissingRequiredCheck(t *testing.T) {
 	}
 }
 
+func TestReviewerReviewRejectsMissingRequiredCIGate(t *testing.T) {
+	reviewer, err := New(WithRequiredCIGates("unit", "race"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	decision, err := reviewer.Review(context.Background(), devagent.ReviewInput{
+		Mode: devagent.ModeWrite,
+		Report: verificationReport(t,
+			ciGateVerificationCheck("github-actions", ciGateEvidence{
+				gate:   "unit",
+				status: gopact.VerificationStatusPassed,
+			}),
+		),
+	})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+
+	if decision.Status != devagent.ReviewRejected {
+		t.Fatalf("decision = %+v, want rejected decision", decision)
+	}
+	if !strings.Contains(decision.Summary, "required CI gate race is missing") {
+		t.Fatalf("summary = %q, want missing required CI gate reason", decision.Summary)
+	}
+	required, ok := decision.Metadata["required_ci_gates"].([]string)
+	if !ok || len(required) != 2 || required[0] != "unit" || required[1] != "race" {
+		t.Fatalf("required_ci_gates = %#v, want unit race", decision.Metadata["required_ci_gates"])
+	}
+	missing, ok := decision.Metadata["missing_ci_gates"].([]string)
+	if !ok || len(missing) != 1 || missing[0] != "race" {
+		t.Fatalf("missing_ci_gates = %#v, want race", decision.Metadata["missing_ci_gates"])
+	}
+}
+
+func TestReviewerReviewRejectsFailedRequiredCIGate(t *testing.T) {
+	reviewer, err := New(WithRequiredCIGates("lint"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	decision, err := reviewer.Review(context.Background(), devagent.ReviewInput{
+		Mode: devagent.ModeWrite,
+		Report: verificationReport(t,
+			ciGateVerificationCheck("github-actions", ciGateEvidence{
+				gate:   "lint",
+				status: gopact.VerificationStatusFailed,
+			}),
+		),
+	})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+
+	if decision.Status != devagent.ReviewRejected {
+		t.Fatalf("decision = %+v, want rejected decision", decision)
+	}
+	if !strings.Contains(decision.Summary, "required CI gate lint status failed is not passed") {
+		t.Fatalf("summary = %q, want failed required CI gate reason", decision.Summary)
+	}
+	failed, ok := decision.Metadata["failed_ci_gates"].([]string)
+	if !ok || len(failed) != 1 || failed[0] != "lint" {
+		t.Fatalf("failed_ci_gates = %#v, want lint", decision.Metadata["failed_ci_gates"])
+	}
+}
+
 func TestReviewerReviewRejectsHighEntropyFinding(t *testing.T) {
 	reviewer, err := New()
 	if err != nil {
@@ -190,6 +256,12 @@ func TestNewRejectsInvalidInput(t *testing.T) {
 	if reviewer, err := New(WithRequiredChecks()); reviewer != nil || !errors.Is(err, ErrRequiredCheckRequired) {
 		t.Fatalf("New(no required checks) reviewer=%v err=%v, want ErrRequiredCheckRequired", reviewer, err)
 	}
+	if reviewer, err := New(WithRequiredCIGates("unit", " ")); reviewer != nil || !errors.Is(err, ErrRequiredCIGateRequired) {
+		t.Fatalf("New(empty required CI gate) reviewer=%v err=%v, want ErrRequiredCIGateRequired", reviewer, err)
+	}
+	if reviewer, err := New(WithRequiredCIGates()); reviewer != nil || !errors.Is(err, ErrRequiredCIGateRequired) {
+		t.Fatalf("New(no required CI gates) reviewer=%v err=%v, want ErrRequiredCIGateRequired", reviewer, err)
+	}
 	if reviewer, err := New(WithMaxEntropySeverity(gopact.EntropySeverity("severe"))); reviewer != nil ||
 		!errors.Is(err, ErrInvalidEntropySeverity) {
 		t.Fatalf("New(invalid entropy severity) reviewer=%v err=%v, want ErrInvalidEntropySeverity", reviewer, err)
@@ -230,6 +302,30 @@ func verificationCheck(id string, status gopact.VerificationStatus) gopact.Verif
 	}
 	if status == gopact.VerificationStatusSkipped {
 		check.Evidence = nil
+	}
+	return check
+}
+
+type ciGateEvidence struct {
+	gate   string
+	status gopact.VerificationStatus
+}
+
+func ciGateVerificationCheck(id string, gates ...ciGateEvidence) gopact.VerificationCheck {
+	check := gopact.VerificationCheck{
+		ID:     id,
+		Status: gopact.VerificationStatusPassed,
+	}
+	for _, gate := range gates {
+		check.Evidence = append(check.Evidence, gopact.VerificationEvidence{
+			Type:    "ci_gate",
+			Ref:     gate.gate,
+			Summary: "observed ci gate",
+			Metadata: map[string]any{
+				"gate":   gate.gate,
+				"status": string(gate.status),
+			},
+		})
 	}
 	return check
 }
