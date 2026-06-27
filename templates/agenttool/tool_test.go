@@ -579,6 +579,205 @@ func TestRemoteA2AToolAuthSendFailureAttachesAuditMetadata(t *testing.T) {
 	}
 }
 
+func TestRemoteA2AToolAuthStreamCompletedAttachesAuditMetadata(t *testing.T) {
+	ctx := context.Background()
+	var streamedTask a2a.Task
+	var streamAuth a2a.Auth
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		StreamFunc: func(ctx context.Context, task a2a.Task) iter.Seq2[a2a.TaskEvent, error] {
+			streamedTask = task
+			var ok bool
+			streamAuth, ok = a2a.AuthFromContext(ctx)
+			if !ok {
+				t.Fatal("Stream context missing A2A auth")
+			}
+			return func(yield func(a2a.TaskEvent, error) bool) {
+				yield(a2a.TaskEvent{
+					TaskID: task.ID,
+					IDs:    task.IDs,
+					Status: a2a.TaskStatusCompleted,
+					Result: &a2a.Result{
+						TaskID: task.ID,
+						Output: "planned",
+						Metadata: map[string]any{
+							"route":          "stream",
+							"auth_principal": "remote-spoof",
+						},
+					},
+				}, nil)
+			}
+		},
+	}
+	auth := a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
+		if req.AgentName != "planner" || req.Action != gopact.PolicyActionSend {
+			t.Fatalf("auth request = %+v, want planner send", req)
+		}
+		return a2a.Auth{
+			Scheme:        "bearer",
+			Principal:     "svc-planner",
+			CredentialRef: "secret://a2a/planner",
+		}, nil
+	})
+	tool, err := NewA2A(remote, WithAuth(auth))
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	events, err := collectEvents(tool.Stream(
+		gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{RunID: "run-1", CallID: "parent-call"}),
+		json.RawMessage(`{"input":"write tests"}`),
+	))
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if streamAuth.Principal != "svc-planner" {
+		t.Fatalf("stream context auth = %+v, want injected auth", streamAuth)
+	}
+	if streamedTask.Auth == nil || streamedTask.Auth.Principal != "svc-planner" {
+		t.Fatalf("streamed task auth = %+v, want injected auth", streamedTask.Auth)
+	}
+	if len(events) != 2 ||
+		events[0].Type != gopact.EventA2ATaskSent ||
+		events[1].Type != gopact.EventA2ATaskCompleted {
+		t.Fatalf("Stream() events = %+v, want sent/completed", events)
+	}
+	if events[1].Metadata["route"] != "stream" ||
+		events[1].Metadata["auth_scheme"] != "bearer" ||
+		events[1].Metadata["auth_principal"] != "svc-planner" ||
+		events[1].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
+		t.Fatalf("completed event metadata = %+v, want auth audit metadata", events[1].Metadata)
+	}
+	if events[1].Result == nil {
+		t.Fatal("completed event result is nil, want streamed result")
+	}
+	if events[1].Result.Metadata["route"] != "stream" ||
+		events[1].Result.Metadata["auth_principal"] != "svc-planner" {
+		t.Fatalf("completed result metadata = %+v, want auth audit metadata", events[1].Result.Metadata)
+	}
+}
+
+func TestRemoteA2AToolAuthStreamTerminalEventsAttachAuditMetadata(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("stream failed")
+	tests := []struct {
+		name      string
+		status    a2a.TaskStatus
+		eventType gopact.EventType
+		streamErr error
+		wantErr   error
+	}{
+		{
+			name:      "failed",
+			status:    a2a.TaskStatusFailed,
+			eventType: gopact.EventA2ATaskFailed,
+			streamErr: wantErr,
+			wantErr:   wantErr,
+		},
+		{
+			name:      "canceled",
+			status:    a2a.TaskStatusCanceled,
+			eventType: gopact.EventA2ATaskCanceled,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			remote := a2a.FakeAgent{
+				CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+				StreamFunc: func(ctx context.Context, task a2a.Task) iter.Seq2[a2a.TaskEvent, error] {
+					return func(yield func(a2a.TaskEvent, error) bool) {
+						yield(a2a.TaskEvent{
+							TaskID:  task.ID,
+							IDs:     task.IDs,
+							Status:  tt.status,
+							Message: "terminal",
+							Metadata: map[string]any{
+								"phase":          "terminal",
+								"auth_principal": "remote-spoof",
+							},
+							Err: tt.streamErr,
+						}, tt.streamErr)
+					}
+				},
+			}
+			auth := a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
+				if req.AgentName != "planner" || req.Action != gopact.PolicyActionSend {
+					t.Fatalf("auth request = %+v, want planner send", req)
+				}
+				return a2a.Auth{
+					Scheme:        "bearer",
+					Principal:     "svc-planner",
+					CredentialRef: "secret://a2a/planner",
+				}, nil
+			})
+			tool, err := NewA2A(remote, WithAuth(auth))
+			if err != nil {
+				t.Fatalf("NewA2A() error = %v", err)
+			}
+
+			events, err := collectEvents(tool.Stream(
+				gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{RunID: "run-1", CallID: "parent-call"}),
+				json.RawMessage(`{"input":"write tests"}`),
+			))
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Stream() error = %v, want %v", err, tt.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("Stream() error = %v", err)
+			}
+			if len(events) != 2 ||
+				events[0].Type != gopact.EventA2ATaskSent ||
+				events[1].Type != tt.eventType {
+				t.Fatalf("Stream() events = %+v, want sent/%s", events, tt.eventType)
+			}
+			if events[1].Metadata["phase"] != "terminal" ||
+				events[1].Metadata["auth_scheme"] != "bearer" ||
+				events[1].Metadata["auth_principal"] != "svc-planner" ||
+				events[1].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
+				t.Fatalf("terminal event metadata = %+v, want auth audit metadata", events[1].Metadata)
+			}
+		})
+	}
+}
+
+func TestRemoteA2AToolAuthStreamUnsupportedAttachesAuditMetadata(t *testing.T) {
+	ctx := context.Background()
+	tool, err := NewA2A(nonStreamingAgent{
+		card: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+	}, WithAuth(a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
+		if req.AgentName != "planner" || req.Action != gopact.PolicyActionSend {
+			t.Fatalf("auth request = %+v, want planner send", req)
+		}
+		return a2a.Auth{
+			Scheme:        "bearer",
+			Principal:     "svc-planner",
+			CredentialRef: "secret://a2a/planner",
+		}, nil
+	})))
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	events, err := collectEvents(tool.Stream(
+		gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{RunID: "run-1", CallID: "parent-call"}),
+		json.RawMessage(`{"input":"write tests"}`),
+	))
+	if !errors.Is(err, a2a.ErrStreamNotSupported) {
+		t.Fatalf("Stream() error = %v, want stream unsupported", err)
+	}
+	if len(events) != 2 ||
+		events[0].Type != gopact.EventA2ATaskSent ||
+		events[1].Type != gopact.EventA2ATaskFailed {
+		t.Fatalf("Stream() events = %+v, want sent/failed", events)
+	}
+	if events[1].Metadata["auth_scheme"] != "bearer" ||
+		events[1].Metadata["auth_principal"] != "svc-planner" ||
+		events[1].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
+		t.Fatalf("unsupported event metadata = %+v, want auth audit metadata", events[1].Metadata)
+	}
+}
+
 func TestRemoteA2AToolCancelAuthAttachesAuditMetadata(t *testing.T) {
 	ctx := context.Background()
 	var cancelAuth a2a.Auth
@@ -1238,6 +1437,22 @@ func TestNewA2ARejectsInvalidAgent(t *testing.T) {
 	if _, err := NewA2A(a2a.FakeAgent{}); !errors.Is(err, ErrNameRequired) {
 		t.Fatalf("NewA2A(missing name) error = %v, want %v", err, ErrNameRequired)
 	}
+}
+
+type nonStreamingAgent struct {
+	card a2a.AgentCard
+}
+
+func (a nonStreamingAgent) Card() a2a.AgentCard {
+	return a.card
+}
+
+func (a nonStreamingAgent) Send(ctx context.Context, task a2a.Task) (a2a.Result, error) {
+	return a2a.Result{TaskID: task.ID}, nil
+}
+
+func (a nonStreamingAgent) Cancel(ctx context.Context, taskID string) error {
+	return nil
 }
 
 type runnableFunc func(ctx context.Context, input any, opts ...gopact.RunOption) iter.Seq2[gopact.Event, error]
