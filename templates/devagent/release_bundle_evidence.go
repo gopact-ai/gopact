@@ -3,6 +3,7 @@ package devagent
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gopact-ai/gopact"
@@ -51,12 +52,14 @@ func releaseBundleEvidenceSummary(bundle ReleaseBundle) string {
 
 func releaseBundleCheckMetadata(bundle ReleaseBundle) map[string]any {
 	metadata := releaseBundleBaseMetadata(bundle)
+	addReleaseBundleReviewGovernanceMetadata(metadata, bundle.Review.Metadata)
 	mergeReleaseBundleSupplementalMetadata(metadata, bundle.Metadata)
 	return metadata
 }
 
 func releaseBundleEvidenceMetadata(bundle ReleaseBundle) map[string]any {
 	metadata := releaseBundleBaseMetadata(bundle)
+	addReleaseBundleReviewGovernanceMetadata(metadata, bundle.Review.Metadata)
 	mergeReleaseBundleSupplementalMetadata(metadata, bundle.Metadata)
 	return metadata
 }
@@ -147,6 +150,11 @@ func releaseBundleReservedMetadataKey(key string) bool {
 		"process_task_id",
 		"release_gate_input_id",
 		"review_intervention_id",
+		"review_prompt_id",
+		"review_prompt_version",
+		"review_eval_id",
+		"review_eval_version",
+		"review_policy_ref",
 		"required_check_ids",
 		"required_evidence_types",
 		"required_ci_gates",
@@ -160,6 +168,30 @@ func releaseBundleReservedMetadataKey(key string) bool {
 func mergeReleaseBundleSupplementalMetadata(metadata map[string]any, supplemental map[string]any) {
 	for key, value := range supplemental {
 		if releaseBundleReservedMetadataKey(key) {
+			continue
+		}
+		metadata[key] = value
+	}
+}
+
+func addReleaseBundleReviewGovernanceMetadata(metadata map[string]any, reviewMetadata map[string]any) {
+	for _, key := range []string{
+		"review_prompt_id",
+		"review_prompt_version",
+		"review_eval_id",
+		"review_eval_version",
+		"review_policy_ref",
+	} {
+		value, ok := reviewMetadata[key]
+		if !ok || value == nil {
+			continue
+		}
+		if text, ok := value.(string); ok {
+			text = strings.TrimSpace(text)
+			if text == "" {
+				continue
+			}
+			metadata[key] = text
 			continue
 		}
 		metadata[key] = value

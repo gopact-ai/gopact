@@ -103,6 +103,34 @@ func TestRecordReleaseBundleCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 }
 
+func TestRecordReleaseBundleCheckCapturesReviewGovernanceMetadata(t *testing.T) {
+	bundle := releaseBundleFixture(t)
+	bundle.Review.Metadata = map[string]any{
+		"review_prompt_id":      "devagent-review",
+		"review_prompt_version": "2026-06-27",
+		"review_eval_id":        "release-eval",
+		"review_eval_version":   "v1",
+		"review_policy_ref":     "release-policy-v1",
+	}
+	bundle.Metadata["review_prompt_id"] = "spoofed-release-metadata"
+	recorder := gopact.NewVerificationRecorder()
+
+	if err := RecordReleaseBundleCheck(recorder, bundle); err != nil {
+		t.Fatalf("RecordReleaseBundleCheck() error = %v", err)
+	}
+
+	check := recorder.Checks()[0]
+	for _, metadata := range []map[string]any{check.Metadata, check.Evidence[0].Metadata} {
+		if metadata["review_prompt_id"] != "devagent-review" ||
+			metadata["review_prompt_version"] != "2026-06-27" ||
+			metadata["review_eval_id"] != "release-eval" ||
+			metadata["review_eval_version"] != "v1" ||
+			metadata["review_policy_ref"] != "release-policy-v1" {
+			t.Fatalf("metadata = %+v, want review governance metadata", metadata)
+		}
+	}
+}
+
 func TestRecordReleaseBundleCheckCapturesObservedWorkflowRelease(t *testing.T) {
 	createdAt := time.Date(2026, 6, 25, 18, 0, 0, 0, time.UTC)
 	ids := gopact.RuntimeIDs{
