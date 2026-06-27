@@ -241,7 +241,7 @@ func (t *A2ATool) Stream(ctx context.Context, args json.RawMessage) iter.Seq2[go
 		streamer, ok := t.agent.(a2a.StreamingAgent)
 		if !ok {
 			err := a2a.ErrStreamNotSupported
-			yield(a2aEvent(gopact.EventA2ATaskFailed, ids, task.ID, t.card.Name, nil, nil, err), err)
+			yield(a2aEvent(gopact.EventA2ATaskFailed, ids, task.ID, t.card.Name, authMetadata, nil, err), err)
 			return
 		}
 
@@ -251,7 +251,7 @@ func (t *A2ATool) Stream(ctx context.Context, args json.RawMessage) iter.Seq2[go
 			defer cancel()
 		}
 		for taskEvent, streamErr := range streamer.Stream(streamCtx, task) {
-			event := a2aTaskEvent(taskEvent.WithDefaults(task), t.card.Name, ids, streamErr)
+			event := a2aTaskEvent(taskEvent.WithDefaults(task), t.card.Name, ids, authMetadata, streamErr)
 			if !yield(event, streamErr) || streamErr != nil {
 				return
 			}
@@ -439,7 +439,13 @@ func a2aEvent(
 	}.WithRuntimeDefaults(ids)
 }
 
-func a2aTaskEvent(taskEvent a2a.TaskEvent, agentName string, ids gopact.RuntimeIDs, streamErr error) gopact.Event {
+func a2aTaskEvent(
+	taskEvent a2a.TaskEvent,
+	agentName string,
+	ids gopact.RuntimeIDs,
+	authMetadata map[string]any,
+	streamErr error,
+) gopact.Event {
 	eventType := gopact.EventA2ATaskStatusUpdated
 	artifacts := copyArtifactRefs(taskEvent.Artifacts)
 	var result *gopact.ToolResult
@@ -452,10 +458,11 @@ func a2aTaskEvent(taskEvent a2a.TaskEvent, agentName string, ids gopact.RuntimeI
 		eventType = gopact.EventA2ATaskCompleted
 		if taskEvent.Result != nil {
 			artifacts = copyArtifactRefs(taskEvent.Result.Artifacts)
+			resultMetadata := mergeAnyMap(taskEvent.Result.Metadata, authMetadata)
 			result = &gopact.ToolResult{
 				Content:   taskEvent.Result.Output,
 				Artifacts: artifacts,
-				Metadata:  copyAnyMap(taskEvent.Result.Metadata),
+				Metadata:  resultMetadata,
 			}
 		} else {
 			artifacts = copyArtifactRefs(taskEvent.Artifacts)
@@ -474,13 +481,18 @@ func a2aTaskEvent(taskEvent a2a.TaskEvent, agentName string, ids gopact.RuntimeI
 			}
 		}
 	}
-	metadata := a2aStatusMetadata(agentName, taskEvent, ids)
+	metadata := a2aStatusMetadata(agentName, taskEvent, ids, authMetadata)
 	event := a2aEvent(eventType, taskEvent.IDs.WithDefaults(ids), taskEvent.TaskID, agentName, metadata, artifacts, err)
 	event.Result = result
 	return event
 }
 
-func a2aStatusMetadata(agentName string, taskEvent a2a.TaskEvent, ids gopact.RuntimeIDs) map[string]any {
+func a2aStatusMetadata(
+	agentName string,
+	taskEvent a2a.TaskEvent,
+	ids gopact.RuntimeIDs,
+	authMetadata map[string]any,
+) map[string]any {
 	metadata := copyAnyMap(taskEvent.Metadata)
 	if metadata == nil {
 		metadata = make(map[string]any)
@@ -496,6 +508,7 @@ func a2aStatusMetadata(agentName string, taskEvent a2a.TaskEvent, ids gopact.Run
 	if taskEvent.Message != "" {
 		metadata["a2a_message"] = taskEvent.Message
 	}
+	metadata = mergeAnyMap(metadata, authMetadata)
 	return a2aMetadata(agentName, ids, taskEvent.TaskID, metadata)
 }
 
