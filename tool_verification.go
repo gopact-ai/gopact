@@ -135,7 +135,7 @@ func toolCallCheckMetadata(snapshot ToolCallSnapshot) map[string]any {
 }
 
 func toolCallEvidenceMetadata(snapshot ToolCallSnapshot) map[string]any {
-	return toolCallBaseMetadata(snapshot)
+	return toolCallCheckMetadata(snapshot)
 }
 
 func toolCallBaseMetadata(snapshot ToolCallSnapshot) map[string]any {
