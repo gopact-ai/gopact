@@ -130,7 +130,7 @@ func verificationCheckMetadata(snapshot VerificationSnapshot) map[string]any {
 }
 
 func verificationEvidenceMetadata(snapshot VerificationSnapshot) map[string]any {
-	return verificationBaseMetadata(snapshot)
+	return verificationCheckMetadata(snapshot)
 }
 
 func verificationBaseMetadata(snapshot VerificationSnapshot) map[string]any {

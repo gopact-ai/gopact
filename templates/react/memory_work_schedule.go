@@ -106,7 +106,7 @@ func deferredMemoryWorkScheduleCheck(decision DeferredMemoryWorkScheduleDecision
 				Type:     VerificationEvidenceTypeDeferredMemoryWorkSchedule,
 				Ref:      deferredMemoryWorkScheduleRef(decision),
 				Summary:  deferredMemoryWorkScheduleEvidenceSummary(decision),
-				Metadata: deferredMemoryWorkScheduleBaseMetadata(decision),
+				Metadata: deferredMemoryWorkScheduleCheckMetadata(decision),
 			},
 		},
 		Metadata: deferredMemoryWorkScheduleCheckMetadata(decision),

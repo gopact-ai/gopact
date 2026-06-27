@@ -135,7 +135,7 @@ func replayVerificationCheckMetadata(snapshot ReplayVerificationSnapshot) map[st
 }
 
 func replayVerificationEvidenceMetadata(snapshot ReplayVerificationSnapshot) map[string]any {
-	return replayVerificationBaseMetadata(snapshot)
+	return replayVerificationCheckMetadata(snapshot)
 }
 
 func replayVerificationBaseMetadata(snapshot ReplayVerificationSnapshot) map[string]any {

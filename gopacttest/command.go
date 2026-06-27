@@ -128,7 +128,7 @@ func commandCheckMetadata(result CommandResult) map[string]any {
 }
 
 func commandEvidenceMetadata(result CommandResult) map[string]any {
-	return commandBaseMetadata(result)
+	return commandCheckMetadata(result)
 }
 
 func commandBaseMetadata(result CommandResult) map[string]any {

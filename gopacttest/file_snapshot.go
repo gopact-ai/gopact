@@ -139,7 +139,7 @@ func fileSnapshotCheckMetadata(snapshot FileSnapshot) map[string]any {
 }
 
 func fileSnapshotEvidenceMetadata(snapshot FileSnapshot) map[string]any {
-	return fileSnapshotBaseMetadata(snapshot)
+	return fileSnapshotCheckMetadata(snapshot)
 }
 
 func fileSnapshotBaseMetadata(snapshot FileSnapshot) map[string]any {

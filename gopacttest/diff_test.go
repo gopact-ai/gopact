@@ -70,7 +70,8 @@ func TestRecordDiffCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordDiffCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["ref"] != "patch-1.diff" ||
 		metadata["diff"] != "diff --git a/README.md b/README.md\n" ||
 		metadata["file_count"] != 1 ||
@@ -84,6 +85,22 @@ func TestRecordDiffCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if metadata["mode"] != "write" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "patch-1.diff" ||
+		evidenceMetadata["diff"] != "diff --git a/README.md b/README.md\n" ||
+		evidenceMetadata["file_count"] != 1 ||
+		evidenceMetadata["insertions"] != 12 ||
+		evidenceMetadata["deletions"] != 3 {
+		t.Fatalf("evidence metadata = %+v, want canonical diff fields preserved", evidenceMetadata)
+	}
+	evidenceFiles, ok := evidenceMetadata["files"].([]string)
+	if !ok || !reflect.DeepEqual(evidenceFiles, []string{"README.md"}) {
+		t.Fatalf("evidence metadata files = %#v, want canonical files", evidenceMetadata["files"])
+	}
+	if evidenceMetadata["mode"] != "write" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
 

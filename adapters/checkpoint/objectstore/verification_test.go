@@ -136,7 +136,8 @@ func TestRecordIndexConsistencyCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordIndexConsistencyCheck() error = %v, want ErrIndexConsistencyCheckFailed", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["ref"] != "index:thread-1" ||
 		metadata["thread_id"] != "thread-1" ||
 		metadata["index_thread_id"] != "thread-1" ||
@@ -158,6 +159,30 @@ func TestRecordIndexConsistencyCheckPreservesCanonicalMetadata(t *testing.T) {
 	assertStringSliceMetadata(t, metadata, "wrong_thread_record_ids", []string{"wrong-thread-1"})
 	if metadata["source"] != "scheduled-check" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "index:thread-1" ||
+		evidenceMetadata["thread_id"] != "thread-1" ||
+		evidenceMetadata["index_thread_id"] != "thread-1" ||
+		evidenceMetadata["index_exists"] != true ||
+		evidenceMetadata["consistent"] != false ||
+		evidenceMetadata["repaired"] != true ||
+		evidenceMetadata["thread_id_mismatch"] != true ||
+		evidenceMetadata["indexed_record_count"] != 1 ||
+		evidenceMetadata["valid_record_count"] != 1 ||
+		evidenceMetadata["duplicate_record_count"] != 1 ||
+		evidenceMetadata["missing_record_count"] != 1 ||
+		evidenceMetadata["wrong_thread_record_count"] != 1 {
+		t.Fatalf("evidence metadata = %+v, want canonical objectstore index fields preserved", evidenceMetadata)
+	}
+	assertStringSliceMetadata(t, evidenceMetadata, "indexed_record_ids", []string{"checkpoint-1"})
+	assertStringSliceMetadata(t, evidenceMetadata, "valid_record_ids", []string{"checkpoint-1"})
+	assertStringSliceMetadata(t, evidenceMetadata, "duplicate_record_ids", []string{"duplicate-1"})
+	assertStringSliceMetadata(t, evidenceMetadata, "missing_record_ids", []string{"missing-1"})
+	assertStringSliceMetadata(t, evidenceMetadata, "wrong_thread_record_ids", []string{"wrong-thread-1"})
+	if evidenceMetadata["source"] != "scheduled-check" {
+		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
 	}
 }
 

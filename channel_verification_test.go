@@ -123,7 +123,8 @@ func TestRecordChannelEventCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordChannelEventCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["ref"] != "event-1" ||
 		metadata["text_bytes"] != len(event.Text) ||
 		metadata["payload_present"] != true ||
@@ -144,6 +145,29 @@ func TestRecordChannelEventCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if metadata["phase"] != "wait_review" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "event-1" ||
+		evidenceMetadata["text_bytes"] != len(event.Text) ||
+		evidenceMetadata["payload_present"] != true ||
+		evidenceMetadata["action_present"] != true ||
+		evidenceMetadata["metadata_key_cnt"] != 1 ||
+		evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["call_id"] != "call-1" ||
+		evidenceMetadata["event_id"] != "event-1" ||
+		evidenceMetadata["channel"] != "lark" ||
+		evidenceMetadata["event_type"] != "action" ||
+		evidenceMetadata["created_at"] != createdAt.Format(time.RFC3339Nano) ||
+		evidenceMetadata["action_id"] != "action-1" ||
+		evidenceMetadata["action_type"] != string(SurfaceActionSubmit) ||
+		evidenceMetadata["interrupt_id"] != "interrupt-1" ||
+		evidenceMetadata["action_call_id"] != "action-call-1" ||
+		evidenceMetadata["action_payload_present"] != true {
+		t.Fatalf("evidence metadata = %+v, want canonical channel event fields preserved", evidenceMetadata)
+	}
+	if evidenceMetadata["phase"] != "wait_review" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
 

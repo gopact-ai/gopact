@@ -148,7 +148,8 @@ func TestRecordVerificationCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordVerificationCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["ref"] != "thread-1:2:1" ||
 		metadata["checkpoint_id"] != "thread-1:2:1" ||
 		metadata["schema_version"] != SchemaVersion ||
@@ -172,6 +173,32 @@ func TestRecordVerificationCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if metadata["mode"] != "write" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "thread-1:2:1" ||
+		evidenceMetadata["checkpoint_id"] != "thread-1:2:1" ||
+		evidenceMetadata["schema_version"] != SchemaVersion ||
+		evidenceMetadata["thread_id"] != "thread-1" ||
+		evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["call_id"] != "call-1" ||
+		evidenceMetadata["step"] != 2 ||
+		evidenceMetadata["node"] != "call_tool" ||
+		evidenceMetadata["phase"] != string(gopact.StepCompleted) ||
+		evidenceMetadata["state_codec"] != "json" ||
+		evidenceMetadata["state_hash"] != "sha256:abc123" ||
+		evidenceMetadata["state_size_bytes"] != len(record.State) ||
+		evidenceMetadata["queue_count"] != 2 ||
+		evidenceMetadata["pending_interrupt_id"] != "interrupt-1" ||
+		evidenceMetadata["pending_interrupt_type"] != string(gopact.InterruptApproval) ||
+		evidenceMetadata["effect_count"] != 1 ||
+		evidenceMetadata["artifact_count"] != 1 ||
+		evidenceMetadata["config_version"] != "cfg-1" ||
+		evidenceMetadata["created_at"] != createdAt.Format(time.RFC3339Nano) {
+		t.Fatalf("evidence metadata = %+v, want canonical checkpoint fields preserved", evidenceMetadata)
+	}
+	if evidenceMetadata["mode"] != "write" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
 

@@ -88,7 +88,8 @@ func TestRecordFileSnapshotCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordFileSnapshotCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["path"] != "README.md" ||
 		metadata["hash"] != "abc123" ||
 		metadata["hash_algorithm"] != "sha256" ||
@@ -102,6 +103,22 @@ func TestRecordFileSnapshotCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if metadata["purpose"] != "release gate" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["path"] != "README.md" ||
+		evidenceMetadata["hash"] != "abc123" ||
+		evidenceMetadata["hash_algorithm"] != "sha256" ||
+		evidenceMetadata["size_bytes"] != int64(42) ||
+		evidenceMetadata["mode"] != "0644" ||
+		evidenceMetadata["modified_at"] != modifiedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("evidence metadata = %+v, want canonical file snapshot fields preserved", evidenceMetadata)
+	}
+	if _, ok := evidenceMetadata["skipped"]; ok {
+		t.Fatalf("evidence metadata = %+v, did not expect forged skipped metadata", evidenceMetadata)
+	}
+	if evidenceMetadata["purpose"] != "release gate" {
+		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
 	}
 }
 

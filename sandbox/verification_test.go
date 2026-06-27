@@ -92,7 +92,8 @@ func TestRecordExecCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordExecCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["exit_code"] != 0 ||
 		metadata["session_id"] != "sandbox-1" ||
 		metadata["stdout"] != "ok\n" ||
@@ -109,6 +110,25 @@ func TestRecordExecCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if metadata["gate"] != "pre-release" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["exit_code"] != 0 ||
+		evidenceMetadata["session_id"] != "sandbox-1" ||
+		evidenceMetadata["stdout"] != "ok\n" ||
+		evidenceMetadata["duration_ms"] != int64(1500) {
+		t.Fatalf("evidence metadata = %+v, want canonical sandbox exec fields preserved", evidenceMetadata)
+	}
+	evidenceCommand, ok := evidenceMetadata["command"].([]string)
+	if !ok || !reflect.DeepEqual(evidenceCommand, []string{"go", "test", "./..."}) {
+		t.Fatalf("evidence metadata command = %#v, want canonical command", evidenceMetadata["command"])
+	}
+	evidenceRequestMetadata, ok := evidenceMetadata["request_metadata"].(map[string]any)
+	if !ok || evidenceRequestMetadata["purpose"] != "verification" {
+		t.Fatalf("evidence request metadata = %#v, want canonical request metadata", evidenceMetadata["request_metadata"])
+	}
+	if evidenceMetadata["gate"] != "pre-release" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
 

@@ -113,7 +113,8 @@ func TestRecordReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 		t.Fatalf("RecordReplayCheck() error = %v", err)
 	}
 
-	metadata := recorder.Checks()[0].Metadata
+	check := recorder.Checks()[0]
+	metadata := check.Metadata
 	if metadata["ref"] != "run-1" ||
 		metadata["decision_count"] != 1 ||
 		metadata["replay_count"] != 1 ||
@@ -126,6 +127,21 @@ func TestRecordReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 	assertStringSliceMetadata(t, metadata, "result_effect_ids", []string{"memory-1"})
 	if metadata["source"] != "worker" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+
+	evidenceMetadata := check.Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "run-1" ||
+		evidenceMetadata["decision_count"] != 1 ||
+		evidenceMetadata["replay_count"] != 1 ||
+		evidenceMetadata["result_count"] != 1 ||
+		evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["thread_id"] != "thread-1" {
+		t.Fatalf("evidence metadata = %+v, want canonical memory replay fields preserved", evidenceMetadata)
+	}
+	assertStringSliceMetadata(t, evidenceMetadata, "planned_effect_ids", []string{"memory-1"})
+	assertStringSliceMetadata(t, evidenceMetadata, "result_effect_ids", []string{"memory-1"})
+	if evidenceMetadata["source"] != "worker" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
 

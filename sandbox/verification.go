@@ -126,7 +126,7 @@ func execCheckMetadata(input ExecCheck) map[string]any {
 }
 
 func execEvidenceMetadata(input ExecCheck) map[string]any {
-	return execBaseMetadata(input)
+	return execCheckMetadata(input)
 }
 
 func execBaseMetadata(input ExecCheck) map[string]any {
