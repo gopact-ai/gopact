@@ -1500,6 +1500,10 @@
           "kind": "const"
         },
         {
+          "name": "PolicyActionResolve",
+          "kind": "const"
+        },
+        {
           "name": "PolicyActionResume",
           "kind": "const"
         },
@@ -1565,6 +1569,10 @@
         },
         {
           "name": "PolicyBoundarySandbox",
+          "kind": "const"
+        },
+        {
+          "name": "PolicyBoundarySecret",
           "kind": "const"
         },
         {
@@ -1653,6 +1661,50 @@
         },
         {
           "name": "ValidateSecretRef",
+          "kind": "func"
+        }
+      ]
+    },
+    {
+      "category": "middleware-plugin",
+      "stability": "experimental",
+      "source_file": "secret_policy.go",
+      "rationale": "Extension point for middleware, plugin, policy, redaction, or cross-cutting runtime behavior.",
+      "symbols": [
+        {
+          "name": "ErrSecretPolicyRequired",
+          "kind": "var"
+        },
+        {
+          "name": "ErrSecretProviderRequired",
+          "kind": "var"
+        },
+        {
+          "name": "NewPolicySecretProvider",
+          "kind": "func"
+        },
+        {
+          "name": "PolicySecretProvider",
+          "kind": "type"
+        },
+        {
+          "name": "SecretPolicyInput",
+          "kind": "type"
+        },
+        {
+          "name": "SecretPolicyOption",
+          "kind": "type"
+        },
+        {
+          "name": "WithSecretPolicyEventSink",
+          "kind": "func"
+        },
+        {
+          "name": "WithSecretPolicyIDs",
+          "kind": "func"
+        },
+        {
+          "name": "WithSecretPolicyMetadata",
           "kind": "func"
         }
       ]

@@ -480,9 +480,11 @@ type ExecResult struct {
 - secret 只能通过受控 secret provider 注入；
 - sandbox 事件必须记录命令、hash、exit code、resource usage，但默认不记录敏感 stdout。
 
+Secret 不属于 sandbox session 的隐式环境。当前 root `SecretRef` / `SecretProvider` / `SecretValue` 提供宿主注入的 secret 原子契约，`NewPolicySecretProvider` 可在 `ResolveSecret` 前走 `PolicyBoundarySecret` / `PolicyActionResolve`，deny 不调用底层 provider，review 返回 approval interrupt；policy input 和 event 只携带 `SecretRef`、runtime ids 和 metadata，不携带 raw secret。更复杂的跨 agent/skill/MCP secret 继承模型仍由 adapter、plugin 或宿主 policy 定义。
+
 当前 `sandbox.PolicyManager` 会把 session create、exec、read file 和 write file 包成 `PolicyBoundarySandbox` 请求。policy input 不包含 stdin/file payload，只包含命令、路径、大小和 metadata。需要更强隔离时，应用应把 policy wrapper 和生产 sandbox backend 一起注入，而不是直接把底层 backend 暴露给 agent template。
 
-当前 `sandbox.Profile` / `sandbox.ProfileManager` 已提供第一片 sandbox profile contract。profile wrapper 默认 fail-closed：未在 allowlist 中的 command、read path、write path 和 env key 都会在调用底层 session 前被拒绝；`ResourceLimits` 会在 create 时写入 `Spec.Limits`，显式超过 profile limit 的请求会被拒绝。生产级网络隔离、seccomp、容器/rootfs、secret 继承授权和 prompt-injection 防御仍属于外部 adapter、plugin 或宿主 policy 的责任。
+当前 `sandbox.Profile` / `sandbox.ProfileManager` 已提供第一片 sandbox profile contract。profile wrapper 默认 fail-closed：未在 allowlist 中的 command、read path、write path 和 env key 都会在调用底层 session 前被拒绝；`ResourceLimits` 会在 create 时写入 `Spec.Limits`，显式超过 profile limit 的请求会被拒绝。生产级网络隔离、seccomp、容器/rootfs、复杂 secret 继承授权模型和 prompt-injection 防御仍属于外部 adapter、plugin 或宿主 policy 的责任。
 
 ### 事件
 

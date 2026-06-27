@@ -47,7 +47,7 @@
       ],
       "open_items": [
         "tools.CommitStore / WithReplayCommitStore replay commit ledger 第一片已落地；外部 commit store adapter 可复用的 gopacttest/toolconformance helper 已覆盖 missing load、context cancellation、invalid record、first-write-wins、input immutability 和 load defensive copy；生产级 tool exactly-once ledger 持久化、外部 commit store adapter 实现、跨 worker 冲突处理仍需在 adapter 或宿主 worker 中实现",
-        "root SecretRef / SecretProvider / SecretValue secret provider 原子契约已具备第一片，gopacttest/secretconformance helper 已覆盖 provider presence、canceled context、invalid ref、fixture resolve、SecretValue redaction 和 byte-copy；sandbox.Profile / sandbox.ProfileManager fail-closed profile wrapper 已覆盖 allowed commands、read/write path、env key 和 resource limit 的 SDK 原子边界；生产级 sandbox profile 后端、secret 继承授权策略和 prompt-injection defense 策略仍需继续深化"
+        "root SecretRef / SecretProvider / SecretValue secret provider 原子契约已具备第一片，NewPolicySecretProvider secret resolve policy wrapper 已覆盖 PolicyBoundarySecret / PolicyActionResolve 授权、deny 不调用底层 provider、review 转 approval interrupt、policy event 不携带 raw secret；gopacttest/secretconformance helper 已覆盖 provider presence、canceled context、invalid ref、fixture resolve、SecretValue redaction 和 byte-copy；sandbox.Profile / sandbox.ProfileManager fail-closed profile wrapper 已覆盖 allowed commands、read/write path、env key 和 resource limit 的 SDK 原子边界；生产级 sandbox profile 后端、复杂 secret 继承授权模型和 prompt-injection defense 策略仍需继续深化"
       ]
     },
     {

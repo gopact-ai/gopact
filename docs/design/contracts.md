@@ -27,10 +27,10 @@
 | 恢复边界 | `StepSnapshot`、`StepExport`、`CheckpointRecord`、`InterruptRecord`、`ResumeRequest` | step 级 export/import、checkpoint、interrupt、resume、cancel-safe point |
 | 并发所有权 | `LeaseRecord`、`LeaseRequest`、`LeaseBackend` | 分布式 worker ownership、续约、释放和过期转移 |
 | 外部产物 | `Artifact`、`ArtifactRef` | 文件、图片、报告、大 payload、跨系统输出 |
-| 敏感引用 | `SecretRef`、`SecretProvider`、`SecretValue` | secret 只能由宿主通过 reference 和 provider 注入；provider 应 respect context 并拒绝非法 ref；resolved value 的 string/fmt/JSON 表示固定 redacted |
-| 治理决策 | `PolicyRequest`、`PolicyDecision`、`ChannelPolicyInput`、`mcp.PolicyInput`、`skill.PolicyInput`、`trace.PolicyInput` | provider、tool、sandbox、memory、MCP、skill、A2A、channel、trace export、artifact export 的授权结果 |
+| 敏感引用 | `SecretRef`、`SecretProvider`、`SecretValue`、`SecretPolicyInput` | secret 只能由宿主通过 reference 和 provider 注入；provider 应 respect context 并拒绝非法 ref；resolved value 的 string/fmt/JSON 表示固定 redacted；secret ref 解析可在 provider wrapper 前走 policy |
+| 治理决策 | `PolicyRequest`、`PolicyDecision`、`SecretPolicyInput`、`ChannelPolicyInput`、`mcp.PolicyInput`、`skill.PolicyInput`、`trace.PolicyInput` | provider、tool、sandbox、memory、secret、MCP、skill、A2A、channel、trace export、artifact export 的授权结果 |
 
-`Artifact`、`Policy`、`LeaseBackend` 和 `SecretProvider` 是基础契约。它们有默认实现或可替换 adapter，但不归入 provider/tool/sandbox/memory/skill/MCP/A2A 这类业务运行时模块。`SecretProvider` 只定义注入和解析边界，SDK 不读取 env、文件或配置系统；`gopacttest/secretconformance.CheckSecretProviderConformance` / `RequireSecretProviderConformance` 可供宿主或外部 secret provider adapter 复用，固定 canceled context、invalid ref、fixture resolve、redacted output 和 byte-copy 等最小契约。
+`Artifact`、`Policy`、`LeaseBackend` 和 `SecretProvider` 是基础契约。它们有默认实现或可替换 adapter，但不归入 provider/tool/sandbox/memory/skill/MCP/A2A 这类业务运行时模块。`SecretProvider` 只定义注入和解析边界，SDK 不读取 env、文件或配置系统；`NewPolicySecretProvider` 可把 secret ref resolve 纳入 `PolicyBoundarySecret` / `PolicyActionResolve`，deny 不调用底层 provider，review 返回 approval interrupt，policy input 和 event 只携带 `SecretRef`，不携带 raw secret；`gopacttest/secretconformance.CheckSecretProviderConformance` / `RequireSecretProviderConformance` 可供宿主或外部 secret provider adapter 复用，固定 canceled context、invalid ref、fixture resolve、redacted output 和 byte-copy 等最小契约。
 
 ## RuntimeIDs
 
@@ -659,6 +659,8 @@ const (
 	PolicyBoundaryMCP      PolicyBoundary = "mcp"
 	PolicyBoundarySkill    PolicyBoundary = "skill"
 	PolicyBoundaryExporter PolicyBoundary = "exporter"
+	PolicyBoundaryTurn     PolicyBoundary = "turn"
+	PolicyBoundarySecret   PolicyBoundary = "secret"
 )
 
 type PolicyRequestAction string
@@ -671,6 +673,7 @@ const (
 	PolicyActionSend     PolicyRequestAction = "send"
 	PolicyActionReceive  PolicyRequestAction = "receive"
 	PolicyActionConnect  PolicyRequestAction = "connect"
+	PolicyActionCancel   PolicyRequestAction = "cancel"
 	PolicyActionActivate PolicyRequestAction = "activate"
 	PolicyActionExport   PolicyRequestAction = "export"
 	PolicyActionCreate   PolicyRequestAction = "create"
@@ -682,6 +685,8 @@ const (
 	PolicyActionSearch   PolicyRequestAction = "search"
 	PolicyActionDelete   PolicyRequestAction = "delete"
 	PolicyActionList     PolicyRequestAction = "list"
+	PolicyActionResume   PolicyRequestAction = "resume"
+	PolicyActionResolve  PolicyRequestAction = "resolve"
 )
 
 type PolicyRequest struct {

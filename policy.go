@@ -50,6 +50,7 @@ const (
 	PolicyBoundarySkill    PolicyBoundary = "skill"
 	PolicyBoundaryExporter PolicyBoundary = "exporter"
 	PolicyBoundaryTurn     PolicyBoundary = "turn"
+	PolicyBoundarySecret   PolicyBoundary = "secret"
 )
 
 // PolicyRequestAction identifies the operation being authorized.
@@ -77,6 +78,7 @@ const (
 	PolicyActionDelete   PolicyRequestAction = "delete"
 	PolicyActionList     PolicyRequestAction = "list"
 	PolicyActionResume   PolicyRequestAction = "resume"
+	PolicyActionResolve  PolicyRequestAction = "resolve"
 )
 
 // PolicyRequest is the common input passed to policy checks.
