@@ -142,6 +142,23 @@ func TestRecordModelCallCheckPreservesCanonicalMetadata(t *testing.T) {
 	if metadata["phase"] != "call_model" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
+
+	evidenceMetadata := recorder.Checks()[0].Evidence[0].Metadata
+	if evidenceMetadata["ref"] != "model-call-1" ||
+		evidenceMetadata["message_count"] != 1 ||
+		evidenceMetadata["tool_count"] != 1 ||
+		evidenceMetadata["capability_count"] != 1 ||
+		evidenceMetadata["run_id"] != "run-1" ||
+		evidenceMetadata["call_id"] != "model-call-1" ||
+		evidenceMetadata["request_model"] != "gpt-5-mini" ||
+		evidenceMetadata["output_tool_call_count"] != 1 ||
+		evidenceMetadata["input_tokens"] != 5 ||
+		evidenceMetadata["total_tokens"] != 12 {
+		t.Fatalf("evidence metadata = %+v, want canonical model call fields preserved", evidenceMetadata)
+	}
+	if evidenceMetadata["phase"] != "call_model" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
+	}
 }
 
 func TestRecordModelCallCheckRecordsFailure(t *testing.T) {

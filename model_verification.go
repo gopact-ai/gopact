@@ -143,7 +143,7 @@ func modelCallCheckMetadata(snapshot ModelCallSnapshot) map[string]any {
 }
 
 func modelCallEvidenceMetadata(snapshot ModelCallSnapshot) map[string]any {
-	return modelCallBaseMetadata(snapshot)
+	return modelCallCheckMetadata(snapshot)
 }
 
 func modelCallBaseMetadata(snapshot ModelCallSnapshot) map[string]any {
