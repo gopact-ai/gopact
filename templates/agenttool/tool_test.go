@@ -688,6 +688,67 @@ func TestRemoteA2AToolStreamFailureReturnsFailedEvent(t *testing.T) {
 	}
 }
 
+func TestRemoteA2AToolStreamCanceledReturnsCanceledEvent(t *testing.T) {
+	ctx := context.Background()
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		StreamFunc: func(ctx context.Context, task a2a.Task) iter.Seq2[a2a.TaskEvent, error] {
+			return func(yield func(a2a.TaskEvent, error) bool) {
+				if !yield(a2a.TaskEvent{
+					TaskID:   task.ID,
+					IDs:      task.IDs,
+					Status:   a2a.TaskStatusRunning,
+					Message:  "waiting for approval",
+					Metadata: map[string]any{"phase": "approval"},
+				}, nil) {
+					return
+				}
+				yield(a2a.TaskEvent{
+					TaskID:   task.ID,
+					IDs:      task.IDs,
+					Status:   a2a.TaskStatusCanceled,
+					Message:  "remote task canceled",
+					Metadata: map[string]any{"reason": "user_cancel"},
+				}, nil)
+			}
+		},
+	}
+	tool, err := NewA2A(remote)
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	events, err := collectEvents(tool.Stream(gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{
+		RunID:  "run-1",
+		CallID: "parent-call",
+	}), json.RawMessage(`{"input":"write tests"}`)))
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if len(events) != 3 ||
+		events[0].Type != gopact.EventA2ATaskSent ||
+		events[1].Type != gopact.EventA2ATaskStatusUpdated ||
+		events[2].Type != gopact.EventA2ATaskCanceled {
+		t.Fatalf("Stream() events = %+v, want sent/status/canceled", events)
+	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_stream_canceled.golden.json", events)
+	if events[2].Error() != "" {
+		t.Fatalf("canceled event error = %q, want empty", events[2].Error())
+	}
+	if events[2].Metadata["a2a_status"] != string(a2a.TaskStatusCanceled) ||
+		events[2].Metadata["a2a_message"] != "remote task canceled" ||
+		events[2].Metadata["reason"] != "user_cancel" {
+		t.Fatalf("canceled event metadata = %+v, want canceled status and streamed metadata", events[2].Metadata)
+	}
+	childCallID := events[0].RuntimeIDs().CallID
+	for _, event := range events {
+		ids := event.RuntimeIDs()
+		if ids.ParentCallID != "parent-call" || ids.CallID != childCallID {
+			t.Fatalf("stream canceled event ids = %+v, want parent/child call chain", ids)
+		}
+	}
+}
+
 func TestRemoteA2AToolStreamPolicyDenySkipsStreamAndReturnsPolicyEvents(t *testing.T) {
 	ctx := context.Background()
 	streamCalled := false
