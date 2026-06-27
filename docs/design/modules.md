@@ -484,7 +484,7 @@ Secret 不属于 sandbox session 的隐式环境。当前 root `SecretRef` / `Se
 
 当前 `sandbox.PolicyManager` 会把 session create、exec、read file 和 write file 包成 `PolicyBoundarySandbox` 请求。policy input 不包含 stdin/file payload，只包含命令、路径、大小和 metadata。需要更强隔离时，应用应把 policy wrapper 和生产 sandbox backend 一起注入，而不是直接把底层 backend 暴露给 agent template。
 
-当前 `sandbox.Profile` / `sandbox.ProfileManager` 已提供第一片 sandbox profile contract。profile wrapper 默认 fail-closed：未在 allowlist 中的 command、read path、write path 和 env key 都会在调用底层 session 前被拒绝；`ResourceLimits` 会在 create 时写入 `Spec.Limits`，显式超过 profile limit 的请求会被拒绝。生产级网络隔离、seccomp、容器/rootfs、复杂 secret 继承授权模型、prompt-injection classifier 和策略调参仍属于外部 adapter、plugin 或宿主 policy 的责任。
+当前 `sandbox.Profile` / `sandbox.ProfileManager` 已提供第一片 sandbox profile contract。profile wrapper 默认 fail-closed：未在 allowlist 中的 command、read path、write path 和 env key 都会在调用底层 session 前被拒绝；`ResourceLimits` 会在 create 时写入 `Spec.Limits`，显式超过 profile limit 的请求会被拒绝。`gopacttest/promptinjectionconformance` 已为外部 prompt-injection detector/classifier adapter 提供最小合规测试；生产级网络隔离、seccomp、容器/rootfs、复杂 secret 继承授权模型、prompt-injection classifier 具体实现和策略调参仍属于外部 adapter、plugin 或宿主 policy 的责任。
 
 ### 事件
 

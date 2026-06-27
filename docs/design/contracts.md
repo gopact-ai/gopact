@@ -32,7 +32,7 @@
 
 `Artifact`、`Policy`、`LeaseBackend` 和 `SecretProvider` 是基础契约。它们有默认实现或可替换 adapter，但不归入 provider/tool/sandbox/memory/skill/MCP/A2A 这类业务运行时模块。`SecretProvider` 只定义注入和解析边界，SDK 不读取 env、文件或配置系统；`NewPolicySecretProvider` 可把 secret ref resolve 纳入 `PolicyBoundarySecret` / `PolicyActionResolve`，deny 不调用底层 provider，review 返回 approval interrupt，policy input 和 event 只携带 `SecretRef`，不携带 raw secret；`gopacttest/secretconformance.CheckSecretProviderConformance` / `RequireSecretProviderConformance` 可供宿主或外部 secret provider adapter 复用，固定 canceled context、invalid ref、fixture resolve、redacted output 和 byte-copy 等最小契约。
 
-`PromptInjectionDetector` / `PromptInjectionGuardMiddleware` 是模型输入安全检查的原子契约。detector 可以在宿主信任边界内检查原始 `ModelRequest`，但进入 policy/event 的 `PromptInjectionPolicyInput` 只携带 `PromptInjectionReport` finding 摘要，不携带 raw prompt；有 finding 时通过 `PolicyBoundaryModel` / `PolicyActionInspect` 授权，deny 不调用底层 model，review 返回 approval interrupt。生产级 classifier、业务策略调参和用户展示由 adapter、plugin 或宿主实现。
+`PromptInjectionDetector` / `PromptInjectionGuardMiddleware` 是模型输入安全检查的原子契约。detector 可以在宿主信任边界内检查原始 `ModelRequest`，但进入 policy/event 的 `PromptInjectionPolicyInput` 只携带 `PromptInjectionReport` finding 摘要，不携带 raw prompt；有 finding 时通过 `PolicyBoundaryModel` / `PolicyActionInspect` 授权，deny 不调用底层 model，review 返回 approval interrupt。`gopacttest/promptinjectionconformance.CheckPromptInjectionDetectorConformance` / `RequirePromptInjectionDetectorConformance` 可供外部 classifier、adapter 或 plugin 复用，固定 canceled context、clean/risky fixture、finding 完整性、request immutability 和 raw payload leak 等最小契约，同时不强制具体 rule taxonomy。生产级 classifier、业务策略调参和用户展示由 adapter、plugin 或宿主实现。
 
 ## RuntimeIDs
 
