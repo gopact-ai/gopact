@@ -51,17 +51,14 @@ func releaseBundleEvidenceSummary(bundle ReleaseBundle) string {
 
 func releaseBundleCheckMetadata(bundle ReleaseBundle) map[string]any {
 	metadata := releaseBundleBaseMetadata(bundle)
-	for key, value := range bundle.Metadata {
-		if releaseBundleReservedMetadataKey(key) {
-			continue
-		}
-		metadata[key] = value
-	}
+	mergeReleaseBundleSupplementalMetadata(metadata, bundle.Metadata)
 	return metadata
 }
 
 func releaseBundleEvidenceMetadata(bundle ReleaseBundle) map[string]any {
-	return releaseBundleBaseMetadata(bundle)
+	metadata := releaseBundleBaseMetadata(bundle)
+	mergeReleaseBundleSupplementalMetadata(metadata, bundle.Metadata)
+	return metadata
 }
 
 func releaseBundleBaseMetadata(bundle ReleaseBundle) map[string]any {
@@ -157,6 +154,15 @@ func releaseBundleReservedMetadataKey(key string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func mergeReleaseBundleSupplementalMetadata(metadata map[string]any, supplemental map[string]any) {
+	for key, value := range supplemental {
+		if releaseBundleReservedMetadataKey(key) {
+			continue
+		}
+		metadata[key] = value
 	}
 }
 
