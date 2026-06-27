@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -44,6 +45,7 @@ type RemoteRepositoryStatus struct {
 	DefaultBranch           string   `json:"default_branch,omitempty"`
 	CIWorkflowPath          string   `json:"ci_workflow_path,omitempty"`
 	CIRunWorkflowName       string   `json:"ci_run_workflow_name,omitempty"`
+	CIRunID                 string   `json:"ci_run_id,omitempty"`
 	CIRunStatus             string   `json:"ci_run_status,omitempty"`
 	CIRunConclusion         string   `json:"ci_run_conclusion,omitempty"`
 	CIRunEvent              string   `json:"ci_run_event,omitempty"`
@@ -241,6 +243,7 @@ func fillRepositoryWorkflowRun(ctx context.Context, ghPath string, status *Remot
 		return
 	}
 	var runs []struct {
+		DatabaseID   int64  `json:"databaseId"`
 		WorkflowName string `json:"workflowName"`
 		Status       string `json:"status"`
 		Conclusion   string `json:"conclusion"`
@@ -259,6 +262,9 @@ func fillRepositoryWorkflowRun(ctx context.Context, ghPath string, status *Remot
 	run := runs[0]
 	status.CIWorkflowRunSeen = true
 	status.CIRunWorkflowName = run.WorkflowName
+	if run.DatabaseID > 0 {
+		status.CIRunID = strconv.FormatInt(run.DatabaseID, 10)
+	}
 	status.CIRunStatus = run.Status
 	status.CIRunConclusion = run.Conclusion
 	status.CIRunEvent = run.Event

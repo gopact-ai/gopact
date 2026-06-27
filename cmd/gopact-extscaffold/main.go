@@ -40,6 +40,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var planRerunSH bool
 	var remoteStatusJSON bool
 	var remoteStatusEvidenceJSON bool
+	var remoteCIEvidenceJSON bool
 	var verify bool
 
 	fs := flag.NewFlagSet("gopact-extscaffold", flag.ContinueOnError)
@@ -53,6 +54,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&planRerunSH, "plan-rerun-sh", false, "print repository CI rerun shell script without writing files")
 	fs.BoolVar(&remoteStatusJSON, "remote-status-json", false, "print GitHub remote repository status as JSON without writing files")
 	fs.BoolVar(&remoteStatusEvidenceJSON, "remote-status-evidence-json", false, "print GitHub remote repository readiness verification check as JSON without writing files")
+	fs.BoolVar(&remoteCIEvidenceJSON, "remote-ci-evidence-json", false, "print GitHub remote repository CI verification check as JSON without writing files")
 	fs.BoolVar(&verify, "verify", false, "run required CI commands in each generated repository after writing")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -89,8 +91,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "-remote-status-evidence-json cannot be used with -dry-run, -plan-json, -plan-sh, -plan-secrets-sh, -plan-rerun-sh, or -remote-status-json")
 		return exitUsage
 	}
-	if !dryRun && !planJSON && !planSH && !planSecretsSH && !planRerunSH && !remoteStatusJSON && !remoteStatusEvidenceJSON && strings.TrimSpace(out) == "" {
-		_, _ = fmt.Fprintln(stderr, "-out is required unless -dry-run, -plan-json, -plan-sh, -plan-secrets-sh, -plan-rerun-sh, -remote-status-json, or -remote-status-evidence-json is set")
+	if remoteCIEvidenceJSON && (dryRun || planJSON || planSH || planSecretsSH || planRerunSH || remoteStatusJSON || remoteStatusEvidenceJSON) {
+		_, _ = fmt.Fprintln(stderr, "-remote-ci-evidence-json cannot be used with -dry-run, -plan-json, -plan-sh, -plan-secrets-sh, -plan-rerun-sh, -remote-status-json, or -remote-status-evidence-json")
+		return exitUsage
+	}
+	if !dryRun && !planJSON && !planSH && !planSecretsSH && !planRerunSH && !remoteStatusJSON && !remoteStatusEvidenceJSON && !remoteCIEvidenceJSON && strings.TrimSpace(out) == "" {
+		_, _ = fmt.Fprintln(stderr, "-out is required unless -dry-run, -plan-json, -plan-sh, -plan-secrets-sh, -plan-rerun-sh, -remote-status-json, -remote-status-evidence-json, or -remote-ci-evidence-json is set")
 		return exitUsage
 	}
 
@@ -116,6 +122,33 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(checks[0]); err != nil {
 			_, _ = fmt.Fprintf(stderr, "encode remote status evidence: %v\n", err)
+			return exitError
+		}
+		return exitOK
+	}
+
+	if remoteCIEvidenceJSON {
+		report, err := extensionscaffold.CheckRemoteRepositories(ctx, root, extensionscaffold.RemoteStatusOptions{})
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "check remote repositories: %v\n", err)
+			return exitError
+		}
+		recorder := gopact.NewVerificationRecorder()
+		err = extensionscaffold.RecordRemoteCIRunSetCheck(recorder, report, extensionscaffold.DefaultRemoteCIGates())
+		if err != nil && !errors.Is(err, extensionscaffold.ErrRemoteCINotReady) {
+			_, _ = fmt.Fprintf(stderr, "record remote ci evidence: %v\n", err)
+			return exitError
+		}
+		checks := recorder.Checks()
+		if len(checks) != 1 {
+			_, _ = fmt.Fprintf(stderr, "record remote ci evidence: got %d checks, want 1\n", len(checks))
+			return exitError
+		}
+		encoder := json.NewEncoder(stdout)
+		encoder.SetEscapeHTML(false)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(checks[0]); err != nil {
+			_, _ = fmt.Fprintf(stderr, "encode remote ci evidence: %v\n", err)
 			return exitError
 		}
 		return exitOK
