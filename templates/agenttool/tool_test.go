@@ -591,6 +591,41 @@ func TestRemoteA2AToolStreamsStatusAndCompletedEvents(t *testing.T) {
 	}
 }
 
+func TestRemoteA2AToolStreamNotSupportedReturnsFailedEvent(t *testing.T) {
+	ctx := context.Background()
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+	}
+	tool, err := NewA2A(remote)
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	events, err := collectEvents(tool.Stream(gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{
+		RunID:  "run-1",
+		CallID: "parent-call",
+	}), json.RawMessage(`{"input":"write tests"}`)))
+	if !errors.Is(err, a2a.ErrStreamNotSupported) {
+		t.Fatalf("Stream() error = %v, want stream unsupported", err)
+	}
+	if len(events) != 2 ||
+		events[0].Type != gopact.EventA2ATaskSent ||
+		events[1].Type != gopact.EventA2ATaskFailed {
+		t.Fatalf("Stream() events = %+v, want sent/failed", events)
+	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_stream_not_supported.golden.json", events)
+	if events[1].Error() == "" {
+		t.Fatal("failure event error is empty, want stream unsupported error")
+	}
+	childCallID := events[0].RuntimeIDs().CallID
+	for _, event := range events {
+		ids := event.RuntimeIDs()
+		if ids.ParentCallID != "parent-call" || ids.CallID != childCallID {
+			t.Fatalf("stream failure event ids = %+v, want parent/child call chain", ids)
+		}
+	}
+}
+
 func TestRemoteA2AToolStreamPolicyDenySkipsStreamAndReturnsPolicyEvents(t *testing.T) {
 	ctx := context.Background()
 	streamCalled := false
