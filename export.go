@@ -291,13 +291,40 @@ func (r *RunRecorder) recordFailure(record FailureAttribution) error {
 }
 
 func (r *RunRecorder) mergeIDs(ids RuntimeIDs) error {
-	if ids.RunID != "" && r.ids.RunID != "" && ids.RunID != r.ids.RunID {
-		return fmt.Errorf("gopact: run recorder mixed run ids %q and %q", r.ids.RunID, ids.RunID)
-	}
-	if ids.ThreadID != "" && r.ids.ThreadID != "" && ids.ThreadID != r.ids.ThreadID {
-		return fmt.Errorf("gopact: run recorder mixed thread ids %q and %q", r.ids.ThreadID, ids.ThreadID)
+	ids = runScopedRuntimeIDs(ids)
+	if err := validateRunRecorderRuntimeIDs(r.ids, ids); err != nil {
+		return err
 	}
 	r.ids = ids.WithDefaults(r.ids)
+	return nil
+}
+
+func runScopedRuntimeIDs(ids RuntimeIDs) RuntimeIDs {
+	ids.CallID = ""
+	ids.ParentCallID = ""
+	return ids
+}
+
+func validateRunRecorderRuntimeIDs(current, next RuntimeIDs) error {
+	fields := []struct {
+		name    string
+		current string
+		next    string
+	}{
+		{name: "run ids", current: current.RunID, next: next.RunID},
+		{name: "thread ids", current: current.ThreadID, next: next.ThreadID},
+		{name: "user ids", current: current.UserID, next: next.UserID},
+		{name: "session ids", current: current.SessionID, next: next.SessionID},
+		{name: "agent ids", current: current.AgentID, next: next.AgentID},
+		{name: "app ids", current: current.AppID, next: next.AppID},
+		{name: "trace ids", current: current.TraceID, next: next.TraceID},
+	}
+	for _, field := range fields {
+		if field.current == "" || field.next == "" || field.current == field.next {
+			continue
+		}
+		return fmt.Errorf("gopact: run recorder mixed %s %q and %q", field.name, field.current, field.next)
+	}
 	return nil
 }
 
