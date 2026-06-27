@@ -212,6 +212,28 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 		}
 	}
 
+	externalGateCheck := checks["external-repository-readiness"]
+	if externalGateCheck.ID == "" {
+		t.Fatal("v1 release gate checks missing external-repository-readiness")
+	}
+	for _, evidenceType := range []string{"external_repository_readiness", "ci_gate"} {
+		if !slices.Contains(externalGateCheck.EvidenceTypes, evidenceType) {
+			t.Fatalf("external-repository-readiness evidence_types = %v, want %q", externalGateCheck.EvidenceTypes, evidenceType)
+		}
+	}
+	for _, id := range []string{"external-repositories:gopact-ai", "external-ci:gopact-ai"} {
+		if !slices.Contains(externalGateCheck.RequiredCheckIDs, id) {
+			t.Fatalf("external-repository-readiness required_check_ids missing %q", id)
+		}
+	}
+	gotExternalCIGates := slices.Clone(externalGateCheck.RequiredCIGates)
+	wantExternalCIGates := []string{"unit", "vet", "whitespace"}
+	slices.Sort(gotExternalCIGates)
+	slices.Sort(wantExternalCIGates)
+	if !slices.Equal(gotExternalCIGates, wantExternalCIGates) {
+		t.Fatalf("external-repository-readiness required_ci_gates = %v, want %v", gotExternalCIGates, wantExternalCIGates)
+	}
+
 	for _, condition := range plan.ReleaseGateConditions {
 		if checks[condition].ID == "" {
 			t.Fatalf("v1 release_gate_conditions entry %q has no release_gate_checks entry", condition)

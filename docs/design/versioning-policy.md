@@ -34,7 +34,7 @@ root public API 的稳定性以 `public-api-boundary.json` 为准：
 - `.golangci.yml` 中 required linters/formatters 与 manifest 一致；
 - public examples 可运行；
 - root public API 已被 `public-api-boundary.json` 覆盖；
-- transitional public API 和需要外迁/删除的主仓 adapter/template 已被 `v1-migration-plan.json` 覆盖，且该计划的 `release_gate_checks` 已把每个 v1 gate 绑定到 evidence type、来源 manifest、`required_check_ids`、required status 和 blocker summary；核心 CI gate 还必须用 `required_ci_gates` 对齐 `core-ci-gates.json`；
+- transitional public API 和需要外迁/删除的主仓 adapter/template 已被 `v1-migration-plan.json` 覆盖，且该计划的 `release_gate_checks` 已把每个 v1 gate 绑定到 evidence type、来源 manifest、`required_check_ids`、required status 和 blocker summary；CI 相关 gate 还必须用 `required_ci_gates` 对齐核心 CI 或外部仓跨仓 CI gate；
 - 关键 root facade 已被 `public-api-examples.json` 覆盖；
 - 若发生废弃、移动或删除，必须更新 `deprecation-policy.md` 和 `migration-guide.md`；
 - 若发生可序列化 schema 变化，必须说明 `RunExport`、`StepExport`、`CheckpointRecord`、resume payload、verification report 的兼容性。

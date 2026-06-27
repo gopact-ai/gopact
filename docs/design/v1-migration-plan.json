@@ -57,19 +57,27 @@
     {
       "id": "external-repository-readiness",
       "evidence_types": [
-        "external_repository_readiness"
+        "external_repository_readiness",
+        "ci_gate"
       ],
       "source_manifests": [
         "docs/design/external-repositories.json",
         "docs/design/extension-scaffold-spec.json",
-        "docs/design/extension-conformance.json"
+        "docs/design/extension-conformance.json",
+        "docs/design/extension-ci-workflow.yml"
       ],
       "required_check_ids": [
-        "external-repositories:gopact-ai"
+        "external-repositories:gopact-ai",
+        "external-ci:gopact-ai"
+      ],
+      "required_ci_gates": [
+        "whitespace",
+        "unit",
+        "vet"
       ],
       "required_status": "passed",
       "blocking_status": "failed",
-      "blocker_summary": "Every external gopact-ai adapter/plugin/template repository must exist, match expected visibility, expose CI, provide GOPACT_GITHUB_TOKEN while the core SDK is private, and have latest CI passing before v1 release."
+      "blocker_summary": "Every external gopact-ai adapter/plugin/template repository must exist, match expected visibility, expose CI, provide GOPACT_GITHUB_TOKEN while the core SDK is private, have latest CI passing, and provide passed cross-repository CI gate evidence before v1 release."
     },
     {
       "id": "extension-conformance",

@@ -113,7 +113,7 @@ func v1SyntheticReleaseGateReport(t *testing.T, check v1ReleaseGateCheck) (gopac
 	}
 	recorder := gopact.NewVerificationRecorder()
 	for _, checkID := range check.RequiredCheckIDs {
-		if err := recorder.Record(v1SyntheticVerificationCheck(checkID, check)); err != nil {
+		if err := recorder.Record(v1SyntheticVerificationCheck(t, checkID, check)); err != nil {
 			t.Fatalf("Record(%s) error = %v", checkID, err)
 		}
 	}
@@ -125,7 +125,12 @@ func v1SyntheticReleaseGateReport(t *testing.T, check v1ReleaseGateCheck) (gopac
 	return export, report
 }
 
-func v1SyntheticVerificationCheck(id string, gate v1ReleaseGateCheck) gopact.VerificationCheck {
+func v1SyntheticVerificationCheck(t *testing.T, id string, gate v1ReleaseGateCheck) gopact.VerificationCheck {
+	t.Helper()
+
+	if id == "external-ci:gopact-ai" {
+		return v1SyntheticExternalCIRunSetCheck(t, id, gate)
+	}
 	evidence := v1SyntheticEvidenceForCheck(id, gate)
 	return gopact.VerificationCheck{
 		ID:       id,
@@ -133,6 +138,68 @@ func v1SyntheticVerificationCheck(id string, gate v1ReleaseGateCheck) gopact.Ver
 		Status:   gopact.VerificationStatusPassed,
 		Summary:  "v1 release gate evidence observed",
 		Evidence: evidence,
+	}
+}
+
+func v1SyntheticExternalCIRunSetCheck(t *testing.T, id string, gate v1ReleaseGateCheck) gopact.VerificationCheck {
+	t.Helper()
+
+	recorder := gopact.NewVerificationRecorder()
+	err := gopacttest.RecordCIRunSetCheck(recorder, gopacttest.CIRunSet{
+		ID:   id,
+		Name: "external repository CI",
+		RequiredRepositories: []string{
+			"gopact-ai/gopact-adapters-model",
+			"gopact-ai/gopact-templates-react",
+		},
+		RequiredGates: gate.RequiredCIGates,
+		Runs: []gopacttest.CIRun{
+			v1SyntheticExternalCIRun("gopact-ai/gopact-adapters-model", "1001", gate.RequiredCIGates),
+			v1SyntheticExternalCIRun("gopact-ai/gopact-templates-react", "1002", gate.RequiredCIGates),
+		},
+		Metadata: map[string]any{"v1_release_gate_check": gate.ID},
+	})
+	if err != nil {
+		t.Fatalf("RecordCIRunSetCheck(%s) error = %v", id, err)
+	}
+	checks := recorder.Checks()
+	if len(checks) != 1 {
+		t.Fatalf("RecordCIRunSetCheck(%s) recorded %d checks, want 1", id, len(checks))
+	}
+	return checks[0]
+}
+
+func v1SyntheticExternalCIRun(repository, runID string, requiredGates []string) gopacttest.CIRun {
+	gates := make([]gopacttest.CIRunGate, 0, len(requiredGates))
+	for _, gate := range requiredGates {
+		gates = append(gates, gopacttest.CIRunGate{
+			Gate:   gate,
+			Status: gopact.VerificationStatusPassed,
+			Job:    "test",
+			Step:   v1SyntheticExternalCIStep(gate),
+		})
+	}
+	return gopacttest.CIRun{
+		Provider:   "github-actions",
+		Repository: repository,
+		Workflow:   "ci",
+		RunID:      runID,
+		Status:     "completed",
+		Conclusion: "success",
+		Gates:      gates,
+	}
+}
+
+func v1SyntheticExternalCIStep(gate string) string {
+	switch gate {
+	case "whitespace":
+		return "Check formatting whitespace"
+	case "unit":
+		return "Test"
+	case "vet":
+		return "Vet"
+	default:
+		return gate
 	}
 }
 

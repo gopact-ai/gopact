@@ -4,7 +4,7 @@
 
 版本策略见 [versioning-policy.md](versioning-policy.md)。迁移说明必须服从 semver、release gate、schema version 和 extension compatibility 规则。
 
-v1 前的具体收敛清单见 [v1-migration-plan.json](v1-migration-plan.json)。该清单把需要外迁或删除的主仓路径、外部仓库目标、transitional root API 的目标状态和 `release_gate_checks` 绑定到机器可测条目；每个 gate 都声明 evidence type、来源 manifest、`required_check_ids`、required status 和 blocker summary。核心 CI gate 还声明 `required_ci_gates`，并必须与 [core-ci-gates.json](core-ci-gates.json) 保持一致。`release_gate_checks` 还必须能直接转成 `gopacttest.VerificationEvidenceRequirement`，并被 Dev Agent release gate 与 `ReleaseBundle` 消费。
+v1 前的具体收敛清单见 [v1-migration-plan.json](v1-migration-plan.json)。该清单把需要外迁或删除的主仓路径、外部仓库目标、transitional root API 的目标状态和 `release_gate_checks` 绑定到机器可测条目；每个 gate 都声明 evidence type、来源 manifest、`required_check_ids`、required status 和 blocker summary。CI 相关 gate 还声明 `required_ci_gates`：核心 CI 必须与 [core-ci-gates.json](core-ci-gates.json) 保持一致，外部仓 readiness 必须由 `external-ci:gopact-ai` 跨仓 `ci_gate` check 覆盖。`release_gate_checks` 还必须能直接转成 `gopacttest.VerificationEvidenceRequirement`，并被 Dev Agent release gate 与 `ReleaseBundle` 消费。
 
 ## Compatibility Promise
 
