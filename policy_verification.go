@@ -175,7 +175,8 @@ func validPolicyBoundary(boundary PolicyBoundary) bool {
 		PolicyBoundaryMCP,
 		PolicyBoundarySkill,
 		PolicyBoundaryExporter,
-		PolicyBoundaryTurn:
+		PolicyBoundaryTurn,
+		PolicyBoundarySecret:
 		return true
 	default:
 		return false
@@ -203,7 +204,8 @@ func validPolicyRequestAction(action PolicyRequestAction) bool {
 		PolicyActionSearch,
 		PolicyActionDelete,
 		PolicyActionList,
-		PolicyActionResume:
+		PolicyActionResume,
+		PolicyActionResolve:
 		return true
 	default:
 		return false
