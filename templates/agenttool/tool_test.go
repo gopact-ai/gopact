@@ -504,6 +504,12 @@ func TestRemoteA2AToolAuthAttachesAuthBeforePolicyAndSend(t *testing.T) {
 		t.Fatalf("result events = %+v, want policy/sent/completed", result.Events)
 	}
 	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_auth_send.golden.json", result.Events)
+	if result.Events[0].PolicyRequest.Metadata["auth_principal"] != "svc-planner" ||
+		result.Events[1].PolicyRequest.Metadata["auth_principal"] != "svc-planner" {
+		t.Fatalf("policy event metadata = requested:%+v decided:%+v, want auth principal",
+			result.Events[0].PolicyRequest.Metadata,
+			result.Events[1].PolicyRequest.Metadata)
+	}
 	if result.Events[2].Metadata["auth_principal"] != "svc-planner" {
 		t.Fatalf("sent event metadata = %+v, want auth principal", result.Events[2].Metadata)
 	}
@@ -581,6 +587,12 @@ func TestRemoteA2AToolCancelAuthAttachesAuditMetadata(t *testing.T) {
 		result.Events[2].Metadata["auth_principal"] != "svc-planner" ||
 		result.Events[2].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
 		t.Fatalf("canceled event metadata = %+v, want auth audit metadata", result.Events[2].Metadata)
+	}
+	if result.Events[0].PolicyRequest.Metadata["auth_principal"] != "svc-planner" ||
+		result.Events[1].PolicyRequest.Metadata["auth_principal"] != "svc-planner" {
+		t.Fatalf("cancel policy event metadata = requested:%+v decided:%+v, want auth principal",
+			result.Events[0].PolicyRequest.Metadata,
+			result.Events[1].PolicyRequest.Metadata)
 	}
 	if result.Metadata["auth_principal"] != "svc-planner" {
 		t.Fatalf("result metadata = %+v, want auth principal", result.Metadata)
