@@ -429,6 +429,16 @@ type Spec struct {
 	Metadata   map[string]any
 }
 
+type Profile struct {
+	Name              string
+	AllowedCommands   []string
+	AllowedReadPaths  []string
+	AllowedWritePaths []string
+	AllowedEnvKeys    []string
+	Limits            ResourceLimits
+	Metadata          map[string]any
+}
+
 type ExecRequest struct {
 	Command []string
 	Stdin   []byte
@@ -449,6 +459,7 @@ type ExecResult struct {
 
 - `sandbox.Local`：本地进程执行，但必须有工作目录 root、路径校验、命令 allowlist、env allowlist、timeout、输出大小限制。
 - `sandbox.MemoryFS`：测试用文件系统，不执行真实命令。
+- `sandbox.ProfileManager`：fail-closed profile wrapper，先按宿主传入的 `Profile` 检查 env key、allowed command、read/write path 和 resource limit，再调用底层 `Manager` / `Session`；它只做 SDK 原子边界，不替代生产级容器隔离。
 
 生产 adapter：
 
@@ -470,6 +481,8 @@ type ExecResult struct {
 - sandbox 事件必须记录命令、hash、exit code、resource usage，但默认不记录敏感 stdout。
 
 当前 `sandbox.PolicyManager` 会把 session create、exec、read file 和 write file 包成 `PolicyBoundarySandbox` 请求。policy input 不包含 stdin/file payload，只包含命令、路径、大小和 metadata。需要更强隔离时，应用应把 policy wrapper 和生产 sandbox backend 一起注入，而不是直接把底层 backend 暴露给 agent template。
+
+当前 `sandbox.Profile` / `sandbox.ProfileManager` 已提供第一片 sandbox profile contract。profile wrapper 默认 fail-closed：未在 allowlist 中的 command、read path、write path 和 env key 都会在调用底层 session 前被拒绝；`ResourceLimits` 会在 create 时写入 `Spec.Limits`，显式超过 profile limit 的请求会被拒绝。生产级网络隔离、seccomp、容器/rootfs、secret 继承授权和 prompt-injection 防御仍属于外部 adapter、plugin 或宿主 policy 的责任。
 
 ### 事件
 
