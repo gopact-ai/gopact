@@ -323,13 +323,15 @@ exit 2
 		Status   string `json:"status"`
 		Summary  string `json:"summary"`
 		Metadata struct {
-			Organization        string `json:"organization"`
-			RepositoryCount     int    `json:"repository_count"`
-			ReadyCount          int    `json:"ready_count"`
-			NotReadyCount       int    `json:"not_ready_count"`
-			MissingCount        int    `json:"missing_count"`
-			BlockingReasonCount int    `json:"blocking_reason_count"`
-			RequiredActionCount int    `json:"required_action_count"`
+			Organization        string   `json:"organization"`
+			RepositoryCount     int      `json:"repository_count"`
+			ReadyCount          int      `json:"ready_count"`
+			NotReadyCount       int      `json:"not_ready_count"`
+			MissingCount        int      `json:"missing_count"`
+			BlockingReasonCount int      `json:"blocking_reason_count"`
+			RequiredActionCount int      `json:"required_action_count"`
+			BlockingReasons     []string `json:"blocking_reasons"`
+			RequiredActions     []string `json:"required_actions"`
 		} `json:"metadata"`
 		Evidence []struct {
 			Type     string `json:"type"`
@@ -366,6 +368,16 @@ exit 2
 		check.Metadata.RequiredActionCount != expectedScaffoldRepositoryCount*2 {
 		t.Fatalf("metadata = %+v, want remote readiness counts", check.Metadata)
 	}
+	assertContainsString(
+		t,
+		check.Metadata.BlockingReasons,
+		"gopact-ai/gopact-adapters-model: GOPACT_GITHUB_TOKEN secret is missing",
+	)
+	assertContainsString(
+		t,
+		check.Metadata.RequiredActions,
+		"gopact-ai/gopact-adapters-model: configure GOPACT_GITHUB_TOKEN with sync-secrets.sh",
+	)
 	if len(check.Evidence) != expectedScaffoldRepositoryCount {
 		t.Fatalf("evidence count = %d, want %d", len(check.Evidence), expectedScaffoldRepositoryCount)
 	}

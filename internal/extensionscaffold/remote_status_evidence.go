@@ -222,21 +222,29 @@ func remoteStatusCheck(report RemoteStatusReport) gopact.VerificationCheck {
 	if notReady > 0 {
 		status = gopact.VerificationStatusFailed
 	}
+	blockingReasonDetails, requiredActionDetails := remoteStatusDetails(organization, report.Repositories)
+	metadata := map[string]any{
+		"organization":          organization,
+		"repository_count":      len(report.Repositories),
+		"ready_count":           ready,
+		"not_ready_count":       notReady,
+		"missing_count":         notReady,
+		"blocking_reason_count": blockingReasons,
+		"required_action_count": requiredActions,
+	}
+	if len(blockingReasonDetails) > 0 {
+		metadata["blocking_reasons"] = blockingReasonDetails
+	}
+	if len(requiredActionDetails) > 0 {
+		metadata["required_actions"] = requiredActionDetails
+	}
 	return gopact.VerificationCheck{
 		ID:       VerificationCheckRemoteRepositories + ":" + organization,
 		Name:     "external repository readiness",
 		Status:   status,
 		Summary:  remoteStatusSummary(status, ready, notReady),
 		Evidence: remoteStatusEvidence(organization, report.Repositories),
-		Metadata: map[string]any{
-			"organization":          organization,
-			"repository_count":      len(report.Repositories),
-			"ready_count":           ready,
-			"not_ready_count":       notReady,
-			"missing_count":         notReady,
-			"blocking_reason_count": blockingReasons,
-			"required_action_count": requiredActions,
-		},
+		Metadata: metadata,
 	}
 }
 
@@ -251,6 +259,27 @@ func remoteStatusCounts(repositories []RemoteRepositoryStatus) (ready, notReady,
 		requiredActions += len(repository.RequiredActions)
 	}
 	return ready, notReady, blockingReasons, requiredActions
+}
+
+func remoteStatusDetails(organization string, repositories []RemoteRepositoryStatus) ([]string, []string) {
+	var blockingReasons []string
+	var requiredActions []string
+	for _, repository := range repositories {
+		remote := remoteRepositoryRef(organization, repository)
+		for _, reason := range repository.BlockingReasons {
+			reason = strings.TrimSpace(reason)
+			if reason != "" {
+				blockingReasons = append(blockingReasons, remote+": "+reason)
+			}
+		}
+		for _, action := range repository.RequiredActions {
+			action = strings.TrimSpace(action)
+			if action != "" {
+				requiredActions = append(requiredActions, remote+": "+action)
+			}
+		}
+	}
+	return blockingReasons, requiredActions
 }
 
 func remoteStatusSummary(status gopact.VerificationStatus, ready, notReady int) string {

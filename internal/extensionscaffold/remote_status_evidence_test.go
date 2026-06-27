@@ -246,6 +246,18 @@ func TestRecordRemoteStatusCheckRecordsFailedCheckBeforeReturningError(t *testin
 		check.Metadata["required_action_count"] != 2 {
 		t.Fatalf("metadata = %+v, want not ready repository counts", check.Metadata)
 	}
+	if got, want := check.Metadata["blocking_reasons"], []string{
+		"gopact-ai/gopact-adapters-model: GOPACT_GITHUB_TOKEN secret is missing",
+		"gopact-ai/gopact-adapters-model: latest ci workflow run did not pass",
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("check blocking reasons = %#v, want %#v", got, want)
+	}
+	if got, want := check.Metadata["required_actions"], []string{
+		"gopact-ai/gopact-adapters-model: configure GOPACT_GITHUB_TOKEN with sync-secrets.sh",
+		"gopact-ai/gopact-adapters-model: rerun ci workflow with rerun-ci.sh after fixing blockers",
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("check required actions = %#v, want %#v", got, want)
+	}
 	metadata := check.Evidence[0].Metadata
 	if metadata["private_sdk_token_secret_present"] != false ||
 		metadata["ci_run_passed"] != false ||
