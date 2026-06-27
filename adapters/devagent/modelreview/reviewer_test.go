@@ -80,23 +80,33 @@ func TestReviewerReviewUsesFallbackReviewerWhenModelOmitsReviewer(t *testing.T) 
 	}
 }
 
-func TestReviewerReviewAnnotatesPromptAndEvalGovernance(t *testing.T) {
+func TestReviewerReviewAnnotatesRequiredPromptAndEvalGovernance(t *testing.T) {
 	model := &chatModelStub{
 		message: gopact.Message{
 			Role:    gopact.RoleAssistant,
 			Content: `{"status":"approved","summary":"governed review"}`,
 		},
 	}
-	reviewer, err := New(model, WithGovernance(Governance{
-		PromptID:      "devagent-review",
-		PromptVersion: "2026-06-25",
-		EvalID:        "release-eval",
-		EvalVersion:   "v1",
-		PolicyRef:     "release-policy-v1",
-		Metadata: map[string]any{
-			"dataset": "devagent-review-golden",
-		},
-	}))
+	reviewer, err := New(
+		model,
+		WithGovernance(Governance{
+			PromptID:      "devagent-review",
+			PromptVersion: "2026-06-25",
+			EvalID:        "release-eval",
+			EvalVersion:   "v1",
+			PolicyRef:     "release-policy-v1",
+			Metadata: map[string]any{
+				"dataset": "devagent-review-golden",
+			},
+		}),
+		WithRequiredGovernanceFields(
+			GovernanceFieldPromptID,
+			GovernanceFieldPromptVersion,
+			GovernanceFieldEvalID,
+			GovernanceFieldEvalVersion,
+			GovernanceFieldPolicyRef,
+		),
+	)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -130,6 +140,19 @@ func TestReviewerReviewAnnotatesPromptAndEvalGovernance(t *testing.T) {
 	decision.Metadata["dataset"] = "mutated"
 	if model.requests[0].Metadata["dataset"] != "devagent-review-golden" {
 		t.Fatalf("request metadata was aliased by decision mutation: %+v", model.requests[0].Metadata)
+	}
+}
+
+func TestNewRejectsMissingRequiredGovernanceField(t *testing.T) {
+	_, err := New(
+		&chatModelStub{},
+		WithGovernance(Governance{
+			PromptID: "devagent-review",
+		}),
+		WithRequiredGovernanceFields(GovernanceFieldPromptID, GovernanceFieldEvalID),
+	)
+	if !errors.Is(err, ErrGovernanceFieldRequired) || !strings.Contains(err.Error(), "review_eval_id") {
+		t.Fatalf("New(missing required governance field) error = %v, want review_eval_id", err)
 	}
 }
 
@@ -215,6 +238,14 @@ func TestNewRejectsInvalidInput(t *testing.T) {
 	}
 	if reviewer, err := New(&chatModelStub{}, WithParser(nil)); reviewer != nil || !errors.Is(err, ErrParserRequired) {
 		t.Fatalf("New(nil parser) reviewer=%v err=%v, want ErrParserRequired", reviewer, err)
+	}
+	if reviewer, err := New(&chatModelStub{}, WithRequiredGovernanceFields()); reviewer != nil ||
+		!errors.Is(err, ErrGovernanceFieldRequired) {
+		t.Fatalf("New(no governance fields) reviewer=%v err=%v, want ErrGovernanceFieldRequired", reviewer, err)
+	}
+	if reviewer, err := New(&chatModelStub{}, WithRequiredGovernanceFields(GovernanceField("unknown"))); reviewer != nil ||
+		!errors.Is(err, ErrInvalidGovernanceField) {
+		t.Fatalf("New(invalid governance field) reviewer=%v err=%v, want ErrInvalidGovernanceField", reviewer, err)
 	}
 }
 
