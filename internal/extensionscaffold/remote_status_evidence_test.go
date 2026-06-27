@@ -76,6 +76,120 @@ func TestRecordRemoteStatusCheckRecordsPassedCheck(t *testing.T) {
 	}
 }
 
+func TestRecordRemoteCIRunSetCheckRecordsPassedExternalCICheck(t *testing.T) {
+	recorder := gopact.NewVerificationRecorder()
+
+	if err := RecordRemoteCIRunSetCheck(recorder, RemoteStatusReport{
+		Organization: "gopact-ai",
+		Repositories: []RemoteRepositoryStatus{
+			{
+				Name:                    "gopact-adapters-model",
+				Remote:                  "gopact-ai/gopact-adapters-model",
+				CIWorkflowPath:          ".github/workflows/ci.yml",
+				CIRunWorkflowName:       "ci",
+				CIRunID:                 "123",
+				CIRunStatus:             "completed",
+				CIRunConclusion:         "success",
+				CIRunEvent:              "push",
+				CIRunHeadBranch:         "main",
+				CIRunURL:                "https://github.com/gopact-ai/gopact-adapters-model/actions/runs/123",
+				Exists:                  true,
+				CIWorkflowPresent:       true,
+				CIWorkflowRunSeen:       true,
+				CIRunPassed:             true,
+				PrivateSDKSecretPresent: true,
+				Ready:                   true,
+			},
+			{
+				Name:                    "gopact-templates-react",
+				Remote:                  "gopact-ai/gopact-templates-react",
+				CIWorkflowPath:          ".github/workflows/ci.yml",
+				CIRunWorkflowName:       "ci",
+				CIRunID:                 "456",
+				CIRunStatus:             "completed",
+				CIRunConclusion:         "success",
+				CIRunEvent:              "push",
+				CIRunHeadBranch:         "main",
+				CIRunURL:                "https://github.com/gopact-ai/gopact-templates-react/actions/runs/456",
+				Exists:                  true,
+				CIWorkflowPresent:       true,
+				CIWorkflowRunSeen:       true,
+				CIRunPassed:             true,
+				PrivateSDKSecretPresent: true,
+				Ready:                   true,
+			},
+		},
+	}, []string{"whitespace", "unit", "vet"}); err != nil {
+		t.Fatalf("RecordRemoteCIRunSetCheck() error = %v", err)
+	}
+
+	checks := recorder.Checks()
+	if len(checks) != 1 {
+		t.Fatalf("check count = %d, want 1", len(checks))
+	}
+	check := checks[0]
+	if check.ID != "external-ci:gopact-ai" ||
+		check.Name != "external repository CI" ||
+		check.Status != gopact.VerificationStatusPassed {
+		t.Fatalf("check = %+v, want passed external CI check", check)
+	}
+	if check.Metadata["run_count"] != 2 ||
+		check.Metadata["repository_count"] != 2 ||
+		check.Metadata["gate_count"] != 6 ||
+		check.Metadata["passed_gate_count"] != 6 {
+		t.Fatalf("metadata = %+v, want external CI run set counts", check.Metadata)
+	}
+	if got, want := check.Metadata["required_gates"], []string{"whitespace", "unit", "vet"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("required gates = %#v, want %#v", got, want)
+	}
+	if len(check.Evidence) != 6 {
+		t.Fatalf("evidence count = %d, want one evidence item per repo gate", len(check.Evidence))
+	}
+	evidence := check.Evidence[0]
+	if evidence.Type != "ci_gate" ||
+		evidence.Ref != "ci-gate:gopact-ai/gopact-adapters-model:whitespace" ||
+		evidence.Metadata["repository"] != "gopact-ai/gopact-adapters-model" ||
+		evidence.Metadata["run_id"] != "123" ||
+		evidence.Metadata["gate"] != "whitespace" ||
+		evidence.Metadata["status"] != string(gopact.VerificationStatusPassed) {
+		t.Fatalf("first evidence = %+v, want repository-qualified external CI gate evidence", evidence)
+	}
+}
+
+func TestRecordRemoteCIRunSetCheckRecordsFailedExternalCIBeforeReturningError(t *testing.T) {
+	recorder := gopact.NewVerificationRecorder()
+
+	err := RecordRemoteCIRunSetCheck(recorder, RemoteStatusReport{
+		Organization: "gopact-ai",
+		Repositories: []RemoteRepositoryStatus{
+			{
+				Name:                 "gopact-adapters-model",
+				Remote:               "gopact-ai/gopact-adapters-model",
+				CIRunWorkflowName:    "ci",
+				CIRunID:              "123",
+				CIRunStatus:          "completed",
+				CIRunConclusion:      "failure",
+				CIWorkflowRunSeen:    true,
+				CIWorkflowPresent:    true,
+				PrivateSDKSecretName: "GOPACT_GITHUB_TOKEN",
+			},
+		},
+	}, []string{"whitespace", "unit", "vet"})
+	if !errors.Is(err, ErrRemoteCINotReady) {
+		t.Fatalf("RecordRemoteCIRunSetCheck() error = %v, want ErrRemoteCINotReady", err)
+	}
+	checks := recorder.Checks()
+	if len(checks) != 1 {
+		t.Fatalf("check count = %d, want 1", len(checks))
+	}
+	check := checks[0]
+	if check.ID != "external-ci:gopact-ai" ||
+		check.Status != gopact.VerificationStatusFailed ||
+		check.Metadata["failed_gate_count"] != 3 {
+		t.Fatalf("check = %+v, want failed external CI check", check)
+	}
+}
+
 func TestRecordRemoteStatusCheckRecordsFailedCheckBeforeReturningError(t *testing.T) {
 	recorder := gopact.NewVerificationRecorder()
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -381,6 +382,90 @@ exit 2
 	}
 	assertContainsString(t, first.Metadata.BlockingReasons, "GOPACT_GITHUB_TOKEN secret is missing")
 	assertContainsString(t, first.Metadata.RequiredActions, "configure GOPACT_GITHUB_TOKEN with sync-secrets.sh")
+}
+
+func TestRunPrintsRemoteCIEvidenceJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	restore := installFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "repo" && "$2" == "view" ]]; then
+  repo="$3"
+  name="${repo#*/}"
+  printf '{"name":"%s","visibility":"PRIVATE","isPrivate":true,"url":"https://github.com/%s","defaultBranchRef":{"name":"main"}}' "${name}" "${repo}"
+  exit 0
+fi
+if [[ "$1" == "api" ]]; then
+  printf '{"path":".github/workflows/ci.yml"}'
+  exit 0
+fi
+if [[ "$1" == "secret" && "$2" == "list" ]]; then
+  printf '[{"name":"GOPACT_GITHUB_TOKEN"}]'
+  exit 0
+fi
+if [[ "$1" == "run" && "$2" == "list" ]]; then
+  printf '[{"databaseId":123,"workflowName":"ci","status":"completed","conclusion":"success","event":"push","headBranch":"main","url":"https://github.com/%s/actions/runs/123"}]' "$4"
+  exit 0
+fi
+exit 2
+`)
+	defer restore()
+
+	code := run(context.Background(), []string{"-root", "../..", "-remote-ci-evidence-json"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	var check struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Status   string `json:"status"`
+		Metadata struct {
+			RunCount        int      `json:"run_count"`
+			RepositoryCount int      `json:"repository_count"`
+			GateCount       int      `json:"gate_count"`
+			RequiredGates   []string `json:"required_gates"`
+		} `json:"metadata"`
+		Evidence []struct {
+			Type     string `json:"type"`
+			Ref      string `json:"ref"`
+			Metadata struct {
+				Repository string `json:"repository"`
+				RunID      string `json:"run_id"`
+				Gate       string `json:"gate"`
+				Status     string `json:"status"`
+			} `json:"metadata"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &check); err != nil {
+		t.Fatalf("stdout is not remote CI evidence JSON: %v\n%s", err, stdout.String())
+	}
+	if check.ID != "external-ci:gopact-ai" ||
+		check.Name != "external repository CI" ||
+		check.Status != "passed" {
+		t.Fatalf("check = %+v, want passed external CI evidence check", check)
+	}
+	if check.Metadata.RunCount != expectedScaffoldRepositoryCount ||
+		check.Metadata.RepositoryCount != expectedScaffoldRepositoryCount ||
+		check.Metadata.GateCount != expectedScaffoldRepositoryCount*3 {
+		t.Fatalf("metadata = %+v, want one CI run with three gates per repository", check.Metadata)
+	}
+	if got, want := check.Metadata.RequiredGates, []string{"whitespace", "unit", "vet"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("required gates = %#v, want %#v", got, want)
+	}
+	if len(check.Evidence) != expectedScaffoldRepositoryCount*3 {
+		t.Fatalf("evidence count = %d, want one evidence item per repository gate", len(check.Evidence))
+	}
+	first := check.Evidence[0]
+	if first.Type != "ci_gate" ||
+		first.Ref != "ci-gate:gopact-ai/gopact-adapters-model:whitespace" ||
+		first.Metadata.Repository != "gopact-ai/gopact-adapters-model" ||
+		first.Metadata.RunID != "123" ||
+		first.Metadata.Gate != "whitespace" ||
+		first.Metadata.Status != "passed" {
+		t.Fatalf("first evidence = %+v, want repository-qualified external CI gate evidence", first)
+	}
 }
 
 func TestRunWritesScaffoldWorkspace(t *testing.T) {
