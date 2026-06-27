@@ -312,11 +312,11 @@ func runEffectReplayCheckMetadata(snapshot RunEffectReplaySnapshot) map[string]a
 }
 
 func effectReplayEvidenceMetadata(snapshot EffectReplaySnapshot) map[string]any {
-	return effectReplayBaseMetadata(snapshot)
+	return effectReplayCheckMetadata(snapshot)
 }
 
 func runEffectReplayEvidenceMetadata(snapshot RunEffectReplaySnapshot) map[string]any {
-	return runEffectReplayBaseMetadata(snapshot)
+	return runEffectReplayCheckMetadata(snapshot)
 }
 
 func effectReplayBaseMetadata(snapshot EffectReplaySnapshot) map[string]any {
