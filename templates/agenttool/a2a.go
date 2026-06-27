@@ -557,13 +557,17 @@ func a2aPolicyApprovalRecord(req gopact.PolicyRequest, decision gopact.PolicyDec
 }
 
 func a2aPolicyApprovalID(req gopact.PolicyRequest) string {
+	action := string(req.Action)
+	if action == "" {
+		action = "review"
+	}
 	if req.IDs.CallID != "" {
-		return "policy:" + req.IDs.CallID
+		return "policy:" + req.IDs.CallID + ":a2a:" + action
 	}
 	if req.IDs.RunID != "" {
-		return "policy:" + req.IDs.RunID + ":a2a:send"
+		return "policy:" + req.IDs.RunID + ":a2a:" + action
 	}
-	return "policy:a2a:send"
+	return "policy:a2a:" + action
 }
 
 func copyPolicyRequest(req gopact.PolicyRequest) gopact.PolicyRequest {

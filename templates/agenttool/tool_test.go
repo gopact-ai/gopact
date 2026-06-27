@@ -389,6 +389,53 @@ func TestRemoteA2AToolPolicyReviewReturnsApprovalInterrupt(t *testing.T) {
 	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_policy_review.golden.json", result.Events)
 }
 
+func TestRemoteA2AToolPolicyReviewInterruptIDIncludesA2AAction(t *testing.T) {
+	ctx := gopact.ContextWithRuntimeIDs(context.Background(), gopact.RuntimeIDs{
+		RunID:  "run-1",
+		CallID: "parent-call",
+	})
+	policy := gopact.PolicyFunc(func(ctx context.Context, req gopact.PolicyRequest) (gopact.PolicyDecision, error) {
+		return gopact.PolicyDecision{Action: gopact.PolicyReview, Reason: "approval required"}, nil
+	})
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		SendFunc: func(ctx context.Context, task a2a.Task) (a2a.Result, error) {
+			t.Fatal("remote Send should not run before approval")
+			return a2a.Result{}, nil
+		},
+		CancelFunc: func(ctx context.Context, taskID string) error {
+			t.Fatal("remote Cancel should not run before approval")
+			return nil
+		},
+	}
+	tool, err := NewA2A(remote, WithPolicy(policy))
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	_, sendErr := tool.Invoke(ctx, json.RawMessage(`{"input":"write tests"}`))
+	var sendInterrupt *gopact.InterruptError
+	if !errors.As(sendErr, &sendInterrupt) {
+		t.Fatalf("Invoke() error = %T, want *InterruptError", sendErr)
+	}
+
+	_, cancelErr := tool.Cancel(ctx, "task-1")
+	var cancelInterrupt *gopact.InterruptError
+	if !errors.As(cancelErr, &cancelInterrupt) {
+		t.Fatalf("Cancel() error = %T, want *InterruptError", cancelErr)
+	}
+
+	if sendInterrupt.Record.ID == cancelInterrupt.Record.ID {
+		t.Fatalf("interrupt IDs both = %q, want action-scoped send/cancel IDs", sendInterrupt.Record.ID)
+	}
+	if sendInterrupt.Record.ID != "policy:parent-call:agent:planner:a2a:send" {
+		t.Fatalf("send interrupt ID = %q, want action-scoped send ID", sendInterrupt.Record.ID)
+	}
+	if cancelInterrupt.Record.ID != "policy:parent-call:agent:planner:a2a:cancel" {
+		t.Fatalf("cancel interrupt ID = %q, want action-scoped cancel ID", cancelInterrupt.Record.ID)
+	}
+}
+
 func TestRemoteA2AToolAuthAttachesAuthBeforePolicyAndSend(t *testing.T) {
 	ctx := context.Background()
 	var sentTask a2a.Task
