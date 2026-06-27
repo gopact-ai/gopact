@@ -445,6 +445,72 @@ func TestSelfBootstrapRejectedReleaseMatchesGoldenTrajectory(t *testing.T) {
 	}
 }
 
+func TestSelfBootstrapCanceledReleaseMatchesGoldenTrajectory(t *testing.T) {
+	const goldenPath = "testdata/self_bootstrap_canceled_release.golden.json"
+
+	export, workflow := selfBootstrapCanceledReleaseTrajectoryFixture(t, goldenPath)
+
+	gopacttest.RequireRunExportGoldenTrajectoryFrames(t, goldenPath, export)
+	gopacttest.RequireTemplateTrajectoryConformance(t, gopacttest.TemplateTrajectoryConformanceHarness{
+		Name:      "devagent.self-bootstrap-canceled-release",
+		RunExport: &export,
+		RequiredEventTypes: []gopact.EventType{
+			gopact.EventRunStarted,
+			gopact.EventNodeCompleted,
+			gopact.EventNodeCompleted,
+			gopact.EventRunCanceled,
+		},
+		RequiredFrames: []gopacttest.TrajectoryFramePattern{
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.analyze", 1),
+			devAgentFramePattern(gopact.EventNodeCompleted, "devagent.plan", 2),
+			devAgentFramePattern(gopact.EventRunCanceled, "devagent.release_gate", 3),
+		},
+	})
+
+	if export.Outcome != gopact.RunCanceled {
+		t.Fatalf("export outcome = %q, want canceled", export.Outcome)
+	}
+	if len(export.Steps) != 3 ||
+		export.Steps[2].Phase != gopact.StepCanceled ||
+		export.Steps[2].Error != "context canceled" {
+		t.Fatalf("exported steps = %+v, want canceled release_gate step", export.Steps)
+	}
+	restored, err := WorkflowRecordsFromRunExport(export, "")
+	if err != nil {
+		t.Fatalf("WorkflowRecordsFromRunExport() error = %v", err)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: restored,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionRelease,
+		},
+		RequiredInputSources: []string{"devagent.patch", "devagent.release_gate"},
+	})
+	if workflow.Task.Status != gopact.TaskCanceled ||
+		workflow.Task.Metadata["canceled_action_count"] != 1 {
+		t.Fatalf("workflow task = %+v, want canceled workflow process summary", workflow.Task)
+	}
+	release, err := WorkflowActionProcessRecordsFromRunExportByAction(export, "", ActionRelease)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecordsFromRunExportByAction(release) error = %v", err)
+	}
+	if release.Task.Status != gopact.TaskCanceled ||
+		release.Task.Metadata["action_status"] != string(ActionCanceled) ||
+		release.Task.Metadata["gate_status"] != string(GateSkipped) ||
+		len(release.Inputs) != 1 ||
+		release.Inputs[0].Source != "devagent.release_gate" ||
+		len(release.Interventions) != 0 {
+		t.Fatalf("release process = %+v, want canceled release gate process without review intervention", release)
+	}
+	if len(export.VerificationReports) != 1 ||
+		export.VerificationReports[0].Status != gopact.VerificationStatusPartial ||
+		export.VerificationReports[0].SkippedCount != 1 {
+		t.Fatalf("verification reports = %+v, want partial report with skipped canceled release gate", export.VerificationReports)
+	}
+}
+
 func TestSelfBootstrapRejectedApplyMatchesGoldenTrajectory(t *testing.T) {
 	const goldenPath = "testdata/self_bootstrap_rejected_apply.golden.json"
 
@@ -1590,6 +1656,98 @@ func selfBootstrapRejectedApplyTrajectoryFixture(t *testing.T) (gopact.RunExport
 	return export, applyAction, workflow
 }
 
+func selfBootstrapCanceledReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gopact.RunExport, WorkflowRecords) {
+	t.Helper()
+
+	createdAt := time.Date(2026, 6, 27, 13, 0, 0, 0, time.UTC)
+	ids := selfBootstrapRuntimeIDs()
+	recorder := gopact.NewRunRecorder()
+	for _, event := range selfBootstrapCanceledReleaseEvents(ids, createdAt) {
+		if err := recorder.Record(event); err != nil {
+			t.Fatalf("Record(event) error = %v", err)
+		}
+	}
+	export, err := recorder.Export()
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+
+	reportRecorder := gopact.NewVerificationRecorder()
+	for _, check := range []gopact.VerificationCheck{
+		verificationCheck("unit-tests", gopact.VerificationStatusPassed, "command"),
+		verificationCheck("diff-check", gopact.VerificationStatusPassed, "diff"),
+	} {
+		if err := reportRecorder.Record(check); err != nil {
+			t.Fatalf("Record(check) error = %v", err)
+		}
+	}
+	if err := gopacttest.RecordRunExportGoldenTrajectoryCheck(reportRecorder, goldenPath, export); err != nil {
+		t.Fatalf("RecordRunExportGoldenTrajectoryCheck() error = %v", err)
+	}
+	gate := GateResult{
+		Status:       GateSkipped,
+		Mode:         ModeWrite,
+		ReportStatus: gopact.VerificationStatusPartial,
+		Reasons: []string{
+			"release gate canceled before final decision",
+		},
+	}
+	if err := RecordReleaseGateCheck(reportRecorder, gate); err != nil {
+		t.Fatalf("RecordReleaseGateCheck(skipped) error = %v", err)
+	}
+	report, err := reportRecorder.Report(export)
+	if err != nil {
+		t.Fatalf("Report(canceled release export) error = %v", err)
+	}
+
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:       ids,
+		Name:      "self-bootstrap canceled release workflow",
+		CreatedAt: createdAt,
+		Metadata:  map[string]any{"scope": "m5-workflow"},
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModePlan,
+					Action: ActionProposePatch,
+				},
+				Patch: selfBootstrapPatchProposal("cancel self-bootstrap release after planning"),
+			},
+			{
+				Action: ActionResult{
+					Status: ActionCanceled,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+					Reasons: []string{
+						"context canceled",
+					},
+				},
+				Gate: &gate,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	recordWorkflowRecords(t, recorder, workflow)
+	if err := recorder.RecordVerificationReport(report); err != nil {
+		t.Fatalf("RecordVerificationReport() error = %v", err)
+	}
+	export, err = recorder.Export()
+	if err != nil {
+		t.Fatalf("Export(with process records) error = %v", err)
+	}
+	return export, workflow
+}
+
 func selfBootstrapCanceledApplyTrajectoryFixture(t *testing.T) (gopact.RunExport, WorkflowRecords) {
 	t.Helper()
 
@@ -1872,6 +2030,18 @@ func selfBootstrapCanceledApplyEvents(ids gopact.RuntimeIDs, createdAt time.Time
 		devAgentStepEvent(ids, createdAt.Add(4*time.Second), gopact.EventNodeCompleted, 2, "devagent.plan", gopact.StepCompleted),
 		devAgentStepEvent(ids, createdAt.Add(5*time.Second), gopact.EventNodeStarted, 3, "devagent.apply_patch", gopact.StepRunning),
 		devAgentCanceledStepEvent(ids, createdAt.Add(6*time.Second), 3, "devagent.apply_patch"),
+	}
+}
+
+func selfBootstrapCanceledReleaseEvents(ids gopact.RuntimeIDs, createdAt time.Time) []gopact.Event {
+	return []gopact.Event{
+		{Type: gopact.EventRunStarted, IDs: ids, CreatedAt: createdAt},
+		devAgentStepEvent(ids, createdAt.Add(time.Second), gopact.EventNodeStarted, 1, "devagent.analyze", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(2*time.Second), gopact.EventNodeCompleted, 1, "devagent.analyze", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(3*time.Second), gopact.EventNodeStarted, 2, "devagent.plan", gopact.StepRunning),
+		devAgentStepEvent(ids, createdAt.Add(4*time.Second), gopact.EventNodeCompleted, 2, "devagent.plan", gopact.StepCompleted),
+		devAgentStepEvent(ids, createdAt.Add(5*time.Second), gopact.EventNodeStarted, 3, "devagent.release_gate", gopact.StepRunning),
+		devAgentCanceledStepEvent(ids, createdAt.Add(6*time.Second), 3, "devagent.release_gate"),
 	}
 }
 
