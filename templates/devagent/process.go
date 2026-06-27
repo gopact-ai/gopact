@@ -233,7 +233,7 @@ func validateProcessInput(input ProcessInput) error {
 
 func (s ActionStatus) valid() bool {
 	switch s {
-	case ActionAllowed, ActionRejected, ActionInterrupted:
+	case ActionAllowed, ActionRejected, ActionInterrupted, ActionCanceled:
 		return true
 	default:
 		return false
@@ -246,6 +246,8 @@ func taskStatusForAction(status ActionStatus) gopact.TaskStatus {
 		return gopact.TaskCompleted
 	case ActionInterrupted:
 		return gopact.TaskInterrupted
+	case ActionCanceled:
+		return gopact.TaskCanceled
 	default:
 		return gopact.TaskFailed
 	}

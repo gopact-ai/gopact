@@ -27,6 +27,7 @@ const (
 	ActionAllowed     ActionStatus = "allowed"
 	ActionRejected    ActionStatus = "rejected"
 	ActionInterrupted ActionStatus = "interrupted"
+	ActionCanceled    ActionStatus = "canceled"
 )
 
 // PatchFile describes one file touched by a proposed patch.

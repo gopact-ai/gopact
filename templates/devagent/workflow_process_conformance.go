@@ -333,12 +333,15 @@ func checkWorkflowProcessFailureSummary(records WorkflowRecords) WorkflowProcess
 	}
 	failedActions := workflowProcessFailedActionCount(records.Tasks)
 	interruptedActions := workflowProcessInterruptedActionCount(records.Tasks)
+	canceledActions := workflowProcessCanceledActionCount(records.Tasks)
 	wantStatus := gopact.TaskCompleted
 	switch {
 	case failedActions > 0:
 		wantStatus = gopact.TaskFailed
 	case interruptedActions > 0:
 		wantStatus = gopact.TaskInterrupted
+	case canceledActions > 0:
+		wantStatus = gopact.TaskCanceled
 	}
 	if records.Task.Status != wantStatus {
 		return failedWorkflowProcessConformance(
@@ -363,6 +366,12 @@ func checkWorkflowProcessFailureSummary(records WorkflowRecords) WorkflowProcess
 			return failedWorkflowProcessConformance(
 				"failure-summary",
 				fmt.Errorf("workflow %s interrupted_action_count = %v, want %d", source.name, source.data["interrupted_action_count"], interruptedActions),
+			)
+		}
+		if got, ok := workflowProcessIntMetadata(source.data, "canceled_action_count"); !ok || got != canceledActions {
+			return failedWorkflowProcessConformance(
+				"failure-summary",
+				fmt.Errorf("workflow %s canceled_action_count = %v, want %d", source.name, source.data["canceled_action_count"], canceledActions),
 			)
 		}
 	}
@@ -848,6 +857,16 @@ func workflowProcessInterruptedActionCount(tasks []gopact.TaskRecord) int {
 		}
 	}
 	return interrupted
+}
+
+func workflowProcessCanceledActionCount(tasks []gopact.TaskRecord) int {
+	canceled := 0
+	for _, task := range tasks {
+		if task.Status == gopact.TaskCanceled {
+			canceled++
+		}
+	}
+	return canceled
 }
 
 func workflowProcessInputCountsByActionIndex(records []gopact.InputRecord) map[int]int {
