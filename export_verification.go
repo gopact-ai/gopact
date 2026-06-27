@@ -114,17 +114,23 @@ func runExportEvidenceSummary(export RunExport) string {
 
 func runExportCheckMetadata(export RunExport) map[string]any {
 	metadata := runExportBaseMetadata(export)
-	for key, value := range export.Metadata {
+	mergeRunExportSupplementalMetadata(metadata, export.Metadata)
+	return metadata
+}
+
+func runExportEvidenceMetadata(export RunExport) map[string]any {
+	metadata := runExportBaseMetadata(export)
+	mergeRunExportSupplementalMetadata(metadata, export.Metadata)
+	return metadata
+}
+
+func mergeRunExportSupplementalMetadata(metadata map[string]any, supplemental map[string]any) {
+	for key, value := range supplemental {
 		if runExportReservedMetadataKey(key) {
 			continue
 		}
 		metadata[key] = value
 	}
-	return metadata
-}
-
-func runExportEvidenceMetadata(export RunExport) map[string]any {
-	return runExportBaseMetadata(export)
 }
 
 func runExportBaseMetadata(export RunExport) map[string]any {
