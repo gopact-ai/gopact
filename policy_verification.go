@@ -205,7 +205,8 @@ func validPolicyRequestAction(action PolicyRequestAction) bool {
 		PolicyActionDelete,
 		PolicyActionList,
 		PolicyActionResume,
-		PolicyActionResolve:
+		PolicyActionResolve,
+		PolicyActionInspect:
 		return true
 	default:
 		return false

@@ -79,6 +79,7 @@ const (
 	PolicyActionList     PolicyRequestAction = "list"
 	PolicyActionResume   PolicyRequestAction = "resume"
 	PolicyActionResolve  PolicyRequestAction = "resolve"
+	PolicyActionInspect  PolicyRequestAction = "inspect"
 )
 
 // PolicyRequest is the common input passed to policy checks.

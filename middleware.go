@@ -187,6 +187,9 @@ func copyToolCalls(in []ToolCall) []ToolCall {
 
 func copyPolicyRequest(in PolicyRequest) PolicyRequest {
 	out := in
+	if input, ok := in.Input.(PromptInjectionPolicyInput); ok {
+		out.Input = copyPromptInjectionPolicyInput(input)
+	}
 	out.Metadata = copyAnyMap(in.Metadata)
 	return out
 }
