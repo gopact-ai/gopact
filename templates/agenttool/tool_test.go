@@ -455,6 +455,7 @@ func TestRemoteA2AToolAuthAttachesAuthBeforePolicyAndSend(t *testing.T) {
 		result.Events[3].Type != gopact.EventA2ATaskCompleted {
 		t.Fatalf("result events = %+v, want policy/sent/completed", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_auth_send.golden.json", result.Events)
 	if result.Events[2].Metadata["auth_principal"] != "svc-planner" {
 		t.Fatalf("sent event metadata = %+v, want auth principal", result.Events[2].Metadata)
 	}
