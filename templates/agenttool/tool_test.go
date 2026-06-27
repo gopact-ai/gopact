@@ -509,6 +509,84 @@ func TestRemoteA2AToolAuthAttachesAuthBeforePolicyAndSend(t *testing.T) {
 	}
 }
 
+func TestRemoteA2AToolCancelAuthAttachesAuditMetadata(t *testing.T) {
+	ctx := context.Background()
+	var cancelAuth a2a.Auth
+	var policyAuth a2a.Auth
+	remote := a2a.FakeAgent{
+		CardValue: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
+		CancelFunc: func(ctx context.Context, taskID string) error {
+			if taskID != "task-1" {
+				t.Fatalf("cancel task ID = %q, want task-1", taskID)
+			}
+			var ok bool
+			cancelAuth, ok = a2a.AuthFromContext(ctx)
+			if !ok {
+				t.Fatal("Cancel context missing A2A auth")
+			}
+			return nil
+		},
+	}
+	auth := a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
+		if req.AgentName != "planner" || req.Action != gopact.PolicyActionCancel || req.TaskID != "task-1" {
+			t.Fatalf("auth request = %+v, want planner cancel for task-1", req)
+		}
+		if req.Task != nil {
+			t.Fatalf("auth task = %+v, want nil task for cancel", req.Task)
+		}
+		return a2a.Auth{
+			Scheme:        "bearer",
+			Principal:     "svc-planner",
+			CredentialRef: "secret://a2a/planner",
+			Metadata:      map[string]any{"tenant": "tenant-1"},
+		}, nil
+	})
+	policy := gopact.PolicyFunc(func(ctx context.Context, req gopact.PolicyRequest) (gopact.PolicyDecision, error) {
+		input, ok := req.Input.(A2ACancelPolicyInput)
+		if !ok {
+			t.Fatalf("policy input type = %T, want A2ACancelPolicyInput", req.Input)
+		}
+		if input.TaskID != "task-1" {
+			t.Fatalf("policy task ID = %q, want task-1", input.TaskID)
+		}
+		var okAuth bool
+		policyAuth, okAuth = a2a.AuthFromContext(ctx)
+		if !okAuth {
+			t.Fatal("Policy context missing A2A auth")
+		}
+		return gopact.PolicyDecision{Action: gopact.PolicyAllow}, nil
+	})
+	tool, err := NewA2A(remote, WithAuth(auth), WithPolicy(policy))
+	if err != nil {
+		t.Fatalf("NewA2A() error = %v", err)
+	}
+
+	result, err := tool.Cancel(gopact.ContextWithRuntimeIDs(ctx, gopact.RuntimeIDs{RunID: "run-1", CallID: "parent-call"}), "task-1")
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+	if cancelAuth.Principal != "svc-planner" {
+		t.Fatalf("cancel context auth = %+v, want injected auth", cancelAuth)
+	}
+	if policyAuth.Principal != "svc-planner" {
+		t.Fatalf("policy context auth = %+v, want injected auth", policyAuth)
+	}
+	if len(result.Events) != 3 ||
+		result.Events[0].Type != gopact.EventPolicyRequested ||
+		result.Events[1].Type != gopact.EventPolicyDecided ||
+		result.Events[2].Type != gopact.EventA2ATaskCanceled {
+		t.Fatalf("result events = %+v, want policy/canceled events", result.Events)
+	}
+	if result.Events[2].Metadata["auth_scheme"] != "bearer" ||
+		result.Events[2].Metadata["auth_principal"] != "svc-planner" ||
+		result.Events[2].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
+		t.Fatalf("canceled event metadata = %+v, want auth audit metadata", result.Events[2].Metadata)
+	}
+	if result.Metadata["auth_principal"] != "svc-planner" {
+		t.Fatalf("result metadata = %+v, want auth principal", result.Metadata)
+	}
+}
+
 func TestRemoteA2AToolTimeoutCancelsSendAndReturnsFailureEvent(t *testing.T) {
 	ctx := context.Background()
 	remote := a2a.FakeAgent{
