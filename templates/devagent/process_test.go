@@ -240,6 +240,54 @@ func TestBuildProcessRecordsRecordsResumeInputForReviewDecision(t *testing.T) {
 	}
 }
 
+func TestBuildProcessRecordsCarriesReviewDecisionMetadataOnIntervention(t *testing.T) {
+	records, err := BuildProcessRecords(ProcessInput{
+		IDs: gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Action: ActionResult{
+			Status: ActionAllowed,
+			Mode:   ModeWrite,
+			Action: ActionRelease,
+		},
+		Gate: &GateResult{
+			Status:       GatePassed,
+			Mode:         ModeWrite,
+			ReportStatus: gopact.VerificationStatusPassed,
+			ReviewStatus: ReviewApproved,
+		},
+		Review: ReviewDecision{
+			Status:   ReviewApproved,
+			Reviewer: "model-review",
+			Summary:  "governed model review approved",
+			Metadata: map[string]any{
+				"review_prompt_id":  "devagent-review",
+				"review_eval_id":    "release-eval",
+				"review_policy_ref": "release-policy-v1",
+				"reviewer":          "spoofed-reviewer",
+				"review_status":     string(ReviewRejected),
+				"source":            "spoofed-source",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildProcessRecords() error = %v", err)
+	}
+
+	if len(records.Interventions) != 1 {
+		t.Fatalf("interventions = %+v, want one review intervention", records.Interventions)
+	}
+	metadata := records.Interventions[0].Metadata
+	if metadata["review_prompt_id"] != "devagent-review" ||
+		metadata["review_eval_id"] != "release-eval" ||
+		metadata["review_policy_ref"] != "release-policy-v1" {
+		t.Fatalf("intervention metadata = %+v, want review governance metadata", metadata)
+	}
+	if metadata["reviewer"] != "model-review" ||
+		metadata["review_status"] != string(ReviewApproved) ||
+		metadata["source"] != "devagent" {
+		t.Fatalf("intervention metadata = %+v, want canonical review boundary fields preserved", metadata)
+	}
+}
+
 func TestBuildProcessRecordsRejectsResumeWithoutReviewDecision(t *testing.T) {
 	_, err := BuildProcessRecords(ProcessInput{
 		IDs: gopact.RuntimeIDs{RunID: "run-1"},

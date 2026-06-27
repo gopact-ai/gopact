@@ -394,7 +394,36 @@ func reviewInterventionMetadata(input ProcessInput) map[string]any {
 			metadata["resume_payload_codec"] = input.Resume.PayloadCodec
 		}
 	}
+	mergeReviewInterventionSupplementalMetadata(metadata, input.Review.Metadata)
 	return metadata
+}
+
+func mergeReviewInterventionSupplementalMetadata(metadata map[string]any, supplemental map[string]any) {
+	for key, value := range supplemental {
+		if reviewInterventionReservedMetadataKey(key) {
+			continue
+		}
+		metadata[key] = value
+	}
+}
+
+func reviewInterventionReservedMetadataKey(key string) bool {
+	switch key {
+	case "source",
+		"mode",
+		"action",
+		"action_status",
+		"reviewer",
+		"review_status",
+		"summary",
+		"resume_interrupt_id",
+		"resume_checkpoint_id",
+		"resume_step_id",
+		"resume_payload_codec":
+		return true
+	default:
+		return false
+	}
 }
 
 func pendingInterventionMetadata(input ProcessInput) map[string]any {
