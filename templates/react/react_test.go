@@ -2082,6 +2082,99 @@ func TestAgentVerifiesStepExportArtifactsBeforeResume(t *testing.T) {
 	}
 }
 
+func TestAgentVerifiesCheckpointArtifactsBeforeResume(t *testing.T) {
+	ctx := context.Background()
+	store := checkpoint.NewMemory[State]()
+	err := store.Put(ctx, graph.Checkpoint[State]{
+		ID:       "checkpoint-1",
+		IDs:      gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		ThreadID: "thread-1",
+		Step:     1,
+		Node:     nodeCallModel,
+		Phase:    gopact.StepCompleted,
+		State: State{Messages: []gopact.Message{
+			{
+				Role: gopact.RoleAssistant,
+				ToolCalls: []gopact.ToolCall{
+					{ID: "call-1", Name: "local.echo", Arguments: []byte(`{"text":"hello"}`)},
+				},
+			},
+		}},
+		Queue: []string{nodeCallTool},
+		Effects: []gopact.EffectRecord{
+			{
+				ID:      "artifact-effect",
+				Type:    "artifact_write",
+				Applied: true,
+				Artifacts: []gopact.ArtifactRef{
+					{ID: "effect-artifact", SHA256: "sha-1"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Put(checkpoint) error = %v", err)
+	}
+	toolInvoked := 0
+	registry := tools.NewRegistry()
+	if err := registry.Register(ctx, gopact.ToolFunc{
+		SpecValue: gopact.ToolSpec{Name: "echo", Description: "echoes input"},
+		InvokeFunc: func(ctx context.Context, args json.RawMessage) (gopact.ToolResult, error) {
+			toolInvoked++
+			return gopact.ToolResult{Content: "hello"}, nil
+		},
+	}, tools.RegisterOptions{Namespace: "local", Visibility: tools.VisibleTool}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	verifierCalled := 0
+	resumeModel := &scriptedModel{
+		responses: []gopact.Message{{Role: gopact.RoleAssistant, Content: "final"}},
+	}
+	agent, err := New(resumeModel, registry,
+		WithCheckpointStore(store),
+		WithArtifactVerifier(graph.ArtifactVerifierFunc(func(ctx context.Context, refs []gopact.ArtifactRef) error {
+			verifierCalled++
+			if got := artifactIDs(refs); !stringsEqual(got, []string{"effect-artifact"}) {
+				t.Fatalf("verified artifact ids = %v, want effect-artifact", got)
+			}
+			return nil
+		})),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	events, err := gopacttest.CollectEvents(agent.Run(ctx, State{}, gopact.WithRuntimeIDs(gopact.RuntimeIDs{
+		RunID:    "run-2",
+		ThreadID: "thread-1",
+	})))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if verifierCalled != 1 {
+		t.Fatalf("verifier called = %d, want 1", verifierCalled)
+	}
+	if toolInvoked != 1 {
+		t.Fatalf("tool invoked after verified checkpoint resume = %d, want 1", toolInvoked)
+	}
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventCheckpointLoaded,
+		gopact.EventNodeResumed,
+		gopact.EventToolCall,
+		gopact.EventToolResult,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventModelMessage,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	)
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/checkpoint_artifact_import.golden.json", events)
+	if len(resumeModel.requests) != 1 {
+		t.Fatalf("resume model request count = %d, want 1", len(resumeModel.requests))
+	}
+}
+
 func TestAgentRejectsCheckpointWhenArtifactIntegrityFails(t *testing.T) {
 	ctx := context.Background()
 	wantErr := errors.New("integrity mismatch")
