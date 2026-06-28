@@ -167,6 +167,8 @@ run export、effect replay、run effect replay、memory replay、memory work sch
 
 `gopacttest.TemplateTrajectoryConformance` 的 required frame 支持按原始 event metadata 做子集匹配；Dev Agent self-bootstrap release/apply/interrupted/resumed/rejected/canceled 轨迹的 required frames 会同时要求 action/mode metadata，避免只验证事件顺序却丢失关键治理语义。
 
+`TestSelfBootstrapApplyWorkflowProcessRecordsRestoreFromRunExportMatchesGolden` 会从 rejected/canceled apply 的 `RunExport` 反取 workflow process records，复用 workflow process conformance，并用 compact golden snapshot 固定 parent/action summary，避免导出恢复后的 failed/canceled apply 过程摘要漂移。
+
 Review governance 对账也是 release bundle validation 的一部分：当 `ReviewDecision.Metadata` 声明 `review_prompt_id`、`review_prompt_version`、`review_eval_id`、`review_eval_version` 或 `review_policy_ref` 时，`BuildReleaseBundle` 会要求 process review intervention metadata 中存在同名同值字段，避免外部导入的 step/process records 与 reviewer decision 的治理证据漂移。
 
 `TestSelfBootstrapCanceledReleaseMatchesGoldenTrajectory` 进一步固定 release gate 被外部 context 取消的自举轨迹：run_started -> analyze -> plan -> release_gate canceled -> run_canceled。该测试会把 skipped release gate input、`TaskCanceled` release child process、无 review intervention 的取消边界和 partial `VerificationReport` 写入 `RunExport`，再从 export 反取 release process records 复用 workflow process conformance。

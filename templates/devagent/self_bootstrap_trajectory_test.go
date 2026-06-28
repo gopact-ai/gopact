@@ -1,7 +1,10 @@
 package devagent
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -617,6 +620,43 @@ func TestSelfBootstrapCanceledApplyMatchesGoldenTrajectory(t *testing.T) {
 		len(apply.Interventions) != 0 {
 		t.Fatalf("apply process = %+v, want canceled apply process without review intervention", apply)
 	}
+}
+
+func TestSelfBootstrapApplyWorkflowProcessRecordsRestoreFromRunExportMatchesGolden(t *testing.T) {
+	rejectedExport, _, _ := selfBootstrapRejectedApplyTrajectoryFixture(t)
+	rejectedWorkflow, err := WorkflowRecordsFromRunExport(rejectedExport, "")
+	if err != nil {
+		t.Fatalf("WorkflowRecordsFromRunExport(rejected apply) error = %v", err)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: rejectedWorkflow,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionApplyPatch,
+		},
+		RequiredInputSources: []string{"devagent.patch"},
+	})
+
+	canceledExport, _ := selfBootstrapCanceledApplyTrajectoryFixture(t)
+	canceledWorkflow, err := WorkflowRecordsFromRunExport(canceledExport, "")
+	if err != nil {
+		t.Fatalf("WorkflowRecordsFromRunExport(canceled apply) error = %v", err)
+	}
+	RequireWorkflowProcessConformance(t, WorkflowProcessConformanceHarness{
+		Records: canceledWorkflow,
+		RequiredActions: []ActionKind{
+			ActionAnalyze,
+			ActionProposePatch,
+			ActionApplyPatch,
+		},
+		RequiredInputSources: []string{"devagent.patch"},
+	})
+
+	requireWorkflowProcessGolden(t, "testdata/self_bootstrap_apply_workflow_process.golden.json", []workflowProcessGolden{
+		workflowProcessGoldenFromRecords(t, "rejected_apply", rejectedWorkflow),
+		workflowProcessGoldenFromRecords(t, "canceled_apply", canceledWorkflow),
+	})
 }
 
 func selfBootstrapReleaseTrajectoryFixture(t *testing.T, goldenPath string) (gopact.RunExport, ReleaseBundle) {
@@ -1803,6 +1843,109 @@ func selfBootstrapCanceledApplyTrajectoryFixture(t *testing.T) (gopact.RunExport
 		t.Fatalf("Export() error = %v", err)
 	}
 	return export, workflow
+}
+
+type workflowProcessGolden struct {
+	Scenario               string                        `json:"scenario"`
+	ParentStatus           gopact.TaskStatus             `json:"parent_status"`
+	FailedActionCount      int                           `json:"failed_action_count"`
+	InterruptedActionCount int                           `json:"interrupted_action_count"`
+	CanceledActionCount    int                           `json:"canceled_action_count"`
+	InputCount             int                           `json:"input_count"`
+	InterventionCount      int                           `json:"intervention_count"`
+	Actions                []workflowProcessActionGolden `json:"actions"`
+}
+
+type workflowProcessActionGolden struct {
+	Index              int               `json:"index"`
+	Status             gopact.TaskStatus `json:"status"`
+	Mode               Mode              `json:"mode"`
+	Action             ActionKind        `json:"action"`
+	ActionStatus       ActionStatus      `json:"action_status"`
+	ReasonCount        int               `json:"reason_count"`
+	InputCount         int               `json:"input_count"`
+	InterventionCount  int               `json:"intervention_count"`
+	ReleaseGateInput   string            `json:"release_gate_input_id,omitempty"`
+	ResumeInput        string            `json:"resume_input_id,omitempty"`
+	ReviewIntervention string            `json:"review_intervention_id,omitempty"`
+}
+
+func requireWorkflowProcessGolden(t *testing.T, path string, got []workflowProcessGolden) {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("load workflow process golden %q: %v", path, err)
+	}
+	var want []workflowProcessGolden
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatalf("decode workflow process golden %q: %v", path, err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("workflow process golden %q = %+v, want %+v", path, got, want)
+	}
+}
+
+func workflowProcessGoldenFromRecords(t *testing.T, scenario string, records WorkflowRecords) workflowProcessGolden {
+	t.Helper()
+
+	output, ok := records.Task.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("%s workflow output = %T, want map", scenario, records.Task.Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("%s workflow action summaries: %v", scenario, err)
+	}
+	golden := workflowProcessGolden{
+		Scenario:               scenario,
+		ParentStatus:           records.Task.Status,
+		FailedActionCount:      workflowProcessGoldenInt(t, output, "failed_action_count"),
+		InterruptedActionCount: workflowProcessGoldenInt(t, output, "interrupted_action_count"),
+		CanceledActionCount:    workflowProcessGoldenInt(t, output, "canceled_action_count"),
+		InputCount:             workflowProcessGoldenInt(t, output, "input_count"),
+		InterventionCount:      workflowProcessGoldenInt(t, output, "intervention_count"),
+		Actions:                make([]workflowProcessActionGolden, 0, len(summaries)),
+	}
+	for _, summary := range summaries {
+		golden.Actions = append(golden.Actions, workflowProcessActionGolden{
+			Index:              workflowProcessGoldenInt(t, summary, "index"),
+			Status:             gopact.TaskStatus(workflowProcessGoldenString(summary, "status")),
+			Mode:               Mode(workflowProcessGoldenString(summary, "mode")),
+			Action:             ActionKind(workflowProcessGoldenString(summary, "action")),
+			ActionStatus:       ActionStatus(workflowProcessGoldenString(summary, "action_status")),
+			ReasonCount:        workflowProcessGoldenInt(t, summary, "reason_count"),
+			InputCount:         workflowProcessGoldenInt(t, summary, "input_count"),
+			InterventionCount:  workflowProcessGoldenInt(t, summary, "intervention_count"),
+			ReleaseGateInput:   workflowProcessGoldenString(summary, "release_gate_input_id"),
+			ResumeInput:        workflowProcessGoldenString(summary, "resume_input_id"),
+			ReviewIntervention: workflowProcessGoldenString(summary, "review_intervention_id"),
+		})
+	}
+	return golden
+}
+
+func workflowProcessGoldenInt(t *testing.T, data map[string]any, key string) int {
+	t.Helper()
+
+	switch value := data[key].(type) {
+	case nil:
+		return 0
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		t.Fatalf("workflow process golden %s = %T, want number", key, data[key])
+		return 0
+	}
+}
+
+func workflowProcessGoldenString(data map[string]any, key string) string {
+	value, _ := data[key].(string)
+	return value
 }
 
 func selfBootstrapRuntimeIDs() gopact.RuntimeIDs {
