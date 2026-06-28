@@ -214,7 +214,7 @@ ReAct template 至少有这些 trajectory tests：
 - `[done: first slice]` missing tool registry 产生 failed tool step、`RunFailed` outcome 和 golden trajectory fixture；
 - `[done: first slice]` tool runtime error 产生 failed tool step、`RunFailed` outcome、`FailureTool` attribution 和 golden trajectory fixture；
 - `[done: first slice]` provider fallback event 可通过 `gopact.AdaptStreamingModel(router)` 进入 ReAct `call_model` 事件流；
-- `[done: first slice]` artifact ref 出现在 tool result event、tool step snapshot 和 run export step 中；
+- `[done: first slice]` artifact ref 出现在 tool result event、tool step snapshot 和 run export step 中，并有 tool artifact result golden trajectory fixture；
 - checkpoint 后 resume 不重复非幂等工具；
 - 后续更高级 memory 压缩/合并策略、durable 生产队列 adapter、distributed queue leasing、concurrency orchestration、生产级调度策略和真实 retry/DLQ storage 行为可观察；本地内存队列、local visibility timeout、RunOnce lease gate / pass-local lease renewal 和有界 drain loop 只覆盖单进程 reference/test 或宿主已提供 lease backend 的 ownership gate 场景；
 
