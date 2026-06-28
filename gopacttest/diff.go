@@ -126,6 +126,9 @@ func diffEvidenceSummary(status gopact.VerificationStatus, snapshot DiffSnapshot
 
 func diffCheckMetadata(snapshot DiffSnapshot) map[string]any {
 	metadata := diffBaseMetadata(snapshot)
+	if keys := sortedSupplementalMetadataKeys(snapshot.Metadata, diffReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, snapshot.Metadata, diffReservedMetadataKey)
 	return metadata
 }
@@ -167,6 +170,7 @@ func diffReservedMetadataKey(key string) bool {
 		"insertions",
 		"deletions",
 		"error",
+		"metadata_keys",
 		"skipped":
 		return true
 	default:
