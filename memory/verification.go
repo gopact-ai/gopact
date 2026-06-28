@@ -3,6 +3,7 @@ package memory
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/gopact-ai/gopact"
 )
@@ -130,6 +131,9 @@ func replayVerificationEvidenceSummary(status gopact.VerificationStatus, snapsho
 
 func replayVerificationCheckMetadata(snapshot ReplayVerificationSnapshot) map[string]any {
 	metadata := replayVerificationBaseMetadata(snapshot)
+	if keys := replayVerificationSupplementalMetadataKeys(snapshot.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeReplayVerificationMetadata(metadata, snapshot.Metadata)
 	return metadata
 }
@@ -187,6 +191,21 @@ func mergeReplayVerificationMetadata(metadata map[string]any, supplemental map[s
 	}
 }
 
+func replayVerificationSupplementalMetadataKeys(supplemental map[string]any) []string {
+	if len(supplemental) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(supplemental))
+	for key := range supplemental {
+		if replayVerificationReservedMetadataKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func replayVerificationReservedMetadataKey(key string) bool {
 	switch key {
 	case "ref",
@@ -202,7 +221,8 @@ func replayVerificationReservedMetadataKey(key string) bool {
 		"planned_effect_ids",
 		"result_effect_ids",
 		"planned_step_ids",
-		"result_step_ids":
+		"result_step_ids",
+		"metadata_keys":
 		return true
 	default:
 		return false

@@ -37,6 +37,9 @@ func TestRecordDeferredMemoryWorkScheduleCheckRecordsRetryDecision(t *testing.T)
 			"error":               "forged-error",
 			"planned_step_ids":    []string{"forged-step"},
 			"result_step_ids":     []string{"forged-result-step"},
+			"metadata_keys":       []string{"forged"},
+			"scope":               "release",
+			"source":              "scheduler",
 		},
 	})
 	if err != nil {
@@ -73,6 +76,13 @@ func TestRecordDeferredMemoryWorkScheduleCheckRecordsRetryDecision(t *testing.T)
 	}
 	if metadata["queue"] != "memory-default" {
 		t.Fatalf("metadata = %+v, want supplemental queue metadata", metadata)
+	}
+	if metadata["scope"] != "release" || metadata["source"] != "scheduler" {
+		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
+	}
+	if keys, ok := metadata["metadata_keys"].([]string); !ok ||
+		!reflect.DeepEqual(keys, []string{"queue", "scope", "source"}) {
+		t.Fatalf("metadata keys = %#v, want supplemental metadata key summary", metadata["metadata_keys"])
 	}
 	if planned, ok := metadata["planned_step_ids"].([]string); !ok ||
 		!reflect.DeepEqual(planned, []string{"step-1"}) {
@@ -115,6 +125,13 @@ func TestRecordDeferredMemoryWorkScheduleCheckRecordsRetryDecision(t *testing.T)
 	}
 	if evidenceMetadata["queue"] != "memory-default" {
 		t.Fatalf("evidence metadata = %+v, want supplemental queue metadata", evidenceMetadata)
+	}
+	if evidenceMetadata["scope"] != "release" || evidenceMetadata["source"] != "scheduler" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
+	}
+	if keys, ok := evidenceMetadata["metadata_keys"].([]string); !ok ||
+		!reflect.DeepEqual(keys, []string{"queue", "scope", "source"}) {
+		t.Fatalf("evidence metadata keys = %#v, want supplemental metadata key summary", evidenceMetadata["metadata_keys"])
 	}
 }
 

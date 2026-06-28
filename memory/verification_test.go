@@ -44,6 +44,10 @@ func TestRecordReplayCheckRecordsPassedMemoryReplay(t *testing.T) {
 	if err := RecordReplayCheck(recorder, ReplayVerificationSnapshot{
 		Plan:    plan,
 		Results: results,
+		Metadata: map[string]any{
+			"scope":  "release",
+			"source": "worker",
+		},
 	}); err != nil {
 		t.Fatalf("RecordReplayCheck() error = %v", err)
 	}
@@ -61,6 +65,14 @@ func TestRecordReplayCheckRecordsPassedMemoryReplay(t *testing.T) {
 	if check.Metadata["replay_count"] != 1 || check.Metadata["result_count"] != 1 || check.Metadata["thread_id"] != "thread-1" {
 		t.Fatalf("metadata = %+v, want replay/result/thread metadata", check.Metadata)
 	}
+	if check.Metadata["scope"] != "release" || check.Metadata["source"] != "worker" {
+		t.Fatalf("metadata = %+v, want supplemental metadata preserved", check.Metadata)
+	}
+	assertStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"scope", "source"})
+	if check.Evidence[0].Metadata["scope"] != "release" || check.Evidence[0].Metadata["source"] != "worker" {
+		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", check.Evidence[0].Metadata)
+	}
+	assertStringSliceMetadata(t, check.Evidence[0].Metadata, "metadata_keys", []string{"scope", "source"})
 }
 
 func TestRecordReplayCheckPreservesCanonicalMetadata(t *testing.T) {
@@ -108,6 +120,8 @@ func TestRecordReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 			"result_effect_ids":  []string{"forged-result"},
 			"planned_step_ids":   []string{"forged-step"},
 			"result_step_ids":    []string{"forged-result-step"},
+			"metadata_keys":      []string{"forged"},
+			"scope":              "release",
 			"source":             "worker",
 		},
 	})
@@ -129,7 +143,8 @@ func TestRecordReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 	assertStringSliceMetadata(t, metadata, "result_effect_ids", []string{"memory-1"})
 	assertStringSliceMetadata(t, metadata, "planned_step_ids", []string{"step-1"})
 	assertStringSliceMetadata(t, metadata, "result_step_ids", []string{"step-1"})
-	if metadata["source"] != "worker" {
+	assertStringSliceMetadata(t, metadata, "metadata_keys", []string{"scope", "source"})
+	if metadata["scope"] != "release" || metadata["source"] != "worker" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
 
@@ -146,7 +161,8 @@ func TestRecordReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 	assertStringSliceMetadata(t, evidenceMetadata, "result_effect_ids", []string{"memory-1"})
 	assertStringSliceMetadata(t, evidenceMetadata, "planned_step_ids", []string{"step-1"})
 	assertStringSliceMetadata(t, evidenceMetadata, "result_step_ids", []string{"step-1"})
-	if evidenceMetadata["source"] != "worker" {
+	assertStringSliceMetadata(t, evidenceMetadata, "metadata_keys", []string{"scope", "source"})
+	if evidenceMetadata["scope"] != "release" || evidenceMetadata["source"] != "worker" {
 		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
 }
