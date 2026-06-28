@@ -2,6 +2,7 @@ package gopact
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -26,7 +27,7 @@ func TestRecordFailureAttributionCheckRecordsFailedCheck(t *testing.T) {
 			{Type: VerificationEvidenceTypeToolCall, Ref: "tool-call-1", Summary: "tool crashed"},
 		},
 		CreatedAt: createdAt,
-		Metadata:  map[string]any{"owner": "tools"},
+		Metadata:  map[string]any{"owner": "tools", "severity": "high"},
 	}
 
 	err := RecordFailureAttributionCheck(recorder, attribution)
@@ -57,13 +58,22 @@ func TestRecordFailureAttributionCheckRecordsFailedCheck(t *testing.T) {
 	if metadata["owner"] != "tools" {
 		t.Fatalf("metadata = %+v, want attribution metadata copied into evidence metadata", metadata)
 	}
+	assertFailureStringSliceMetadata(t, metadata, "metadata_keys", []string{"owner", "severity"})
 	if check.Metadata["owner"] != "tools" {
 		t.Fatalf("check metadata = %+v, want attribution metadata copied", check.Metadata)
 	}
+	assertFailureStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"owner", "severity"})
 	attribution.Metadata["owner"] = "mutated"
 	if checks := recorder.Checks(); checks[0].Metadata["owner"] != "tools" ||
 		checks[0].Evidence[0].Metadata["owner"] != "tools" {
 		t.Fatalf("recorded metadata mutated = %+v", checks[0])
+	}
+}
+
+func assertFailureStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+	if got := metadata[key]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, got, want)
 	}
 }
 

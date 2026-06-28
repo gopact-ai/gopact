@@ -2,6 +2,7 @@ package gopacttest
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ func TestRecordReviewCheckRecordsApprovedCheck(t *testing.T) {
 		Status:    ReviewStatusApproved,
 		Summary:   "approved after checking tests",
 		CreatedAt: createdAt,
-		Metadata:  map[string]any{"channel": "lark"},
+		Metadata:  map[string]any{"channel": "lark", "review_policy_ref": "release-policy-v1"},
 	}); err != nil {
 		t.Fatalf("RecordReviewCheck() error = %v", err)
 	}
@@ -41,8 +42,23 @@ func TestRecordReviewCheckRecordsApprovedCheck(t *testing.T) {
 		check.Metadata["source"] != "lark" ||
 		check.Metadata["review_status"] != string(ReviewStatusApproved) ||
 		check.Metadata["created_at"] != createdAt.Format(time.RFC3339Nano) ||
-		check.Metadata["channel"] != "lark" {
+		check.Metadata["channel"] != "lark" ||
+		check.Metadata["review_policy_ref"] != "release-policy-v1" {
 		t.Fatalf("metadata = %+v, want reviewer/source/status/custom metadata", check.Metadata)
+	}
+	assertReviewStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"channel", "review_policy_ref"})
+	assertReviewStringSliceMetadata(
+		t,
+		check.Evidence[0].Metadata,
+		"metadata_keys",
+		[]string{"channel", "review_policy_ref"},
+	)
+}
+
+func assertReviewStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+	if got := metadata[key]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, got, want)
 	}
 }
 

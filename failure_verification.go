@@ -103,6 +103,9 @@ func failureAttributionMergedMetadata(attribution FailureAttribution) map[string
 	if !attribution.CreatedAt.IsZero() {
 		metadata["created_at"] = attribution.CreatedAt.Format(time.RFC3339Nano)
 	}
+	if keys := sortedSupplementalVerificationMetadataKeys(attribution.Metadata, failureAttributionReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalVerificationMetadata(metadata, attribution.Metadata, failureAttributionReservedMetadataKey)
 	return metadata
 }
@@ -124,7 +127,8 @@ func failureAttributionReservedMetadataKey(key string) bool {
 		"step",
 		"summary",
 		"error",
-		"created_at":
+		"created_at",
+		"metadata_keys":
 		return true
 	default:
 		return false

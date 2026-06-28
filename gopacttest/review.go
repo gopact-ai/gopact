@@ -150,12 +150,18 @@ func reviewEvidenceSummary(status gopact.VerificationStatus, result ReviewResult
 
 func reviewCheckMetadata(result ReviewResult) map[string]any {
 	metadata := reviewBaseMetadata(result)
+	if keys := sortedSupplementalMetadataKeys(result.Metadata, reviewReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, result.Metadata, reviewReservedMetadataKey)
 	return metadata
 }
 
 func reviewEvidenceMetadata(result ReviewResult) map[string]any {
 	metadata := reviewBaseMetadata(result)
+	if keys := sortedSupplementalMetadataKeys(result.Metadata, reviewReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, result.Metadata, reviewReservedMetadataKey)
 	return metadata
 }
@@ -197,7 +203,8 @@ func reviewReservedMetadataKey(key string) bool {
 		"summary",
 		"created_at",
 		"error",
-		"skipped":
+		"skipped",
+		"metadata_keys":
 		return true
 	default:
 		return false
