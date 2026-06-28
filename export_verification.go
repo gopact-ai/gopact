@@ -114,12 +114,18 @@ func runExportEvidenceSummary(export RunExport) string {
 
 func runExportCheckMetadata(export RunExport) map[string]any {
 	metadata := runExportBaseMetadata(export)
+	if keys := sortedSupplementalVerificationMetadataKeys(export.Metadata, runExportReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeRunExportSupplementalMetadata(metadata, export.Metadata)
 	return metadata
 }
 
 func runExportEvidenceMetadata(export RunExport) map[string]any {
 	metadata := runExportBaseMetadata(export)
+	if keys := sortedSupplementalVerificationMetadataKeys(export.Metadata, runExportReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeRunExportSupplementalMetadata(metadata, export.Metadata)
 	return metadata
 }
@@ -197,6 +203,7 @@ func runExportReservedMetadataKey(key string) bool {
 		"failure_count",
 		"entropy_audit_count",
 		"verification_report_count",
+		"metadata_keys",
 		"created_at",
 		"user_id",
 		"session_id",

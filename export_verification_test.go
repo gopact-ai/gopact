@@ -25,7 +25,10 @@ func TestRecordRunExportCheckRecordsCompletedExportAsPassedCheck(t *testing.T) {
 		Steps: []StepSnapshot{
 			{ID: "step-1", Step: 0, Node: "call_model", Phase: StepCompleted, IDs: ids},
 		},
-		Metadata: map[string]any{"source": "react"},
+		Metadata: map[string]any{
+			"scope":  "self-bootstrap",
+			"source": "react",
+		},
 	}
 
 	if err := RecordRunExportCheck(recorder, export); err != nil {
@@ -50,9 +53,12 @@ func TestRecordRunExportCheckRecordsCompletedExportAsPassedCheck(t *testing.T) {
 		check.Metadata["run_id"] != "run-1" ||
 		check.Metadata["thread_id"] != "thread-1" ||
 		check.Metadata["user_id"] != "user-1" ||
+		check.Metadata["scope"] != "self-bootstrap" ||
 		check.Metadata["source"] != "react" {
 		t.Fatalf("metadata = %+v, want run export metadata", check.Metadata)
 	}
+	assertStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"scope", "source"})
+	assertStringSliceMetadata(t, check.Evidence[0].Metadata, "metadata_keys", []string{"scope", "source"})
 }
 
 func TestRecordRunExportCheckPreservesCanonicalMetadata(t *testing.T) {
@@ -83,6 +89,8 @@ func TestRecordRunExportCheckPreservesCanonicalMetadata(t *testing.T) {
 			"thread_id":          "forged-thread",
 			"user_id":            "forged-user",
 			"run_export_version": 999,
+			"metadata_keys":      []string{"forged"},
+			"scope":              "self-bootstrap",
 			"source":             "react",
 		},
 	}
@@ -102,9 +110,10 @@ func TestRecordRunExportCheckPreservesCanonicalMetadata(t *testing.T) {
 		check.Metadata["run_export_version"] != RunExportVersion {
 		t.Fatalf("metadata = %+v, want canonical run export fields preserved", check.Metadata)
 	}
-	if check.Metadata["source"] != "react" {
+	if check.Metadata["scope"] != "self-bootstrap" || check.Metadata["source"] != "react" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", check.Metadata)
 	}
+	assertStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"scope", "source"})
 
 	evidence := check.Evidence[0]
 	if evidence.Metadata["ref"] != "run-1" ||
@@ -117,9 +126,10 @@ func TestRecordRunExportCheckPreservesCanonicalMetadata(t *testing.T) {
 		evidence.Metadata["run_export_version"] != RunExportVersion {
 		t.Fatalf("evidence metadata = %+v, want canonical run export fields preserved", evidence.Metadata)
 	}
-	if evidence.Metadata["source"] != "react" {
+	if evidence.Metadata["scope"] != "self-bootstrap" || evidence.Metadata["source"] != "react" {
 		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidence.Metadata)
 	}
+	assertStringSliceMetadata(t, evidence.Metadata, "metadata_keys", []string{"scope", "source"})
 }
 
 func TestRecordRunExportCheckRecordsFailedCheckBeforeReturningError(t *testing.T) {

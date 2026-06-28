@@ -301,12 +301,18 @@ func runEffectReplayEvidenceSummary(status VerificationStatus, snapshot RunEffec
 
 func effectReplayCheckMetadata(snapshot EffectReplaySnapshot) map[string]any {
 	metadata := effectReplayBaseMetadata(snapshot)
+	if keys := sortedSupplementalVerificationMetadataKeys(snapshot.Metadata, effectReplayReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalVerificationMetadata(metadata, snapshot.Metadata, effectReplayReservedMetadataKey)
 	return metadata
 }
 
 func runEffectReplayCheckMetadata(snapshot RunEffectReplaySnapshot) map[string]any {
 	metadata := runEffectReplayBaseMetadata(snapshot)
+	if keys := sortedSupplementalVerificationMetadataKeys(snapshot.Metadata, runEffectReplayReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalVerificationMetadata(metadata, snapshot.Metadata, runEffectReplayReservedMetadataKey)
 	return metadata
 }
@@ -415,6 +421,7 @@ func effectReplayReservedMetadataKey(key string) bool {
 		"error",
 		"missing_result_count",
 		"extra_result_count",
+		"metadata_keys",
 		"planned_effect_ids",
 		"result_effect_ids":
 		return true
