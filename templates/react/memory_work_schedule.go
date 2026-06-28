@@ -3,6 +3,7 @@ package react
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/gopact-ai/gopact"
@@ -152,6 +153,9 @@ func deferredMemoryWorkScheduleEvidenceSummary(decision DeferredMemoryWorkSchedu
 
 func deferredMemoryWorkScheduleCheckMetadata(decision DeferredMemoryWorkScheduleDecision) map[string]any {
 	metadata := deferredMemoryWorkScheduleBaseMetadata(decision)
+	if keys := deferredMemoryWorkScheduleSupplementalMetadataKeys(decision.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeDeferredMemoryWorkScheduleMetadata(metadata, decision.Metadata)
 	return metadata
 }
@@ -215,6 +219,21 @@ func mergeDeferredMemoryWorkScheduleMetadata(metadata map[string]any, supplement
 	}
 }
 
+func deferredMemoryWorkScheduleSupplementalMetadataKeys(supplemental map[string]any) []string {
+	if len(supplemental) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(supplemental))
+	for key := range supplemental {
+		if deferredMemoryWorkScheduleReservedMetadataKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func deferredMemoryWorkScheduleReservedMetadataKey(key string) bool {
 	switch key {
 	case "ref",
@@ -233,7 +252,8 @@ func deferredMemoryWorkScheduleReservedMetadataKey(key string) bool {
 		"planned_effect_ids",
 		"result_effect_ids",
 		"planned_step_ids",
-		"result_step_ids":
+		"result_step_ids",
+		"metadata_keys":
 		return true
 	default:
 		return false
