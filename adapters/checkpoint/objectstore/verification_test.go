@@ -17,7 +17,10 @@ func TestRecordIndexConsistencyCheckRecordsPassedCheck(t *testing.T) {
 		ValidRecordIDs:   []string{"checkpoint-1"},
 		Consistent:       true,
 	}
-	metadata := map[string]any{"source": "scheduled-check"}
+	metadata := map[string]any{
+		"scope":  "maintenance",
+		"source": "scheduled-check",
+	}
 
 	if err := RecordIndexConsistencyCheck(recorder, IndexConsistencySnapshot{
 		Report:   report,
@@ -49,9 +52,12 @@ func TestRecordIndexConsistencyCheckRecordsPassedCheck(t *testing.T) {
 		check.Metadata["consistent"] != true ||
 		check.Metadata["indexed_record_count"] != 1 ||
 		check.Metadata["valid_record_count"] != 1 ||
+		check.Metadata["scope"] != "maintenance" ||
 		check.Metadata["source"] != "scheduled-check" {
 		t.Fatalf("metadata = %+v, want index report metadata", check.Metadata)
 	}
+	assertStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"scope", "source"})
+	assertStringSliceMetadata(t, check.Evidence[0].Metadata, "metadata_keys", []string{"scope", "source"})
 	indexedIDs, ok := check.Metadata["indexed_record_ids"].([]string)
 	if !ok || len(indexedIDs) != 1 || indexedIDs[0] != "checkpoint-1" {
 		t.Fatalf("indexed_record_ids = %#v, want copied checkpoint-1", check.Metadata["indexed_record_ids"])
@@ -129,6 +135,8 @@ func TestRecordIndexConsistencyCheckPreservesCanonicalMetadata(t *testing.T) {
 			"missing_record_count":      99,
 			"wrong_thread_record_ids":   []string{"forged-wrong-thread"},
 			"wrong_thread_record_count": 99,
+			"metadata_keys":             []string{"forged"},
+			"scope":                     "maintenance",
 			"source":                    "scheduled-check",
 		},
 	})
@@ -157,9 +165,10 @@ func TestRecordIndexConsistencyCheckPreservesCanonicalMetadata(t *testing.T) {
 	assertStringSliceMetadata(t, metadata, "duplicate_record_ids", []string{"duplicate-1"})
 	assertStringSliceMetadata(t, metadata, "missing_record_ids", []string{"missing-1"})
 	assertStringSliceMetadata(t, metadata, "wrong_thread_record_ids", []string{"wrong-thread-1"})
-	if metadata["source"] != "scheduled-check" {
+	if metadata["scope"] != "maintenance" || metadata["source"] != "scheduled-check" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", metadata)
 	}
+	assertStringSliceMetadata(t, metadata, "metadata_keys", []string{"scope", "source"})
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["ref"] != "index:thread-1" ||
@@ -181,9 +190,10 @@ func TestRecordIndexConsistencyCheckPreservesCanonicalMetadata(t *testing.T) {
 	assertStringSliceMetadata(t, evidenceMetadata, "duplicate_record_ids", []string{"duplicate-1"})
 	assertStringSliceMetadata(t, evidenceMetadata, "missing_record_ids", []string{"missing-1"})
 	assertStringSliceMetadata(t, evidenceMetadata, "wrong_thread_record_ids", []string{"wrong-thread-1"})
-	if evidenceMetadata["source"] != "scheduled-check" {
+	if evidenceMetadata["scope"] != "maintenance" || evidenceMetadata["source"] != "scheduled-check" {
 		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
 	}
+	assertStringSliceMetadata(t, evidenceMetadata, "metadata_keys", []string{"scope", "source"})
 }
 
 func TestRecordIndexConsistencyCheckRecordsStorageError(t *testing.T) {
