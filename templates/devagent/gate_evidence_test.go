@@ -17,7 +17,10 @@ func TestRecordReleaseGateCheckRecordsPassedCheck(t *testing.T) {
 		ReportStatus:       gopact.VerificationStatusPassed,
 		MaxEntropySeverity: gopact.EntropySeverityLow,
 		ReviewStatus:       ReviewApproved,
-		Metadata:           map[string]any{"release": "docs"},
+		Metadata: map[string]any{
+			"release": "docs",
+			"scope":   "m5",
+		},
 	}); err != nil {
 		t.Fatalf("RecordReleaseGateCheck() error = %v", err)
 	}
@@ -38,9 +41,12 @@ func TestRecordReleaseGateCheckRecordsPassedCheck(t *testing.T) {
 		check.Metadata["report_status"] != string(gopact.VerificationStatusPassed) ||
 		check.Metadata["max_entropy_severity"] != string(gopact.EntropySeverityLow) ||
 		check.Metadata["review_status"] != string(ReviewApproved) ||
-		check.Metadata["release"] != "docs" {
+		check.Metadata["release"] != "docs" ||
+		check.Metadata["scope"] != "m5" {
 		t.Fatalf("metadata = %+v, want release gate metadata", check.Metadata)
 	}
+	assertDevAgentStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"release", "scope"})
+	assertDevAgentStringSliceMetadata(t, check.Evidence[0].Metadata, "metadata_keys", []string{"release", "scope"})
 }
 
 func TestRecordReleaseGateCheckPreservesCanonicalMetadata(t *testing.T) {
@@ -60,7 +66,9 @@ func TestRecordReleaseGateCheckPreservesCanonicalMetadata(t *testing.T) {
 			"max_entropy_severity": string(gopact.EntropySeverityCritical),
 			"review_status":        string(ReviewRejected),
 			"reasons":              []string{"forged reason"},
+			"metadata_keys":        []string{"forged"},
 			"release":              "docs",
+			"scope":                "m5",
 		},
 	}); err != nil {
 		t.Fatalf("RecordReleaseGateCheck() error = %v", err)
@@ -78,18 +86,20 @@ func TestRecordReleaseGateCheckPreservesCanonicalMetadata(t *testing.T) {
 	if !ok || !reflect.DeepEqual(reasons, []string{"all required evidence passed"}) {
 		t.Fatalf("metadata reasons = %#v, want canonical reasons", check.Metadata["reasons"])
 	}
-	if check.Metadata["release"] != "docs" {
+	if check.Metadata["release"] != "docs" || check.Metadata["scope"] != "m5" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", check.Metadata)
 	}
+	assertDevAgentStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"release", "scope"})
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["gate_status"] != string(GatePassed) ||
 		evidenceMetadata["mode"] != string(ModeWrite) ||
 		evidenceMetadata["ref"] != "release-gate:write" {
 		t.Fatalf("evidence metadata = %+v, want canonical release gate fields preserved", evidenceMetadata)
 	}
-	if evidenceMetadata["release"] != "docs" {
+	if evidenceMetadata["release"] != "docs" || evidenceMetadata["scope"] != "m5" {
 		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
 	}
+	assertDevAgentStringSliceMetadata(t, evidenceMetadata, "metadata_keys", []string{"release", "scope"})
 }
 
 func TestRecordReleaseGateCheckRecordsRejectedCheckBeforeReturningError(t *testing.T) {
@@ -117,6 +127,17 @@ func TestRecordReleaseGateCheckRecordsRejectedCheckBeforeReturningError(t *testi
 	reasons, ok := check.Metadata["reasons"].([]string)
 	if !ok || !reflect.DeepEqual(reasons, []string{"verification status failed is not passed", "entropy finding finding-1 severity high exceeds medium"}) {
 		t.Fatalf("metadata reasons = %#v, want copied reasons", check.Metadata["reasons"])
+	}
+}
+
+func assertDevAgentStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+	got, ok := metadata[key].([]string)
+	if !ok {
+		t.Fatalf("metadata[%q] = %#v, want []string", key, metadata[key])
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, got, want)
 	}
 }
 

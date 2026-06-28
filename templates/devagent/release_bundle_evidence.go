@@ -3,6 +3,7 @@ package devagent
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -53,6 +54,9 @@ func releaseBundleEvidenceSummary(bundle ReleaseBundle) string {
 func releaseBundleCheckMetadata(bundle ReleaseBundle) map[string]any {
 	metadata := releaseBundleBaseMetadata(bundle)
 	addReleaseBundleReviewGovernanceMetadata(metadata, bundle.Review.Metadata)
+	if keys := releaseBundleSupplementalMetadataKeys(bundle.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeReleaseBundleSupplementalMetadata(metadata, bundle.Metadata)
 	return metadata
 }
@@ -60,6 +64,9 @@ func releaseBundleCheckMetadata(bundle ReleaseBundle) map[string]any {
 func releaseBundleEvidenceMetadata(bundle ReleaseBundle) map[string]any {
 	metadata := releaseBundleBaseMetadata(bundle)
 	addReleaseBundleReviewGovernanceMetadata(metadata, bundle.Review.Metadata)
+	if keys := releaseBundleSupplementalMetadataKeys(bundle.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeReleaseBundleSupplementalMetadata(metadata, bundle.Metadata)
 	return metadata
 }
@@ -162,11 +169,27 @@ func releaseBundleReservedMetadataKey(key string) bool {
 		"required_check_ids",
 		"required_evidence_types",
 		"required_ci_gates",
-		"created_at":
+		"created_at",
+		"metadata_keys":
 		return true
 	default:
 		return false
 	}
+}
+
+func releaseBundleSupplementalMetadataKeys(supplemental map[string]any) []string {
+	if len(supplemental) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(supplemental))
+	for key := range supplemental {
+		if releaseBundleReservedMetadataKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func mergeReleaseBundleSupplementalMetadata(metadata map[string]any, supplemental map[string]any) {

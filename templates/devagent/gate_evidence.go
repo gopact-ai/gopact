@@ -3,6 +3,7 @@ package devagent
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/gopact-ai/gopact"
@@ -103,12 +104,18 @@ func releaseGateEvidenceSummary(result GateResult) string {
 
 func releaseGateCheckMetadata(result GateResult) map[string]any {
 	metadata := releaseGateBaseMetadata(result)
+	if keys := releaseGateSupplementalMetadataKeys(result.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeReleaseGateSupplementalMetadata(metadata, result.Metadata)
 	return metadata
 }
 
 func releaseGateEvidenceMetadata(result GateResult) map[string]any {
 	metadata := releaseGateBaseMetadata(result)
+	if keys := releaseGateSupplementalMetadataKeys(result.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeReleaseGateSupplementalMetadata(metadata, result.Metadata)
 	return metadata
 }
@@ -144,11 +151,27 @@ func releaseGateReservedMetadataKey(key string) bool {
 		"report_status",
 		"max_entropy_severity",
 		"review_status",
-		"reasons":
+		"reasons",
+		"metadata_keys":
 		return true
 	default:
 		return false
 	}
+}
+
+func releaseGateSupplementalMetadataKeys(supplemental map[string]any) []string {
+	if len(supplemental) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(supplemental))
+	for key := range supplemental {
+		if releaseGateReservedMetadataKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func mergeReleaseGateSupplementalMetadata(metadata map[string]any, supplemental map[string]any) {

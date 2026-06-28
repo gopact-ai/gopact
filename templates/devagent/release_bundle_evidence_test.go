@@ -34,6 +34,7 @@ func TestRecordReleaseBundleCheckRecordsPassedBundleEvidence(t *testing.T) {
 	if check.Metadata["release"] != "m5" {
 		t.Fatalf("check metadata = %+v, want copied release metadata", check.Metadata)
 	}
+	assertDevAgentStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"release"})
 	wantRequiredChecks := []string{"unit-tests", "diff-check"}
 	if !reflect.DeepEqual(check.Metadata["required_check_ids"], wantRequiredChecks) {
 		t.Fatalf("required check metadata = %#v, want %#v", check.Metadata["required_check_ids"], wantRequiredChecks)
@@ -69,6 +70,7 @@ func TestRecordReleaseBundleCheckRecordsPassedBundleEvidence(t *testing.T) {
 	if metadata["release"] != "m5" {
 		t.Fatalf("evidence metadata = %+v, want copied release metadata", metadata)
 	}
+	assertDevAgentStringSliceMetadata(t, metadata, "metadata_keys", []string{"release"})
 }
 
 func TestRecordReleaseBundleCheckPreservesCanonicalMetadata(t *testing.T) {
@@ -76,7 +78,9 @@ func TestRecordReleaseBundleCheckPreservesCanonicalMetadata(t *testing.T) {
 	bundle.Metadata["run_id"] = "forged-run"
 	bundle.Metadata["gate_status"] = string(GateRejected)
 	bundle.Metadata["reviewer"] = "forged-reviewer"
+	bundle.Metadata["metadata_keys"] = []string{"forged"}
 	bundle.Metadata["release"] = "m5"
+	bundle.Metadata["scope"] = "release"
 	recorder := gopact.NewVerificationRecorder()
 
 	if err := RecordReleaseBundleCheck(recorder, bundle); err != nil {
@@ -89,18 +93,20 @@ func TestRecordReleaseBundleCheckPreservesCanonicalMetadata(t *testing.T) {
 		check.Metadata["reviewer"] != "reviewer-1" {
 		t.Fatalf("check metadata = %+v, want canonical release bundle fields preserved", check.Metadata)
 	}
-	if check.Metadata["release"] != "m5" {
+	if check.Metadata["release"] != "m5" || check.Metadata["scope"] != "release" {
 		t.Fatalf("check metadata = %+v, want non-conflicting caller metadata preserved", check.Metadata)
 	}
+	assertDevAgentStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"release", "scope"})
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["run_id"] != "run-1" ||
 		evidenceMetadata["gate_status"] != string(GatePassed) ||
 		evidenceMetadata["reviewer"] != "reviewer-1" {
 		t.Fatalf("evidence metadata = %+v, want canonical release bundle fields preserved", evidenceMetadata)
 	}
-	if evidenceMetadata["release"] != "m5" {
+	if evidenceMetadata["release"] != "m5" || evidenceMetadata["scope"] != "release" {
 		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
 	}
+	assertDevAgentStringSliceMetadata(t, evidenceMetadata, "metadata_keys", []string{"release", "scope"})
 }
 
 func TestRecordReleaseBundleCheckCapturesResumeInputBoundary(t *testing.T) {
