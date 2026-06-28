@@ -689,6 +689,7 @@ func TestRemoteA2AToolAuthStreamTerminalEventsAttachAuditMetadata(t *testing.T) 
 		name      string
 		status    a2a.TaskStatus
 		eventType gopact.EventType
+		golden    string
 		streamErr error
 		wantErr   error
 	}{
@@ -696,6 +697,7 @@ func TestRemoteA2AToolAuthStreamTerminalEventsAttachAuditMetadata(t *testing.T) 
 			name:      "failed",
 			status:    a2a.TaskStatusFailed,
 			eventType: gopact.EventA2ATaskFailed,
+			golden:    "testdata/a2a_auth_stream_failure.golden.json",
 			streamErr: wantErr,
 			wantErr:   wantErr,
 		},
@@ -703,6 +705,7 @@ func TestRemoteA2AToolAuthStreamTerminalEventsAttachAuditMetadata(t *testing.T) 
 			name:      "canceled",
 			status:    a2a.TaskStatusCanceled,
 			eventType: gopact.EventA2ATaskCanceled,
+			golden:    "testdata/a2a_auth_stream_canceled.golden.json",
 		},
 	}
 	for _, tt := range tests {
@@ -756,6 +759,7 @@ func TestRemoteA2AToolAuthStreamTerminalEventsAttachAuditMetadata(t *testing.T) 
 				events[1].Type != tt.eventType {
 				t.Fatalf("Stream() events = %+v, want sent/%s", events, tt.eventType)
 			}
+			gopacttest.RequireGoldenTrajectoryFrames(t, tt.golden, events)
 			if events[1].Metadata["phase"] != "terminal" ||
 				events[1].Metadata["auth_scheme"] != "bearer" ||
 				events[1].Metadata["auth_principal"] != "svc-planner" ||
