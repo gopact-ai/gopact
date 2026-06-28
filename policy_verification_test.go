@@ -102,6 +102,26 @@ func TestRecordPolicyDecisionCheckAcceptsA2ACancelPolicy(t *testing.T) {
 	}
 }
 
+func TestRecordPolicyDecisionCheckAcceptsA2AStreamPolicy(t *testing.T) {
+	recorder := NewVerificationRecorder()
+	err := RecordPolicyDecisionCheck(recorder, PolicyRequest{
+		IDs:      RuntimeIDs{RunID: "run-1"},
+		Boundary: PolicyBoundaryA2A,
+		Action:   PolicyActionStream,
+	}, PolicyDecision{Action: PolicyAllow})
+	if err != nil {
+		t.Fatalf("RecordPolicyDecisionCheck() error = %v", err)
+	}
+	checks := recorder.Checks()
+	if len(checks) != 1 {
+		t.Fatalf("checks = %d, want 1", len(checks))
+	}
+	if checks[0].Metadata["policy_boundary"] != string(PolicyBoundaryA2A) ||
+		checks[0].Metadata["policy_request_action"] != string(PolicyActionStream) {
+		t.Fatalf("metadata = %+v, want a2a/stream policy metadata", checks[0].Metadata)
+	}
+}
+
 func TestRecordPolicyDecisionCheckRecordsDenyBeforeReturningError(t *testing.T) {
 	recorder := NewVerificationRecorder()
 	err := RecordPolicyDecisionCheck(recorder, PolicyRequest{

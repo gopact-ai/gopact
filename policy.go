@@ -63,6 +63,7 @@ const (
 	PolicyActionInvoke   PolicyRequestAction = "invoke"
 	PolicyActionEmit     PolicyRequestAction = "emit"
 	PolicyActionSend     PolicyRequestAction = "send"
+	PolicyActionStream   PolicyRequestAction = "stream"
 	PolicyActionReceive  PolicyRequestAction = "receive"
 	PolicyActionConnect  PolicyRequestAction = "connect"
 	PolicyActionCancel   PolicyRequestAction = "cancel"

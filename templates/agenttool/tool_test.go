@@ -407,6 +407,10 @@ func TestRemoteA2AToolPolicyReviewInterruptIDIncludesA2AAction(t *testing.T) {
 			t.Fatal("remote Cancel should not run before approval")
 			return nil
 		},
+		StreamFunc: func(ctx context.Context, task a2a.Task) iter.Seq2[a2a.TaskEvent, error] {
+			t.Fatal("remote Stream should not run before approval")
+			return func(_ func(a2a.TaskEvent, error) bool) {}
+		},
 	}
 	tool, err := NewA2A(remote, WithPolicy(policy))
 	if err != nil {
@@ -425,14 +429,34 @@ func TestRemoteA2AToolPolicyReviewInterruptIDIncludesA2AAction(t *testing.T) {
 		t.Fatalf("Cancel() error = %T, want *InterruptError", cancelErr)
 	}
 
-	if sendInterrupt.Record.ID == cancelInterrupt.Record.ID {
-		t.Fatalf("interrupt IDs both = %q, want action-scoped send/cancel IDs", sendInterrupt.Record.ID)
+	_, streamErr := collectEvents(tool.Stream(ctx, json.RawMessage(`{"input":"write tests"}`)))
+	var streamInterrupt *gopact.InterruptError
+	if !errors.As(streamErr, &streamInterrupt) {
+		t.Fatalf("Stream() error = %T, want *InterruptError", streamErr)
+	}
+
+	ids := map[string]bool{
+		sendInterrupt.Record.ID:   true,
+		cancelInterrupt.Record.ID: true,
+		streamInterrupt.Record.ID: true,
+	}
+	if len(ids) != 3 {
+		t.Fatalf("interrupt IDs = send:%q stream:%q cancel:%q, want action-scoped unique IDs",
+			sendInterrupt.Record.ID,
+			streamInterrupt.Record.ID,
+			cancelInterrupt.Record.ID)
 	}
 	if sendInterrupt.Record.ID != "policy:parent-call:agent:planner:a2a:send" {
 		t.Fatalf("send interrupt ID = %q, want action-scoped send ID", sendInterrupt.Record.ID)
 	}
+	if streamInterrupt.Record.ID != "policy:parent-call:agent:planner:a2a:stream" {
+		t.Fatalf("stream interrupt ID = %q, want action-scoped stream ID", streamInterrupt.Record.ID)
+	}
 	if cancelInterrupt.Record.ID != "policy:parent-call:agent:planner:a2a:cancel" {
 		t.Fatalf("cancel interrupt ID = %q, want action-scoped cancel ID", cancelInterrupt.Record.ID)
+	}
+	if streamInterrupt.Record.Metadata["policy_request_action"] != gopact.PolicyActionStream {
+		t.Fatalf("stream interrupt metadata = %+v, want stream action", streamInterrupt.Record.Metadata)
 	}
 }
 
@@ -610,8 +634,8 @@ func TestRemoteA2AToolAuthStreamCompletedAttachesAuditMetadata(t *testing.T) {
 		},
 	}
 	auth := a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
-		if req.AgentName != "planner" || req.Action != gopact.PolicyActionSend {
-			t.Fatalf("auth request = %+v, want planner send", req)
+		if req.AgentName != "planner" || req.Action != gopact.PolicyActionStream {
+			t.Fatalf("auth request = %+v, want planner stream", req)
 		}
 		return a2a.Auth{
 			Scheme:        "bearer",
@@ -701,8 +725,8 @@ func TestRemoteA2AToolAuthStreamTerminalEventsAttachAuditMetadata(t *testing.T) 
 				},
 			}
 			auth := a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
-				if req.AgentName != "planner" || req.Action != gopact.PolicyActionSend {
-					t.Fatalf("auth request = %+v, want planner send", req)
+				if req.AgentName != "planner" || req.Action != gopact.PolicyActionStream {
+					t.Fatalf("auth request = %+v, want planner stream", req)
 				}
 				return a2a.Auth{
 					Scheme:        "bearer",
@@ -746,8 +770,8 @@ func TestRemoteA2AToolAuthStreamUnsupportedAttachesAuditMetadata(t *testing.T) {
 	tool, err := NewA2A(nonStreamingAgent{
 		card: a2a.AgentCard{Name: "planner", Description: "plans tasks"},
 	}, WithAuth(a2a.AuthenticatorFunc(func(ctx context.Context, req a2a.AuthRequest) (a2a.Auth, error) {
-		if req.AgentName != "planner" || req.Action != gopact.PolicyActionSend {
-			t.Fatalf("auth request = %+v, want planner send", req)
+		if req.AgentName != "planner" || req.Action != gopact.PolicyActionStream {
+			t.Fatalf("auth request = %+v, want planner stream", req)
 		}
 		return a2a.Auth{
 			Scheme:        "bearer",
@@ -1160,8 +1184,8 @@ func TestRemoteA2AToolStreamPolicyDenySkipsStreamAndReturnsPolicyEvents(t *testi
 		},
 	}
 	policy := gopact.PolicyFunc(func(ctx context.Context, req gopact.PolicyRequest) (gopact.PolicyDecision, error) {
-		if req.Action != gopact.PolicyActionSend {
-			t.Fatalf("action = %q, want %q", req.Action, gopact.PolicyActionSend)
+		if req.Action != gopact.PolicyActionStream {
+			t.Fatalf("action = %q, want %q", req.Action, gopact.PolicyActionStream)
 		}
 		return gopact.PolicyDecision{Action: gopact.PolicyDeny, Reason: "remote stream blocked"}, nil
 	})
@@ -1199,8 +1223,8 @@ func TestRemoteA2AToolStreamPolicyReviewReturnsApprovalInterrupt(t *testing.T) {
 		},
 	}
 	policy := gopact.PolicyFunc(func(ctx context.Context, req gopact.PolicyRequest) (gopact.PolicyDecision, error) {
-		if req.Action != gopact.PolicyActionSend {
-			t.Fatalf("action = %q, want %q", req.Action, gopact.PolicyActionSend)
+		if req.Action != gopact.PolicyActionStream {
+			t.Fatalf("action = %q, want %q", req.Action, gopact.PolicyActionStream)
 		}
 		input, ok := req.Input.(A2APolicyInput)
 		if !ok {
@@ -1236,8 +1260,8 @@ func TestRemoteA2AToolStreamPolicyReviewReturnsApprovalInterrupt(t *testing.T) {
 	if interruptErr.Record.Type != gopact.InterruptApproval || interruptErr.Record.RequiredBy != string(gopact.PolicyBoundaryA2A) {
 		t.Fatalf("interrupt record = %+v, want A2A approval", interruptErr.Record)
 	}
-	if interruptErr.Record.Metadata["policy_request_action"] != gopact.PolicyActionSend {
-		t.Fatalf("interrupt metadata = %+v, want send action", interruptErr.Record.Metadata)
+	if interruptErr.Record.Metadata["policy_request_action"] != gopact.PolicyActionStream {
+		t.Fatalf("interrupt metadata = %+v, want stream action", interruptErr.Record.Metadata)
 	}
 	if streamCalled {
 		t.Fatal("remote Stream should not run before approval")
