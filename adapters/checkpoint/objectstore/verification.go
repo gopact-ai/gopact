@@ -3,6 +3,7 @@ package objectstore
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/gopact-ai/gopact"
 )
@@ -128,6 +129,9 @@ func indexConsistencyEvidenceSummary(status gopact.VerificationStatus, snapshot 
 
 func indexConsistencyCheckMetadata(snapshot IndexConsistencySnapshot) map[string]any {
 	metadata := indexConsistencyBaseMetadata(snapshot)
+	if keys := sortedIndexConsistencyMetadataKeys(snapshot.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeIndexConsistencyMetadata(metadata, snapshot.Metadata)
 	return metadata
 }
@@ -181,6 +185,21 @@ func mergeIndexConsistencyMetadata(metadata map[string]any, supplemental map[str
 	}
 }
 
+func sortedIndexConsistencyMetadataKeys(supplemental map[string]any) []string {
+	if len(supplemental) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(supplemental))
+	for key := range supplemental {
+		if indexConsistencyReservedMetadataKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func indexConsistencyReservedMetadataKey(key string) bool {
 	switch key {
 	case "ref",
@@ -201,6 +220,7 @@ func indexConsistencyReservedMetadataKey(key string) bool {
 		"wrong_thread_record_ids",
 		"wrong_thread_record_count",
 		"error",
+		"metadata_keys",
 		"skipped":
 		return true
 	default:
