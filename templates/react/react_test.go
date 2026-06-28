@@ -1248,6 +1248,7 @@ func TestAgentRunsVerifierBeforeCompletingRun(t *testing.T) {
 		gopact.EventNodeCompleted,
 		gopact.EventRunCompleted,
 	)
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/verifier_passed_report.golden.json", events)
 	if events[4].Node != nodeVerify || events[4].Step != 2 {
 		t.Fatalf("verification started node/step = %s/%d, want verify/2", events[4].Node, events[4].Step)
 	}

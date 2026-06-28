@@ -209,7 +209,7 @@ ReAct template 至少有这些 trajectory tests：
 - `[done: first slice]` completed `call_tool` checkpoint resume 不重复执行已完成 tool，并有 golden trajectory fixture；
 - `[done: first slice]` tool approval interrupted checkpoint 可以通过 `react.WithCheckpointStore` + `ResumeRequest.CheckpointID` / `InterruptID` 恢复继续；
 - `[done: first slice]` `react.WithArtifactVerifier` 可以在 step/checkpoint import 继续执行前校验 artifact refs，失败时阻止恢复；checkpoint artifact verifier failure 有 golden trajectory fixture；
-- `[done: first slice]` verifier failed report / verifier error 会产生 failed verify step 与 `RunFailed` outcome，并有 golden trajectory fixture；
+- `[done: first slice]` verifier passed report 会产生 completed verify step 与 `RunCompleted` outcome；verifier failed report / verifier error 会产生 failed verify step 与 `RunFailed` outcome，三者都有 golden trajectory fixture；
 - `[done: first slice]` max iterations exceeded 产生结构化错误、`RunFailed` outcome 和 golden trajectory fixture；
 - `[done: first slice]` missing tool registry 产生 failed tool step、`RunFailed` outcome 和 golden trajectory fixture；
 - `[done: first slice]` tool runtime error 产生 failed tool step、`RunFailed` outcome、`FailureTool` attribution 和 golden trajectory fixture；
