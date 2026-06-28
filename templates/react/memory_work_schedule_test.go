@@ -35,6 +35,8 @@ func TestRecordDeferredMemoryWorkScheduleCheckRecordsRetryDecision(t *testing.T)
 			"run_id":              "forged-run",
 			"thread_id":           "forged-thread",
 			"error":               "forged-error",
+			"planned_step_ids":    []string{"forged-step"},
+			"result_step_ids":     []string{"forged-result-step"},
 		},
 	})
 	if err != nil {
@@ -72,6 +74,14 @@ func TestRecordDeferredMemoryWorkScheduleCheckRecordsRetryDecision(t *testing.T)
 	if metadata["queue"] != "memory-default" {
 		t.Fatalf("metadata = %+v, want supplemental queue metadata", metadata)
 	}
+	if planned, ok := metadata["planned_step_ids"].([]string); !ok ||
+		!reflect.DeepEqual(planned, []string{"step-1"}) {
+		t.Fatalf("metadata planned step ids = %#v, want canonical planned step ids", metadata["planned_step_ids"])
+	}
+	if results, ok := metadata["result_step_ids"].([]string); !ok ||
+		!reflect.DeepEqual(results, []string{"step-1"}) {
+		t.Fatalf("metadata result step ids = %#v, want canonical result step ids", metadata["result_step_ids"])
+	}
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["action"] != string(DeferredMemoryWorkScheduleRetry) ||
@@ -94,6 +104,14 @@ func TestRecordDeferredMemoryWorkScheduleCheckRecordsRetryDecision(t *testing.T)
 	if results, ok := evidenceMetadata["result_effect_ids"].([]string); !ok ||
 		!reflect.DeepEqual(results, []string{"pending-1"}) {
 		t.Fatalf("evidence result effect ids = %#v, want canonical result ids", evidenceMetadata["result_effect_ids"])
+	}
+	if planned, ok := evidenceMetadata["planned_step_ids"].([]string); !ok ||
+		!reflect.DeepEqual(planned, []string{"step-1"}) {
+		t.Fatalf("evidence planned step ids = %#v, want canonical planned step ids", evidenceMetadata["planned_step_ids"])
+	}
+	if results, ok := evidenceMetadata["result_step_ids"].([]string); !ok ||
+		!reflect.DeepEqual(results, []string{"step-1"}) {
+		t.Fatalf("evidence result step ids = %#v, want canonical result step ids", evidenceMetadata["result_step_ids"])
 	}
 	if evidenceMetadata["queue"] != "memory-default" {
 		t.Fatalf("evidence metadata = %+v, want supplemental queue metadata", evidenceMetadata)
