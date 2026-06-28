@@ -666,6 +666,7 @@ func TestRemoteA2AToolAuthStreamCompletedAttachesAuditMetadata(t *testing.T) {
 		events[1].Type != gopact.EventA2ATaskCompleted {
 		t.Fatalf("Stream() events = %+v, want sent/completed", events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_auth_stream.golden.json", events)
 	if events[1].Metadata["route"] != "stream" ||
 		events[1].Metadata["auth_scheme"] != "bearer" ||
 		events[1].Metadata["auth_principal"] != "svc-planner" ||
