@@ -3,6 +3,7 @@ package sandbox
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -121,6 +122,9 @@ func execEvidenceSummary(status gopact.VerificationStatus, input ExecCheck) stri
 
 func execCheckMetadata(input ExecCheck) map[string]any {
 	metadata := execBaseMetadata(input)
+	if keys := sortedExecMetadataKeys(input.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeExecMetadata(metadata, input.Metadata)
 	return metadata
 }
@@ -167,6 +171,21 @@ func mergeExecMetadata(metadata map[string]any, supplemental map[string]any) {
 	}
 }
 
+func sortedExecMetadataKeys(supplemental map[string]any) []string {
+	if len(supplemental) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(supplemental))
+	for key := range supplemental {
+		if execReservedMetadataKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func execReservedMetadataKey(key string) bool {
 	switch key {
 	case "command",
@@ -177,6 +196,7 @@ func execReservedMetadataKey(key string) bool {
 		"stderr",
 		"error",
 		"duration_ms",
+		"metadata_keys",
 		"skipped":
 		return true
 	default:
