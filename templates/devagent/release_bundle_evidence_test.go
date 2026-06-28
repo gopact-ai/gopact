@@ -103,6 +103,24 @@ func TestRecordReleaseBundleCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 }
 
+func TestRecordReleaseBundleCheckCapturesResumeInputBoundary(t *testing.T) {
+	bundle := releaseBundleWithResumedWorkflowFixture(t)
+	bundle.Metadata = map[string]any{}
+	bundle.Metadata["resume_input_id"] = "devagent:run-1:resume:forged"
+	recorder := gopact.NewVerificationRecorder()
+
+	if err := RecordReleaseBundleCheck(recorder, bundle); err != nil {
+		t.Fatalf("RecordReleaseBundleCheck() error = %v", err)
+	}
+
+	check := recorder.Checks()[0]
+	for _, metadata := range []map[string]any{check.Metadata, check.Evidence[0].Metadata} {
+		if metadata["resume_input_id"] != "devagent:run-1:resume:approval-1" {
+			t.Fatalf("metadata = %+v, want canonical resume input boundary", metadata)
+		}
+	}
+}
+
 func TestRecordReleaseBundleCheckCapturesReviewGovernanceMetadata(t *testing.T) {
 	bundle := releaseBundleFixture(t)
 	bundle.Review.Metadata = map[string]any{
