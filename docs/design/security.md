@@ -133,7 +133,7 @@ A2A：
 - remote agent 不继承本地权限；
 - 本地 memory 默认不发送；
 - artifact 必须校验 media type、size、hash；
-- remote send 必须能走 `PolicyBoundaryA2A` / `PolicyActionSend`；当前 direct tool adapter 的 `WithPolicy` 已覆盖 deny/review，生产 adapter 不能绕过该边界；
+- remote send/stream/cancel 必须能走 `PolicyBoundaryA2A`，并分别使用 `PolicyActionSend` / `PolicyActionStream` / `PolicyActionCancel`；当前 direct tool adapter 的 `WithPolicy` 已覆盖 deny/review，生产 adapter 不能绕过该边界；
 - remote send 必须有 timeout；当前 direct tool adapter 的 `WithTimeout` 已覆盖调用级 deadline；
 - remote HTTP/JSON-RPC adapter 只能发送 sanitized `Auth` 和 task payload/metadata extension；transport credential 必须由宿主注入的 client/header/signer 持有，不能落入 SDK 配置、事件或 checkpoint；
 - multi-hop delegation 需要独立 policy；

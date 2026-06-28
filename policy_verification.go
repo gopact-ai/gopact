@@ -190,6 +190,7 @@ func validPolicyRequestAction(action PolicyRequestAction) bool {
 		PolicyActionInvoke,
 		PolicyActionEmit,
 		PolicyActionSend,
+		PolicyActionStream,
 		PolicyActionReceive,
 		PolicyActionConnect,
 		PolicyActionCancel,

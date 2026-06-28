@@ -1524,6 +1524,10 @@
           "kind": "const"
         },
         {
+          "name": "PolicyActionStream",
+          "kind": "const"
+        },
+        {
           "name": "PolicyActionWrite",
           "kind": "const"
         },

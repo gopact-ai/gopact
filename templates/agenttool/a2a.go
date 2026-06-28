@@ -148,7 +148,7 @@ func (t *A2ATool) Invoke(ctx context.Context, args json.RawMessage) (gopact.Tool
 		}, err
 	}
 	var events []gopact.Event
-	policyEvents, policyErr := t.authorize(sendCtx, task, authMetadata)
+	policyEvents, policyErr := t.authorize(sendCtx, task, authMetadata, gopact.PolicyActionSend)
 	events = append(events, policyEvents...)
 	if policyErr != nil {
 		return gopact.ToolResult{
@@ -215,12 +215,12 @@ func (t *A2ATool) Stream(ctx context.Context, args json.RawMessage) iter.Seq2[go
 			Input:    inputText(input),
 			Metadata: a2aMetadata(t.card.Name, ids, ids.CallID, input.Metadata),
 		}
-		streamCtx, authMetadata, err := t.authenticate(ctx, gopact.PolicyActionSend, &task, "")
+		streamCtx, authMetadata, err := t.authenticate(ctx, gopact.PolicyActionStream, &task, "")
 		if err != nil {
 			yield(gopact.Event{}, err)
 			return
 		}
-		policyEvents, policyErr := t.authorize(streamCtx, task, authMetadata)
+		policyEvents, policyErr := t.authorize(streamCtx, task, authMetadata, gopact.PolicyActionStream)
 		for i, event := range policyEvents {
 			eventErr := error(nil)
 			if policyErr != nil && i == len(policyEvents)-1 {
@@ -305,14 +305,19 @@ func (t *A2ATool) Cancel(ctx context.Context, taskID string) (gopact.ToolResult,
 	}, nil
 }
 
-func (t *A2ATool) authorize(ctx context.Context, task a2a.Task, authMetadata map[string]any) ([]gopact.Event, error) {
+func (t *A2ATool) authorize(
+	ctx context.Context,
+	task a2a.Task,
+	authMetadata map[string]any,
+	action gopact.PolicyRequestAction,
+) ([]gopact.Event, error) {
 	if t.policy == nil {
 		return nil, nil
 	}
 	req := gopact.PolicyRequest{
 		IDs:      task.IDs,
 		Boundary: gopact.PolicyBoundaryA2A,
-		Action:   gopact.PolicyActionSend,
+		Action:   action,
 		Input: A2APolicyInput{
 			AgentName: t.card.Name,
 			Card:      copyAgentCard(t.card),
