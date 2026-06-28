@@ -1523,6 +1523,7 @@ func TestAgentRecordsToolArtifactsInEventsAndRunExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/tool_artifact_result.golden.json", events)
 	var toolResultEvent gopact.Event
 	var toolStep gopact.StepSnapshot
 	for _, event := range events {
