@@ -2,6 +2,7 @@ package gopact
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -16,13 +17,17 @@ func TestRecordPolicyDecisionCheckRecordsAllowAsPassedCheck(t *testing.T) {
 		},
 		Boundary: PolicyBoundaryTool,
 		Action:   PolicyActionInvoke,
-		Metadata: map[string]any{"scope": "write"},
+		Metadata: map[string]any{
+			"risk":  "low",
+			"scope": "write",
+		},
 	}
 	decision := PolicyDecision{
 		Action: PolicyAllow,
 		Reason: "safe write",
 		Metadata: map[string]any{
-			"reviewer": "policy",
+			"policy_ref": "policy/tools",
+			"reviewer":   "policy",
 		},
 	}
 
@@ -52,13 +57,26 @@ func TestRecordPolicyDecisionCheckRecordsAllowAsPassedCheck(t *testing.T) {
 		check.Metadata["user_id"] != "user-1" {
 		t.Fatalf("metadata = %+v, want policy decision metadata", check.Metadata)
 	}
+	assertPolicyStringSliceMetadata(t, check.Metadata, "request_metadata_keys", []string{"risk", "scope"})
+	assertPolicyStringSliceMetadata(t, check.Metadata, "policy_metadata_keys", []string{"policy_ref", "reviewer"})
 	policyMetadata, ok := check.Metadata["policy_metadata"].(map[string]any)
-	if !ok || policyMetadata["reviewer"] != "policy" {
+	if !ok || policyMetadata["reviewer"] != "policy" || policyMetadata["policy_ref"] != "policy/tools" {
 		t.Fatalf("policy metadata = %#v, want copied policy metadata", check.Metadata["policy_metadata"])
 	}
 	requestMetadata, ok := check.Metadata["request_metadata"].(map[string]any)
-	if !ok || requestMetadata["scope"] != "write" {
+	if !ok || requestMetadata["scope"] != "write" || requestMetadata["risk"] != "low" {
 		t.Fatalf("request metadata = %#v, want copied request metadata", check.Metadata["request_metadata"])
+	}
+	evidenceMetadata := check.Evidence[0].Metadata
+	assertPolicyStringSliceMetadata(t, evidenceMetadata, "request_metadata_keys", []string{"risk", "scope"})
+	assertPolicyStringSliceMetadata(t, evidenceMetadata, "policy_metadata_keys", []string{"policy_ref", "reviewer"})
+}
+
+func assertPolicyStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+	got, ok := metadata[key].([]string)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, metadata[key], want)
 	}
 }
 

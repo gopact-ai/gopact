@@ -108,9 +108,11 @@ func policyDecisionBaseMetadata(request PolicyRequest, decision PolicyDecision) 
 	}
 	if len(decision.Metadata) > 0 {
 		metadata["policy_metadata"] = copyAnyMap(decision.Metadata)
+		metadata["policy_metadata_keys"] = sortedAnyMapKeys(decision.Metadata)
 	}
 	if len(request.Metadata) > 0 {
 		metadata["request_metadata"] = copyAnyMap(request.Metadata)
+		metadata["request_metadata_keys"] = sortedAnyMapKeys(request.Metadata)
 	}
 	return metadata
 }
