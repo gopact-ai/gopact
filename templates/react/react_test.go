@@ -2076,6 +2076,7 @@ func TestAgentVerifiesStepExportArtifactsBeforeResume(t *testing.T) {
 		gopact.EventStepImported,
 		gopact.EventRunCompleted,
 	)
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/step_export_artifact_import.golden.json", events)
 	if len(model.requests) != 0 {
 		t.Fatalf("model requests = %d, want no model call after final step import", len(model.requests))
 	}
