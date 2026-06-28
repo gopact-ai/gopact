@@ -169,6 +169,12 @@ func replayVerificationBaseMetadata(snapshot ReplayVerificationSnapshot) map[str
 	if ids := replayResultEffectIDs(snapshot.Results); len(ids) > 0 {
 		metadata["result_effect_ids"] = ids
 	}
+	if ids := replayPlanStepIDs(snapshot.Plan); len(ids) > 0 {
+		metadata["planned_step_ids"] = ids
+	}
+	if ids := replayResultStepIDs(snapshot.Results); len(ids) > 0 {
+		metadata["result_step_ids"] = ids
+	}
 	return metadata
 }
 
@@ -194,7 +200,9 @@ func replayVerificationReservedMetadataKey(key string) bool {
 		"missing_result_count",
 		"extra_result_count",
 		"planned_effect_ids",
-		"result_effect_ids":
+		"result_effect_ids",
+		"planned_step_ids",
+		"result_step_ids":
 		return true
 	default:
 		return false
@@ -241,4 +249,39 @@ func replayResultEffectIDs(results []gopact.RunEffectReplayResult) []string {
 		}
 	}
 	return ids
+}
+
+func replayPlanStepIDs(plan gopact.RunEffectReplayPlan) []string {
+	if len(plan.Decisions) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(plan.Decisions))
+	seen := make(map[string]struct{}, len(plan.Decisions))
+	for _, decision := range plan.Decisions {
+		ids = appendUniqueNonEmptyString(ids, seen, decision.StepID)
+	}
+	return ids
+}
+
+func replayResultStepIDs(results []gopact.RunEffectReplayResult) []string {
+	if len(results) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(results))
+	seen := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		ids = appendUniqueNonEmptyString(ids, seen, result.StepID)
+	}
+	return ids
+}
+
+func appendUniqueNonEmptyString(values []string, seen map[string]struct{}, value string) []string {
+	if value == "" {
+		return values
+	}
+	if _, ok := seen[value]; ok {
+		return values
+	}
+	seen[value] = struct{}{}
+	return append(values, value)
 }
