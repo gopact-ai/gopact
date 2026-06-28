@@ -26,7 +26,10 @@ func TestRecordEntropyAuditCheckRecordsPartialAuditAsPassedCheck(t *testing.T) {
 				Summary:  "source changed without docs",
 			},
 		},
-		Metadata: map[string]any{"source": "devagent"},
+		Metadata: map[string]any{
+			"scope":  "release",
+			"source": "devagent",
+		},
 	}
 
 	if err := RecordEntropyAuditCheck(recorder, audit); err != nil {
@@ -51,9 +54,12 @@ func TestRecordEntropyAuditCheckRecordsPartialAuditAsPassedCheck(t *testing.T) {
 		check.Metadata["run_id"] != "run-1" ||
 		check.Metadata["thread_id"] != "thread-1" ||
 		check.Metadata["user_id"] != "user-1" ||
+		check.Metadata["scope"] != "release" ||
 		check.Metadata["source"] != "devagent" {
 		t.Fatalf("metadata = %+v, want entropy audit metadata", check.Metadata)
 	}
+	assertStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"scope", "source"})
+	assertStringSliceMetadata(t, check.Evidence[0].Metadata, "metadata_keys", []string{"scope", "source"})
 	findings, ok := check.Metadata["findings"].([]map[string]any)
 	if !ok || len(findings) != 1 || findings[0]["id"] != "finding-1" {
 		t.Fatalf("metadata findings = %#v, want copied finding summary", check.Metadata["findings"])
@@ -91,6 +97,8 @@ func TestRecordEntropyAuditCheckPreservesCanonicalMetadata(t *testing.T) {
 			"created_at":           "forged-created-at",
 			"max_entropy_severity": string(EntropySeverityCritical),
 			"findings":             []map[string]any{{"id": "forged-finding"}},
+			"metadata_keys":        []string{"forged"},
+			"scope":                "release",
 			"source":               "devagent",
 		},
 	}
@@ -116,9 +124,10 @@ func TestRecordEntropyAuditCheckPreservesCanonicalMetadata(t *testing.T) {
 	if !ok || len(findings) != 1 || findings[0]["id"] != "finding-1" {
 		t.Fatalf("metadata findings = %#v, want canonical findings", metadata["findings"])
 	}
-	if metadata["source"] != "devagent" {
+	if metadata["scope"] != "release" || metadata["source"] != "devagent" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
+	assertStringSliceMetadata(t, metadata, "metadata_keys", []string{"scope", "source"})
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["ref"] != "entropy-1" ||
@@ -136,9 +145,10 @@ func TestRecordEntropyAuditCheckPreservesCanonicalMetadata(t *testing.T) {
 	if !ok || len(evidenceFindings) != 1 || evidenceFindings[0]["id"] != "finding-1" {
 		t.Fatalf("evidence metadata findings = %#v, want canonical findings", evidenceMetadata["findings"])
 	}
-	if evidenceMetadata["source"] != "devagent" {
+	if evidenceMetadata["scope"] != "release" || evidenceMetadata["source"] != "devagent" {
 		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
+	assertStringSliceMetadata(t, evidenceMetadata, "metadata_keys", []string{"scope", "source"})
 }
 
 func TestRecordEntropyAuditCheckRecordsFailedCheckBeforeReturningError(t *testing.T) {

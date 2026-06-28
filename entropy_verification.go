@@ -101,6 +101,9 @@ func entropyAuditEvidenceSummary(audit EntropyAudit) string {
 
 func entropyAuditCheckMetadata(audit EntropyAudit) map[string]any {
 	metadata := entropyAuditBaseMetadata(audit)
+	if keys := sortedSupplementalVerificationMetadataKeys(audit.Metadata, entropyAuditReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalVerificationMetadata(metadata, audit.Metadata, entropyAuditReservedMetadataKey)
 	return metadata
 }
@@ -140,7 +143,8 @@ func entropyAuditReservedMetadataKey(key string) bool {
 		"finding_count",
 		"created_at",
 		"max_entropy_severity",
-		"findings":
+		"findings",
+		"metadata_keys":
 		return true
 	default:
 		return false
