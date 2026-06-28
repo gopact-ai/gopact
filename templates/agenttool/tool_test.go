@@ -870,6 +870,7 @@ func TestRemoteA2AToolCancelAuthAttachesAuditMetadata(t *testing.T) {
 		result.Events[2].Type != gopact.EventA2ATaskCanceled {
 		t.Fatalf("result events = %+v, want policy/canceled events", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_auth_cancel.golden.json", result.Events)
 	if result.Events[2].Metadata["auth_scheme"] != "bearer" ||
 		result.Events[2].Metadata["auth_principal"] != "svc-planner" ||
 		result.Events[2].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
