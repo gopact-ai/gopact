@@ -391,6 +391,12 @@ func runEffectReplayBaseMetadata(snapshot RunEffectReplaySnapshot) map[string]an
 	if ids := runEffectReplayResultEffectIDs(snapshot.Results); len(ids) > 0 {
 		metadata["result_effect_ids"] = ids
 	}
+	if ids := runEffectReplayPlannedStepIDs(snapshot.Plan); len(ids) > 0 {
+		metadata["planned_step_ids"] = ids
+	}
+	if ids := runEffectReplayResultStepIDs(snapshot.Results); len(ids) > 0 {
+		metadata["result_step_ids"] = ids
+	}
 	return metadata
 }
 
@@ -419,7 +425,10 @@ func effectReplayReservedMetadataKey(key string) bool {
 
 func runEffectReplayReservedMetadataKey(key string) bool {
 	switch key {
-	case "run_id", "thread_id":
+	case "run_id",
+		"thread_id",
+		"planned_step_ids",
+		"result_step_ids":
 		return true
 	default:
 		return effectReplayReservedMetadataKey(key)
@@ -508,6 +517,41 @@ func runEffectReplayResultEffectIDs(results []RunEffectReplayResult) []string {
 		}
 	}
 	return ids
+}
+
+func runEffectReplayPlannedStepIDs(plan RunEffectReplayPlan) []string {
+	if len(plan.Decisions) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(plan.Decisions))
+	seen := make(map[string]struct{}, len(plan.Decisions))
+	for _, decision := range plan.Decisions {
+		ids = appendUniqueNonEmptyString(ids, seen, decision.StepID)
+	}
+	return ids
+}
+
+func runEffectReplayResultStepIDs(results []RunEffectReplayResult) []string {
+	if len(results) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(results))
+	seen := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		ids = appendUniqueNonEmptyString(ids, seen, result.StepID)
+	}
+	return ids
+}
+
+func appendUniqueNonEmptyString(values []string, seen map[string]struct{}, value string) []string {
+	if value == "" {
+		return values
+	}
+	if _, ok := seen[value]; ok {
+		return values
+	}
+	seen[value] = struct{}{}
+	return append(values, value)
 }
 
 func copyEffectReplayPlan(in EffectReplayPlan) EffectReplayPlan {
