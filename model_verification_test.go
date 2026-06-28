@@ -2,6 +2,7 @@ package gopact
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestRecordModelCallCheckRecordsObservedModelCall(t *testing.T) {
 		Tools:        []ToolSpec{{Name: "search"}},
 		Capabilities: []Capability{CapabilityToolCalling},
 		Budget:       Budget{MaxOutputTokens: 256, MaxCostUSD: 0.05},
-		Metadata:     map[string]any{"tenant": "tenant-a"},
+		Metadata:     map[string]any{"risk": "low", "tenant": "tenant-a"},
 	}
 	response := ModelResponse{
 		Message: Message{
@@ -45,7 +46,7 @@ func TestRecordModelCallCheckRecordsObservedModelCall(t *testing.T) {
 			TotalTokens:  30,
 			CostUSD:      0.01,
 		},
-		Metadata: map[string]any{"finish_reason": "tool_calls"},
+		Metadata: map[string]any{"finish_reason": "tool_calls", "safety": "ok"},
 	}
 
 	if err := RecordModelCallCheck(recorder, ModelCallSnapshot{
@@ -76,8 +77,29 @@ func TestRecordModelCallCheckRecordsObservedModelCall(t *testing.T) {
 	if metadata["request_text"] != nil || metadata["response_text"] != nil || metadata["messages"] != nil {
 		t.Fatalf("metadata leaked raw text = %+v", metadata)
 	}
+	assertModelStringSliceMetadata(t, metadata, "request_metadata_keys", []string{"risk", "tenant"})
+	assertModelStringSliceMetadata(t, metadata, "response_metadata_keys", []string{"finish_reason", "safety"})
+	assertModelStringSliceMetadata(
+		t,
+		check.Metadata,
+		"request_metadata_keys",
+		[]string{"risk", "tenant"},
+	)
+	assertModelStringSliceMetadata(
+		t,
+		check.Metadata,
+		"response_metadata_keys",
+		[]string{"finish_reason", "safety"},
+	)
 	if check.Metadata["phase"] != "call_model" {
 		t.Fatalf("check metadata = %+v, want custom metadata copied", check.Metadata)
+	}
+}
+
+func assertModelStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+	if got := metadata[key]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, got, want)
 	}
 }
 

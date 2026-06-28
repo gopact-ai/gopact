@@ -189,9 +189,11 @@ func modelCallBaseMetadata(snapshot ModelCallSnapshot) map[string]any {
 	}
 	if len(request.Metadata) > 0 {
 		metadata["request_metadata"] = copyAnyMap(request.Metadata)
+		metadata["request_metadata_keys"] = sortedAnyMapKeys(request.Metadata)
 	}
 	if len(response.Metadata) > 0 {
 		metadata["response_metadata"] = copyAnyMap(response.Metadata)
+		metadata["response_metadata_keys"] = sortedAnyMapKeys(response.Metadata)
 	}
 	if snapshot.Err != nil {
 		metadata["error"] = snapshot.Err.Error()
@@ -237,7 +239,9 @@ func modelCallReservedMetadataKey(key string) bool {
 		"output_tool_names",
 		"model_event_count",
 		"request_metadata",
+		"request_metadata_keys",
 		"response_metadata",
+		"response_metadata_keys",
 		"error",
 		"skipped":
 		return true
