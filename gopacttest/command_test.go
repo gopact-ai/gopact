@@ -52,12 +52,13 @@ func TestRecordCommandCheckPreservesCanonicalMetadata(t *testing.T) {
 		Stdout:   "ok",
 		Duration: 1500 * time.Millisecond,
 		Metadata: map[string]any{
-			"command":     []string{"forged"},
-			"dir":         "/forged",
-			"exit_code":   99,
-			"stdout":      "forged stdout",
-			"duration_ms": int64(999),
-			"gate":        "unit",
+			"command":       []string{"forged"},
+			"dir":           "/forged",
+			"exit_code":     99,
+			"stdout":        "forged stdout",
+			"duration_ms":   int64(999),
+			"metadata_keys": []string{"forged"},
+			"gate":          "unit",
 		},
 	})
 	if err != nil {
@@ -79,6 +80,9 @@ func TestRecordCommandCheckPreservesCanonicalMetadata(t *testing.T) {
 	if metadata["gate"] != "unit" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
+	if got, want := metadata["metadata_keys"], []string{"gate"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata metadata_keys = %#v, want %#v", got, want)
+	}
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["dir"] != "/repo" ||
@@ -93,6 +97,9 @@ func TestRecordCommandCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if evidenceMetadata["gate"] != "unit" {
 		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
+	}
+	if got, want := evidenceMetadata["metadata_keys"], []string{"gate"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence metadata metadata_keys = %#v, want %#v", got, want)
 	}
 }
 

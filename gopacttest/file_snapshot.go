@@ -134,6 +134,9 @@ func fileSnapshotEvidenceSummary(status gopact.VerificationStatus, snapshot File
 
 func fileSnapshotCheckMetadata(snapshot FileSnapshot) map[string]any {
 	metadata := fileSnapshotBaseMetadata(snapshot)
+	if keys := sortedSupplementalMetadataKeys(snapshot.Metadata, fileSnapshotReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, snapshot.Metadata, fileSnapshotReservedMetadataKey)
 	return metadata
 }
@@ -181,6 +184,7 @@ func fileSnapshotReservedMetadataKey(key string) bool {
 		"mode",
 		"modified_at",
 		"error",
+		"metadata_keys",
 		"skipped":
 		return true
 	default:

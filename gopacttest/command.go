@@ -123,6 +123,9 @@ func commandEvidenceSummary(status gopact.VerificationStatus, result CommandResu
 
 func commandCheckMetadata(result CommandResult) map[string]any {
 	metadata := commandBaseMetadata(result)
+	if keys := sortedSupplementalMetadataKeys(result.Metadata, commandReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, result.Metadata, commandReservedMetadataKey)
 	return metadata
 }
@@ -166,6 +169,7 @@ func commandReservedMetadataKey(key string) bool {
 		"stderr",
 		"error",
 		"duration_ms",
+		"metadata_keys",
 		"skipped":
 		return true
 	default:

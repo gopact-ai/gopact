@@ -57,13 +57,14 @@ func TestRecordDiffCheckPreservesCanonicalMetadata(t *testing.T) {
 		Insertions: 12,
 		Deletions:  3,
 		Metadata: map[string]any{
-			"ref":        "forged-ref",
-			"diff":       "forged diff",
-			"files":      []string{"forged.go"},
-			"file_count": 99,
-			"insertions": 99,
-			"deletions":  99,
-			"mode":       "write",
+			"ref":           "forged-ref",
+			"diff":          "forged diff",
+			"files":         []string{"forged.go"},
+			"file_count":    99,
+			"insertions":    99,
+			"deletions":     99,
+			"metadata_keys": []string{"forged"},
+			"mode":          "write",
 		},
 	})
 	if err != nil {
@@ -86,6 +87,9 @@ func TestRecordDiffCheckPreservesCanonicalMetadata(t *testing.T) {
 	if metadata["mode"] != "write" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
+	if got, want := metadata["metadata_keys"], []string{"mode"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata metadata_keys = %#v, want %#v", got, want)
+	}
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["ref"] != "patch-1.diff" ||
@@ -101,6 +105,9 @@ func TestRecordDiffCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if evidenceMetadata["mode"] != "write" {
 		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
+	}
+	if got, want := evidenceMetadata["metadata_keys"], []string{"mode"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence metadata metadata_keys = %#v, want %#v", got, want)
 	}
 }
 

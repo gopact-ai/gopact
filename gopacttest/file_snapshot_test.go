@@ -2,6 +2,7 @@ package gopacttest
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -82,6 +83,7 @@ func TestRecordFileSnapshotCheckPreservesCanonicalMetadata(t *testing.T) {
 			"mode":           "0777",
 			"modified_at":    "forged-time",
 			"skipped":        true,
+			"metadata_keys":  []string{"forged"},
 			"purpose":        "release gate",
 		},
 	}); err != nil {
@@ -104,6 +106,9 @@ func TestRecordFileSnapshotCheckPreservesCanonicalMetadata(t *testing.T) {
 	if metadata["purpose"] != "release gate" {
 		t.Fatalf("metadata = %+v, want non-conflicting caller metadata preserved", metadata)
 	}
+	if got, want := metadata["metadata_keys"], []string{"purpose"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata metadata_keys = %#v, want %#v", got, want)
+	}
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["path"] != "README.md" ||
@@ -119,6 +124,9 @@ func TestRecordFileSnapshotCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if evidenceMetadata["purpose"] != "release gate" {
 		t.Fatalf("evidence metadata = %+v, want non-conflicting caller metadata preserved", evidenceMetadata)
+	}
+	if got, want := evidenceMetadata["metadata_keys"], []string{"purpose"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence metadata metadata_keys = %#v, want %#v", got, want)
 	}
 }
 
