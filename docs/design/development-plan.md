@@ -343,6 +343,7 @@
 - `[done: authenticated stream trajectory slice]` remote A2A authenticated stream completed 已通过 `a2a_auth_stream.golden.json` 固定 sent -> completed 事件顺序，并在同一测试中校验 sanitized auth context 进入 stream task/context、completed event metadata 和 completed result metadata。
 - `[done: authenticated stream terminal trajectory slice]` remote A2A authenticated stream failed/canceled 已通过 `a2a_auth_stream_failure.golden.json` / `a2a_auth_stream_canceled.golden.json` 固定 sent -> failed / sent -> canceled 事件顺序，并在同一测试中校验 sanitized auth context 覆盖远端伪造 auth metadata 后进入 terminal event metadata。
 - `[done: authenticated cancel trajectory slice]` remote A2A authenticated cancel 已通过 `a2a_auth_cancel.golden.json` 固定 policy requested/decided -> canceled 事件顺序，并在同一测试中校验 sanitized auth context 进入 policy request metadata、remote cancel context、terminal event metadata 和 tool result metadata。
+- `[done: authenticated cancel failure trajectory slice]` remote A2A authenticated cancel failure 已通过 `a2a_auth_cancel_failure.golden.json` 固定 policy requested/decided -> failed 事件顺序，并在同一测试中校验 sanitized auth context 进入 policy request metadata、remote cancel context、terminal failed event metadata 和 tool result metadata。
 - `[done: first slice]` 子 agent 失败时 tool result 仍保留 child events，错误向父 agent 的 tool 调用边界传播。
 - `[done: first slice]` 子 agent 失败不会污染父 graph 状态。
 
