@@ -207,6 +207,7 @@ func validateReleaseBundleWorkflowSummary(bundle ReleaseBundle, parent gopact.Ta
 		{name: "action", got: workflowProcessStringMetadata(summary, "action"), want: workflowProcessStringMetadata(bundle.Process.Task.Metadata, "action")},
 		{name: "action_status", got: workflowProcessStringMetadata(summary, "action_status"), want: workflowProcessStringMetadata(bundle.Process.Task.Metadata, "action_status")},
 		{name: "release_gate_input_id", got: workflowProcessStringMetadata(summary, "release_gate_input_id"), want: releaseGateProcessInputID(bundle.Process.Inputs)},
+		{name: "resume_input_id", got: workflowProcessStringMetadata(summary, "resume_input_id"), want: workflowResumeInputID(bundle.Process.Inputs)},
 		{name: "review_intervention_id", got: workflowProcessStringMetadata(summary, "review_intervention_id"), want: reviewProcessInterventionID(bundle.Process.Interventions)},
 	} {
 		if expected.want != "" && expected.got != expected.want {

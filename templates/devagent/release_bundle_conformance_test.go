@@ -50,6 +50,24 @@ func TestCheckReleaseBundleConformanceReportsWorkflowReleaseSummaryDrift(t *test
 	}
 }
 
+func TestCheckReleaseBundleConformanceReportsWorkflowReleaseResumeSummaryDrift(t *testing.T) {
+	bundle := releaseBundleWithResumedWorkflowFixture(t)
+	output, ok := bundle.RunExport.Tasks[0].Output.(map[string]any)
+	if !ok {
+		t.Fatalf("workflow parent output = %T, want map", bundle.RunExport.Tasks[0].Output)
+	}
+	summaries, err := workflowProcessActionSummaries(output)
+	if err != nil {
+		t.Fatalf("workflowProcessActionSummaries() error = %v", err)
+	}
+	summaries[1]["resume_input_id"] = "devagent:run-1:resume:forged"
+
+	results := CheckReleaseBundleConformance(context.Background(), ReleaseBundleConformanceHarness{Bundle: bundle})
+	if !hasFailedReleaseBundleConformanceCase(results, "workflow-release-alignment") {
+		t.Fatalf("CheckReleaseBundleConformance() did not report workflow release resume summary drift: %+v", results)
+	}
+}
+
 func TestCheckReleaseBundleConformanceReportsWorkflowReleaseCountDrift(t *testing.T) {
 	bundle := releaseBundleWithWorkflowFixture(t)
 	output, ok := bundle.RunExport.Tasks[0].Output.(map[string]any)
@@ -210,6 +228,62 @@ func releaseBundleWithWorkflowFixture(t *testing.T) ReleaseBundle {
 		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
 	}
 	process, err := WorkflowActionProcessRecords(workflow, 3)
+	if err != nil {
+		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
+	}
+	input.Process = process
+	input.Export.Tasks = append([]gopact.TaskRecord{workflow.Task}, workflow.Tasks...)
+	input.Export.Inputs = workflow.Inputs
+	input.Export.Interventions = workflow.Interventions
+
+	bundle, err := BuildReleaseBundle(input)
+	if err != nil {
+		t.Fatalf("BuildReleaseBundle() error = %v", err)
+	}
+	return bundle
+}
+
+func releaseBundleWithResumedWorkflowFixture(t *testing.T) ReleaseBundle {
+	t.Helper()
+
+	input := validReleaseBundleInput(t)
+	resume := gopact.ResumeRequest{
+		CheckpointID: "checkpoint-1",
+		StepID:       "release-gate",
+		InterruptID:  "approval-1",
+		IDs:          input.Export.IDs,
+		Payload: map[string]any{
+			"decision": "approved",
+		},
+		PayloadCodec: "application/json",
+	}
+	workflow, err := BuildWorkflowProcessRecords(WorkflowInput{
+		IDs:  input.Export.IDs,
+		Name: "resumed release workflow",
+		Actions: []ProcessInput{
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeAnalyze,
+					Action: ActionAnalyze,
+				},
+			},
+			{
+				Action: ActionResult{
+					Status: ActionAllowed,
+					Mode:   ModeWrite,
+					Action: ActionRelease,
+				},
+				Review: input.Review,
+				Gate:   &input.Gate,
+				Resume: &resume,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkflowProcessRecords() error = %v", err)
+	}
+	process, err := WorkflowActionProcessRecords(workflow, 2)
 	if err != nil {
 		t.Fatalf("WorkflowActionProcessRecords() error = %v", err)
 	}
