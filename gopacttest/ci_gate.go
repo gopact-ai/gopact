@@ -175,6 +175,9 @@ func ciGateSuiteMetadata(suite CIGateSuite, passed, failed, skipped int) map[str
 	if len(suite.RequiredGates) > 0 {
 		metadata["required_gates"] = append([]string(nil), suite.RequiredGates...)
 	}
+	if keys := sortedSupplementalMetadataKeys(suite.Metadata, ciGateSuiteReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, suite.Metadata, ciGateSuiteReservedMetadataKey)
 	return metadata
 }
@@ -183,6 +186,13 @@ func ciGateEvidenceMetadata(result CIGateResult, status gopact.VerificationStatu
 	metadata := commandEvidenceMetadata(result.Result)
 	metadata["gate"] = ciGateName(result.Gate)
 	metadata["status"] = string(status)
+	if keys := sortedMergedSupplementalMetadataKeys(
+		ciGateEvidenceReservedMetadataKey,
+		result.Result.Metadata,
+		result.Metadata,
+	); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, result.Metadata, ciGateEvidenceReservedMetadataKey)
 	return metadata
 }
@@ -193,7 +203,8 @@ func ciGateSuiteReservedMetadataKey(key string) bool {
 		"passed_gate_count",
 		"failed_gate_count",
 		"skipped_gate_count",
-		"required_gates":
+		"required_gates",
+		"metadata_keys":
 		return true
 	default:
 		return false
@@ -202,7 +213,7 @@ func ciGateSuiteReservedMetadataKey(key string) bool {
 
 func ciGateEvidenceReservedMetadataKey(key string) bool {
 	switch key {
-	case "gate", "status":
+	case "gate", "status", "metadata_keys":
 		return true
 	default:
 		return commandReservedMetadataKey(key)
