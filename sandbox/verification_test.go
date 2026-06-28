@@ -28,7 +28,8 @@ func TestRecordExecCheckRecordsPassedCheck(t *testing.T) {
 			Usage:    ResourceUsage{Duration: 1500 * time.Millisecond},
 		},
 		Metadata: map[string]any{
-			"gate": "pre-release",
+			"gate":  "pre-release",
+			"scope": "release",
 		},
 	})
 	if err != nil {
@@ -52,9 +53,12 @@ func TestRecordExecCheckRecordsPassedCheck(t *testing.T) {
 		check.Metadata["exit_code"] != 0 ||
 		check.Metadata["stdout"] != "ok\n" ||
 		check.Metadata["duration_ms"] != int64(1500) ||
-		check.Metadata["gate"] != "pre-release" {
+		check.Metadata["gate"] != "pre-release" ||
+		check.Metadata["scope"] != "release" {
 		t.Fatalf("metadata = %+v, want sandbox exec metadata", check.Metadata)
 	}
+	assertExecStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"gate", "scope"})
+	assertExecStringSliceMetadata(t, check.Evidence[0].Metadata, "metadata_keys", []string{"gate", "scope"})
 	command, ok := check.Metadata["command"].([]string)
 	if !ok || !reflect.DeepEqual(command, []string{"go", "test", "./..."}) {
 		t.Fatalf("metadata command = %#v, want copied command args", check.Metadata["command"])
@@ -85,7 +89,9 @@ func TestRecordExecCheckPreservesCanonicalMetadata(t *testing.T) {
 			"request_metadata": map[string]any{"purpose": "forged"},
 			"stdout":           "forged stdout",
 			"duration_ms":      int64(999),
+			"metadata_keys":    []string{"forged"},
 			"gate":             "pre-release",
+			"scope":            "release",
 		},
 	})
 	if err != nil {
@@ -108,9 +114,10 @@ func TestRecordExecCheckPreservesCanonicalMetadata(t *testing.T) {
 	if !ok || requestMetadata["purpose"] != "verification" {
 		t.Fatalf("request metadata = %#v, want canonical request metadata", metadata["request_metadata"])
 	}
-	if metadata["gate"] != "pre-release" {
+	if metadata["gate"] != "pre-release" || metadata["scope"] != "release" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
+	assertExecStringSliceMetadata(t, metadata, "metadata_keys", []string{"gate", "scope"})
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["exit_code"] != 0 ||
@@ -127,8 +134,18 @@ func TestRecordExecCheckPreservesCanonicalMetadata(t *testing.T) {
 	if !ok || evidenceRequestMetadata["purpose"] != "verification" {
 		t.Fatalf("evidence request metadata = %#v, want canonical request metadata", evidenceMetadata["request_metadata"])
 	}
-	if evidenceMetadata["gate"] != "pre-release" {
+	if evidenceMetadata["gate"] != "pre-release" || evidenceMetadata["scope"] != "release" {
 		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
+	}
+	assertExecStringSliceMetadata(t, evidenceMetadata, "metadata_keys", []string{"gate", "scope"})
+}
+
+func assertExecStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+
+	got, ok := metadata[key].([]string)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, metadata[key], want)
 	}
 }
 

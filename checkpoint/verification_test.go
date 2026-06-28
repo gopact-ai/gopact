@@ -14,7 +14,10 @@ func TestRecordVerificationCheckRecordsPassedCheck(t *testing.T) {
 	createdAt := time.Date(2026, 6, 24, 10, 30, 0, 0, time.UTC)
 	queue := []string{"call_model", "call_tool"}
 	recordMetadata := map[string]any{"source": "memory"}
-	customMetadata := map[string]any{"mode": "write"}
+	customMetadata := map[string]any{
+		"mode":  "write",
+		"scope": "release",
+	}
 
 	if err := RecordVerificationCheck(recorder, VerificationSnapshot{
 		ID:   "checkpoint-check-1",
@@ -81,9 +84,12 @@ func TestRecordVerificationCheckRecordsPassedCheck(t *testing.T) {
 		check.Metadata["pending_interrupt_type"] != string(gopact.InterruptApproval) ||
 		check.Metadata["config_version"] != "cfg-1" ||
 		check.Metadata["created_at"] != createdAt.Format(time.RFC3339Nano) ||
-		check.Metadata["mode"] != "write" {
+		check.Metadata["mode"] != "write" ||
+		check.Metadata["scope"] != "release" {
 		t.Fatalf("metadata = %+v, want checkpoint and custom metadata", check.Metadata)
 	}
+	assertCheckpointStringSliceMetadata(t, check.Metadata, "metadata_keys", []string{"mode", "scope"})
+	assertCheckpointStringSliceMetadata(t, check.Evidence[0].Metadata, "metadata_keys", []string{"mode", "scope"})
 	gotQueue, ok := check.Metadata["queue"].([]string)
 	if !ok || !reflect.DeepEqual(gotQueue, []string{"call_model", "call_tool"}) {
 		t.Fatalf("metadata queue = %#v, want copied queue", check.Metadata["queue"])
@@ -142,7 +148,9 @@ func TestRecordVerificationCheckPreservesCanonicalMetadata(t *testing.T) {
 			"artifact_count":         999,
 			"config_version":         "forged-config",
 			"created_at":             "forged-created-at",
+			"metadata_keys":          []string{"forged"},
 			"mode":                   "write",
+			"scope":                  "release",
 		},
 	}); err != nil {
 		t.Fatalf("RecordVerificationCheck() error = %v", err)
@@ -171,9 +179,10 @@ func TestRecordVerificationCheckPreservesCanonicalMetadata(t *testing.T) {
 		metadata["created_at"] != createdAt.Format(time.RFC3339Nano) {
 		t.Fatalf("metadata = %+v, want canonical checkpoint fields preserved", metadata)
 	}
-	if metadata["mode"] != "write" {
+	if metadata["mode"] != "write" || metadata["scope"] != "release" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
+	assertCheckpointStringSliceMetadata(t, metadata, "metadata_keys", []string{"mode", "scope"})
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["ref"] != "thread-1:2:1" ||
@@ -197,8 +206,18 @@ func TestRecordVerificationCheckPreservesCanonicalMetadata(t *testing.T) {
 		evidenceMetadata["created_at"] != createdAt.Format(time.RFC3339Nano) {
 		t.Fatalf("evidence metadata = %+v, want canonical checkpoint fields preserved", evidenceMetadata)
 	}
-	if evidenceMetadata["mode"] != "write" {
+	if evidenceMetadata["mode"] != "write" || evidenceMetadata["scope"] != "release" {
 		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
+	}
+	assertCheckpointStringSliceMetadata(t, evidenceMetadata, "metadata_keys", []string{"mode", "scope"})
+}
+
+func assertCheckpointStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+
+	got, ok := metadata[key].([]string)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, metadata[key], want)
 	}
 }
 

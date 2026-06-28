@@ -3,6 +3,7 @@ package checkpoint
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/gopact-ai/gopact"
@@ -125,6 +126,9 @@ func verificationEvidenceSummary(status gopact.VerificationStatus, snapshot Veri
 
 func verificationCheckMetadata(snapshot VerificationSnapshot) map[string]any {
 	metadata := verificationBaseMetadata(snapshot)
+	if keys := sortedVerificationMetadataKeys(snapshot.Metadata); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeVerificationMetadata(metadata, snapshot.Metadata)
 	return metadata
 }
@@ -237,6 +241,21 @@ func mergeVerificationMetadata(metadata map[string]any, supplemental map[string]
 	}
 }
 
+func sortedVerificationMetadataKeys(supplemental map[string]any) []string {
+	if len(supplemental) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(supplemental))
+	for key := range supplemental {
+		if verificationReservedMetadataKey(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func verificationReservedMetadataKey(key string) bool {
 	switch key {
 	case "ref",
@@ -267,6 +286,7 @@ func verificationReservedMetadataKey(key string) bool {
 		"created_at",
 		"checkpoint_metadata",
 		"error",
+		"metadata_keys",
 		"skipped":
 		return true
 	default:
