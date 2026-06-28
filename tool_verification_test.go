@@ -2,6 +2,7 @@ package gopact
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -23,7 +24,7 @@ func TestRecordToolCallCheckRecordsObservedToolCall(t *testing.T) {
 		Events: []Event{
 			{Type: EventToolResult, IDs: RuntimeIDs{RunID: "run-1", CallID: "tool-call-1"}},
 		},
-		Metadata: map[string]any{"source": "unit"},
+		Metadata: map[string]any{"source": "unit", "visibility": "internal"},
 	}
 
 	if err := RecordToolCallCheck(recorder, ToolCallSnapshot{
@@ -60,8 +61,22 @@ func TestRecordToolCallCheckRecordsObservedToolCall(t *testing.T) {
 	if metadata["arguments"] != nil || metadata["result_content"] != nil || metadata["content"] != nil {
 		t.Fatalf("metadata leaked raw payload = %+v", metadata)
 	}
+	assertToolStringSliceMetadata(t, metadata, "result_metadata_keys", []string{"source", "visibility"})
+	assertToolStringSliceMetadata(
+		t,
+		check.Metadata,
+		"result_metadata_keys",
+		[]string{"source", "visibility"},
+	)
 	if check.Metadata["phase"] != "call_tool" {
 		t.Fatalf("check metadata = %+v, want custom metadata copied", check.Metadata)
+	}
+}
+
+func assertToolStringSliceMetadata(t *testing.T, metadata map[string]any, key string, want []string) {
+	t.Helper()
+	if got := metadata[key]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata[%q] = %#v, want %#v", key, got, want)
 	}
 }
 

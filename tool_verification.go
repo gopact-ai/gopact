@@ -156,6 +156,7 @@ func toolCallBaseMetadata(snapshot ToolCallSnapshot) map[string]any {
 	}
 	if len(snapshot.Result.Metadata) > 0 {
 		metadata["result_metadata"] = copyAnyMap(snapshot.Result.Metadata)
+		metadata["result_metadata_keys"] = sortedAnyMapKeys(snapshot.Result.Metadata)
 	}
 	if snapshot.Err != nil {
 		metadata["error"] = snapshot.Err.Error()
@@ -180,6 +181,7 @@ func toolCallReservedMetadataKey(key string) bool {
 		"tool_call_id",
 		"tool_name",
 		"result_metadata",
+		"result_metadata_keys",
 		"error",
 		"skipped":
 		return true
