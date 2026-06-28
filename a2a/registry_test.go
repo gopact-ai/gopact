@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gopact-ai/gopact"
+	"github.com/gopact-ai/gopact/gopacttest"
 )
 
 func TestRegistryRegisterCardAndSend(t *testing.T) {
@@ -146,6 +147,7 @@ func TestRegistryDiscoverCachesAgentCardAndEmitsEvent(t *testing.T) {
 	if len(result.Events) != 1 || result.Events[0].Type != gopact.EventA2AAgentCardFetched {
 		t.Fatalf("Discover() events = %+v, want card fetched event", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_agent_card_fetched.golden.json", result.Events)
 	if result.Events[0].Metadata["agent_name"] != "planner" ||
 		result.Events[0].Metadata["agent_url"] != "https://agents.example/planner" ||
 		result.Events[0].Metadata["source"] != "catalog" {

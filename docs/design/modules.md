@@ -879,7 +879,7 @@ type Server interface {
 - direct A2A tool adapter 已支持 send timeout，timeout 会通过 context 传入 remote `Send`，并返回 failed task event；
 - `a2a.Registry.Cancel` 和 `agenttool.A2ATool.Cancel` 已提供显式 task cancel 第一片；cancel 会走 `PolicyBoundaryA2A` / `PolicyActionCancel`，成功时产生 `a2a_task_canceled` 事件。
 - `a2a.StreamingAgent`、`TaskEvent` 和 `TaskStatus` 已提供 remote task stream 第一片；`a2a.Registry.Stream` 可转发 streaming agent 的状态、消息和 artifact 更新，`agenttool.A2ATool.Stream` 会先使用 `PolicyBoundaryA2A` / `PolicyActionStream` 授权，再把 message、artifact update、running/completed/failed/canceled 状态映射成 SDK event stream，并保留 parent/child call chain、status message、metadata 和 artifact refs。
-- `a2a.Discoverer`、`DiscoveryQuery` 和 `DiscoveryResult` 已提供 agent card discovery 第一片；`a2a.Registry.Discover` 会缓存 discovered card，返回 `a2a_agent_card_fetched` event evidence，`agenttool.WithCard` 可把 discovered card 用于 tool spec。
+- `a2a.Discoverer`、`DiscoveryQuery` 和 `DiscoveryResult` 已提供 agent card discovery 第一片；`a2a.Registry.Discover` 会缓存 discovered card，返回 `a2a_agent_card_fetched` event evidence，`agenttool.WithCard` 可把 discovered card 用于 tool spec；agent card discovery 已有单 event golden trajectory fixture 固定。
 - `a2a.Authenticator`、`AuthRequest` 和 `Auth` 已提供 auth context 第一片；`agenttool.WithAuth` 会在 policy/send/stream/cancel 前注入 sanitized auth 到 task/context，并把 scheme、principal、credential ref 写入审计 metadata。SDK 不读取配置文件、不持有 secret 原文。
 
 后续默认 adapter：
