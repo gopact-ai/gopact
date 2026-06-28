@@ -593,6 +593,7 @@ func TestRemoteA2AToolAuthSendFailureAttachesAuditMetadata(t *testing.T) {
 		result.Events[1].Type != gopact.EventA2ATaskFailed {
 		t.Fatalf("result events = %+v, want sent/failed events", result.Events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_auth_send_failure.golden.json", result.Events)
 	if result.Events[1].Metadata["auth_scheme"] != "bearer" ||
 		result.Events[1].Metadata["auth_principal"] != "svc-planner" ||
 		result.Events[1].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
@@ -800,6 +801,7 @@ func TestRemoteA2AToolAuthStreamUnsupportedAttachesAuditMetadata(t *testing.T) {
 		events[1].Type != gopact.EventA2ATaskFailed {
 		t.Fatalf("Stream() events = %+v, want sent/failed", events)
 	}
+	gopacttest.RequireGoldenTrajectoryFrames(t, "testdata/a2a_auth_stream_not_supported.golden.json", events)
 	if events[1].Metadata["auth_scheme"] != "bearer" ||
 		events[1].Metadata["auth_principal"] != "svc-planner" ||
 		events[1].Metadata["auth_credential_ref"] != "secret://a2a/planner" {
