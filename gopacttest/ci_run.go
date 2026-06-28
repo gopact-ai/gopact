@@ -325,6 +325,9 @@ func ciRunMetadata(run CIRun, passed, failed, skipped int) map[string]any {
 	if run.Conclusion != "" {
 		metadata["conclusion"] = run.Conclusion
 	}
+	if keys := sortedSupplementalMetadataKeys(run.Metadata, ciRunReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
+	}
 	mergeSupplementalMetadata(metadata, run.Metadata, ciRunReservedMetadataKey)
 	return metadata
 }
@@ -346,6 +349,9 @@ func ciRunSetMetadata(set CIRunSet, passedRuns, failedRuns, skippedRuns, passedG
 	}
 	if len(set.RequiredGates) > 0 {
 		metadata["required_gates"] = append([]string(nil), set.RequiredGates...)
+	}
+	if keys := sortedSupplementalMetadataKeys(set.Metadata, ciRunSetReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
 	}
 	mergeSupplementalMetadata(metadata, set.Metadata, ciRunSetReservedMetadataKey)
 	return metadata
@@ -376,6 +382,9 @@ func ciRunGateMetadata(run CIRun, gate CIRunGate) map[string]any {
 	}
 	if gate.Duration > 0 {
 		metadata["duration_ms"] = gate.Duration.Milliseconds()
+	}
+	if keys := sortedSupplementalMetadataKeys(gate.Metadata, ciRunGateReservedMetadataKey); len(keys) > 0 {
+		metadata["metadata_keys"] = keys
 	}
 	mergeSupplementalMetadata(metadata, gate.Metadata, ciRunGateReservedMetadataKey)
 	return metadata
@@ -438,7 +447,8 @@ func ciRunSetReservedMetadataKey(key string) bool {
 		"failed_gate_count",
 		"skipped_gate_count",
 		"required_repositories",
-		"required_gates":
+		"required_gates",
+		"metadata_keys":
 		return true
 	default:
 		return false
@@ -460,7 +470,8 @@ func ciRunReservedMetadataKey(key string) bool {
 		"head_sha",
 		"head_branch",
 		"status",
-		"conclusion":
+		"conclusion",
+		"metadata_keys":
 		return true
 	default:
 		return false
@@ -482,7 +493,8 @@ func ciRunGateReservedMetadataKey(key string) bool {
 		"step",
 		"started_at",
 		"completed_at",
-		"duration_ms":
+		"duration_ms",
+		"metadata_keys":
 		return true
 	default:
 		return false

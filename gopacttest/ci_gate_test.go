@@ -80,14 +80,19 @@ func TestRecordCIGateSuiteCheckPreservesCanonicalMetadata(t *testing.T) {
 					Command:  []string{"go", "test", "-count=1", "./..."},
 					ExitCode: 0,
 					Stdout:   "ok",
+					Metadata: map[string]any{
+						"attempt":       "first",
+						"metadata_keys": []string{"forged"},
+					},
 				},
 				Metadata: map[string]any{
-					"gate":      "forged-gate",
-					"status":    string(gopact.VerificationStatusFailed),
-					"command":   []string{"forged"},
-					"exit_code": 99,
-					"stdout":    "forged stdout",
-					"profile":   "release",
+					"gate":          "forged-gate",
+					"status":        string(gopact.VerificationStatusFailed),
+					"command":       []string{"forged"},
+					"exit_code":     99,
+					"stdout":        "forged stdout",
+					"metadata_keys": []string{"forged"},
+					"profile":       "release",
 				},
 			},
 		},
@@ -97,6 +102,7 @@ func TestRecordCIGateSuiteCheckPreservesCanonicalMetadata(t *testing.T) {
 			"failed_gate_count":  99,
 			"skipped_gate_count": 99,
 			"required_gates":     []string{"forged"},
+			"metadata_keys":      []string{"forged"},
 			"profile":            "release",
 		},
 	})
@@ -118,6 +124,9 @@ func TestRecordCIGateSuiteCheckPreservesCanonicalMetadata(t *testing.T) {
 	if check.Metadata["profile"] != "release" {
 		t.Fatalf("metadata = %+v, want supplemental suite metadata preserved", check.Metadata)
 	}
+	if got, want := check.Metadata["metadata_keys"], []string{"profile"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata metadata_keys = %#v, want %#v", got, want)
+	}
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["gate"] != "unit" ||
@@ -132,6 +141,9 @@ func TestRecordCIGateSuiteCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	if evidenceMetadata["profile"] != "release" {
 		t.Fatalf("evidence metadata = %+v, want supplemental gate metadata preserved", evidenceMetadata)
+	}
+	if got, want := evidenceMetadata["metadata_keys"], []string{"attempt", "profile"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence metadata metadata_keys = %#v, want %#v", got, want)
 	}
 }
 
@@ -341,7 +353,15 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 				Status:     "completed",
 				Conclusion: "success",
 				Gates: []CIRunGate{
-					{Gate: "test", Status: gopact.VerificationStatusPassed, Job: "test"},
+					{
+						Gate:   "test",
+						Status: gopact.VerificationStatusPassed,
+						Job:    "test",
+						Metadata: map[string]any{
+							"provider_result": "observed",
+							"metadata_keys":   []string{"forged"},
+						},
+					},
 					{Gate: "vet", Status: gopact.VerificationStatusPassed, Job: "test"},
 				},
 			},
@@ -358,7 +378,10 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 				},
 			},
 		},
-		Metadata: map[string]any{"scope": "m6-external-ci"},
+		Metadata: map[string]any{
+			"scope":         "m6-external-ci",
+			"metadata_keys": []string{"forged"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("RecordCIRunSetCheck() error = %v", err)
@@ -387,6 +410,9 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 		check.Metadata["scope"] != "m6-external-ci" {
 		t.Fatalf("metadata = %+v, want external CI run set counts", check.Metadata)
 	}
+	if got, want := check.Metadata["metadata_keys"], []string{"scope"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata metadata_keys = %#v, want %#v", got, want)
+	}
 	if got, ok := check.Metadata["required_repositories"].([]string); !ok ||
 		!reflect.DeepEqual(got, []string{"gopact-ai/gopact-adapters-model", "gopact-ai/gopact-adapters-channel"}) {
 		t.Fatalf("required repositories = %#v, want copied required repositories", check.Metadata["required_repositories"])
@@ -401,8 +427,12 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 		evidence.Metadata["gate"] != "test" ||
 		evidence.Metadata["repository"] != "gopact-ai/gopact-adapters-model" ||
 		evidence.Metadata["run_id"] != "1001" ||
-		evidence.Metadata["status"] != string(gopact.VerificationStatusPassed) {
+		evidence.Metadata["status"] != string(gopact.VerificationStatusPassed) ||
+		evidence.Metadata["provider_result"] != "observed" {
 		t.Fatalf("first evidence = %+v, want repository-qualified CI gate evidence", evidence)
+	}
+	if got, want := evidence.Metadata["metadata_keys"], []string{"provider_result"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence metadata metadata_keys = %#v, want %#v", got, want)
 	}
 
 	report, err := gopact.BuildVerificationReport(
@@ -549,14 +579,15 @@ func TestRecordCIRunCheckPreservesCanonicalMetadata(t *testing.T) {
 				Status: gopact.VerificationStatusPassed,
 				Job:    "test",
 				Metadata: map[string]any{
-					"gate":        "forged",
-					"status":      string(gopact.VerificationStatusFailed),
-					"ci_provider": "forged-provider",
-					"repository":  "forged/repo",
-					"workflow":    "forged-workflow",
-					"run_id":      "forged-run",
-					"job":         "forged-job",
-					"profile":     "release",
+					"gate":          "forged",
+					"status":        string(gopact.VerificationStatusFailed),
+					"ci_provider":   "forged-provider",
+					"repository":    "forged/repo",
+					"workflow":      "forged-workflow",
+					"run_id":        "forged-run",
+					"job":           "forged-job",
+					"metadata_keys": []string{"forged"},
+					"profile":       "release",
 				},
 			},
 		},
@@ -570,6 +601,7 @@ func TestRecordCIRunCheckPreservesCanonicalMetadata(t *testing.T) {
 			"repository":         "forged/repo",
 			"workflow":           "forged-workflow",
 			"run_id":             "forged-run",
+			"metadata_keys":      []string{"forged"},
 			"profile":            "release",
 		},
 	})
@@ -593,6 +625,9 @@ func TestRecordCIRunCheckPreservesCanonicalMetadata(t *testing.T) {
 	if !ok || !reflect.DeepEqual(required, []string{"test"}) {
 		t.Fatalf("required gates = %#v, want canonical required gates", check.Metadata["required_gates"])
 	}
+	if got, want := check.Metadata["metadata_keys"], []string{"profile"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata metadata_keys = %#v, want %#v", got, want)
+	}
 
 	evidenceMetadata := check.Evidence[0].Metadata
 	if evidenceMetadata["gate"] != "test" ||
@@ -604,6 +639,9 @@ func TestRecordCIRunCheckPreservesCanonicalMetadata(t *testing.T) {
 		evidenceMetadata["job"] != "test" ||
 		evidenceMetadata["profile"] != "release" {
 		t.Fatalf("evidence metadata = %+v, want canonical CI gate metadata preserved", evidenceMetadata)
+	}
+	if got, want := evidenceMetadata["metadata_keys"], []string{"profile"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence metadata metadata_keys = %#v, want %#v", got, want)
 	}
 }
 

@@ -28,3 +28,25 @@ func sortedSupplementalMetadataKeys(supplemental map[string]any, reserved func(s
 	sort.Strings(keys)
 	return keys
 }
+
+func sortedMergedSupplementalMetadataKeys(reserved func(string) bool, supplementals ...map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, supplemental := range supplementals {
+		for key := range supplemental {
+			if reserved != nil && reserved(key) {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
