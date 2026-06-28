@@ -101,6 +101,9 @@ func releaseBundleBaseMetadata(bundle ReleaseBundle) map[string]any {
 	if releaseGateInputID := releaseGateProcessInputID(bundle.Process.Inputs); releaseGateInputID != "" {
 		metadata["release_gate_input_id"] = releaseGateInputID
 	}
+	if resumeInputID := workflowResumeInputID(bundle.Process.Inputs); resumeInputID != "" {
+		metadata["resume_input_id"] = resumeInputID
+	}
 	if reviewInterventionID := reviewProcessInterventionID(bundle.Process.Interventions); reviewInterventionID != "" {
 		metadata["review_intervention_id"] = reviewInterventionID
 	}
@@ -149,6 +152,7 @@ func releaseBundleReservedMetadataKey(key string) bool {
 		"max_entropy_severity",
 		"process_task_id",
 		"release_gate_input_id",
+		"resume_input_id",
 		"review_intervention_id",
 		"review_prompt_id",
 		"review_prompt_version",
