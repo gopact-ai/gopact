@@ -422,6 +422,12 @@ func TestRecordRunEffectReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 			"result_effect_ids": []string{
 				"forged-result",
 			},
+			"planned_step_ids": []string{
+				"forged-step",
+			},
+			"result_step_ids": []string{
+				"forged-result-step",
+			},
 			"source": "resume",
 		},
 	})
@@ -443,6 +449,8 @@ func TestRecordRunEffectReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	assertStringSliceMetadata(t, metadata, "planned_effect_ids", []string{"tool-1", "verify-1"})
 	assertStringSliceMetadata(t, metadata, "result_effect_ids", []string{"tool-1", "verify-1"})
+	assertStringSliceMetadata(t, metadata, "planned_step_ids", []string{"step-1", "step-2"})
+	assertStringSliceMetadata(t, metadata, "result_step_ids", []string{"step-1", "step-2"})
 	if metadata["source"] != "resume" {
 		t.Fatalf("metadata = %+v, want supplemental metadata preserved", metadata)
 	}
@@ -460,6 +468,8 @@ func TestRecordRunEffectReplayCheckPreservesCanonicalMetadata(t *testing.T) {
 	}
 	assertStringSliceMetadata(t, evidenceMetadata, "planned_effect_ids", []string{"tool-1", "verify-1"})
 	assertStringSliceMetadata(t, evidenceMetadata, "result_effect_ids", []string{"tool-1", "verify-1"})
+	assertStringSliceMetadata(t, evidenceMetadata, "planned_step_ids", []string{"step-1", "step-2"})
+	assertStringSliceMetadata(t, evidenceMetadata, "result_step_ids", []string{"step-1", "step-2"})
 	if evidenceMetadata["source"] != "resume" {
 		t.Fatalf("evidence metadata = %+v, want supplemental metadata preserved", evidenceMetadata)
 	}
