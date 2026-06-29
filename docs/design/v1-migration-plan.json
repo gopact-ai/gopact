@@ -356,6 +356,8 @@
       "extension_target": "gopact-adapters-lease-http",
       "external_repository": "gopact-adapters-lease",
       "external_module": "github.com/gopact-ai/gopact-adapters-lease",
+      "external_source_ref": "gopact-ai/gopact-adapters-lease@265e1e90a4e5d637f4a0d55087b0cd219219827d:httpstore",
+      "core_source_removed": true,
       "v1_condition": "The HTTP lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
@@ -369,6 +371,8 @@
       "extension_target": "gopact-adapters-lease-redis",
       "external_repository": "gopact-adapters-lease",
       "external_module": "github.com/gopact-ai/gopact-adapters-lease",
+      "external_source_ref": "gopact-ai/gopact-adapters-lease@265e1e90a4e5d637f4a0d55087b0cd219219827d:redisstore",
+      "core_source_removed": true,
       "v1_condition": "The Redis lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
@@ -382,6 +386,8 @@
       "extension_target": "gopact-adapters-lease-sql",
       "external_repository": "gopact-adapters-lease",
       "external_module": "github.com/gopact-ai/gopact-adapters-lease",
+      "external_source_ref": "gopact-ai/gopact-adapters-lease@265e1e90a4e5d637f4a0d55087b0cd219219827d:sqlstore",
+      "core_source_removed": true,
       "v1_condition": "The database/sql lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
