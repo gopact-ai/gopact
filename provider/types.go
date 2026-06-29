@@ -26,8 +26,8 @@ const (
 type Provider interface {
 	Name() string
 	Models(ctx context.Context) ([]ModelInfo, error)
-	Generate(ctx context.Context, req gopact.ModelRequest) (gopact.ModelResponse, error)
-	Stream(ctx context.Context, req gopact.ModelRequest) iter.Seq2[gopact.Event, error]
+	Generate(ctx context.Context, req gopact.ModelRequest, opts ...gopact.ModelOption) (gopact.ModelResponse, error)
+	Stream(ctx context.Context, req gopact.ModelRequest, opts ...gopact.ModelOption) iter.Seq2[gopact.Event, error]
 }
 
 // Info describes a registered provider.

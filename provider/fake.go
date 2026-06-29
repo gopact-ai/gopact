@@ -48,10 +48,11 @@ func (f *Fake) Models(ctx context.Context) ([]ModelInfo, error) {
 }
 
 // Generate records req and returns the configured fake response.
-func (f *Fake) Generate(ctx context.Context, req gopact.ModelRequest) (gopact.ModelResponse, error) {
+func (f *Fake) Generate(ctx context.Context, req gopact.ModelRequest, opts ...gopact.ModelOption) (gopact.ModelResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return gopact.ModelResponse{}, err
 	}
+	req = gopact.ApplyModelOptions(req, opts...)
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
 	f.mu.Unlock()
@@ -66,8 +67,9 @@ func (f *Fake) Generate(ctx context.Context, req gopact.ModelRequest) (gopact.Mo
 }
 
 // Stream emits the generated fake response as model events.
-func (f *Fake) Stream(ctx context.Context, req gopact.ModelRequest) iter.Seq2[gopact.Event, error] {
+func (f *Fake) Stream(ctx context.Context, req gopact.ModelRequest, opts ...gopact.ModelOption) iter.Seq2[gopact.Event, error] {
 	return func(yield func(gopact.Event, error) bool) {
+		req = gopact.ApplyModelOptions(req, opts...)
 		response, err := f.Generate(ctx, req)
 		if err != nil {
 			yield(gopact.Event{Type: gopact.EventModelProviderAttemptFailed, IDs: req.IDs, Err: err}, err)
