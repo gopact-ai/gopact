@@ -221,6 +221,8 @@
       "extension_target": "gopact-adapters-checkpoint-oss",
       "external_repository": "gopact-adapters-checkpoint",
       "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@b658c4e52f0354b56eec87450a73a00b0f22e8f1:ossstore",
+      "core_source_removed": true,
       "v1_condition": "The OSS checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",

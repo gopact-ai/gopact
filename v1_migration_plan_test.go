@@ -273,6 +273,7 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/checkpoint/sqlstore",
 		"adapters/checkpoint/redisstore",
 		"adapters/checkpoint/gcsstore",
+		"adapters/checkpoint/ossstore",
 		"adapters/checkpoint/r2store",
 		"adapters/checkpoint/s3store",
 	} {
