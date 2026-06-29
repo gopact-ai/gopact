@@ -8,17 +8,17 @@ import (
 
 // ChatModel 是 agent 对模型 provider 的最小依赖契约。
 type ChatModel interface {
-	Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (Message, error)
+	Generate(ctx context.Context, request ModelRequest) (Message, error)
 }
 
 // ResponseModel returns a full model response with route, usage, and middleware events.
 type ResponseModel interface {
-	Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (ModelResponse, error)
+	Generate(ctx context.Context, request ModelRequest) (ModelResponse, error)
 }
 
 // StreamingModel streams model invocation events, including route and fallback attempts.
 type StreamingModel interface {
-	Stream(ctx context.Context, request ModelRequest, opts ...ModelOption) iter.Seq2[Event, error]
+	Stream(ctx context.Context, request ModelRequest) iter.Seq2[Event, error]
 }
 
 // StreamingResponseModel is the adapter input for models that expose both response and stream APIs.
@@ -43,11 +43,11 @@ type responseModelAdapter struct {
 	model ResponseModel
 }
 
-func (a responseModelAdapter) Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (Message, error) {
+func (a responseModelAdapter) Generate(ctx context.Context, request ModelRequest) (Message, error) {
 	if a.model == nil {
 		return Message{}, errNilResponseModel
 	}
-	response, err := a.model.Generate(ctx, request, opts...)
+	response, err := a.model.Generate(ctx, request)
 	if err != nil {
 		return Message{}, err
 	}
@@ -58,25 +58,25 @@ type streamingModelAdapter struct {
 	model StreamingResponseModel
 }
 
-func (a streamingModelAdapter) Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (Message, error) {
+func (a streamingModelAdapter) Generate(ctx context.Context, request ModelRequest) (Message, error) {
 	if a.model == nil {
 		return Message{}, errNilResponseModel
 	}
-	response, err := a.model.Generate(ctx, request, opts...)
+	response, err := a.model.Generate(ctx, request)
 	if err != nil {
 		return Message{}, err
 	}
 	return response.Message, nil
 }
 
-func (a streamingModelAdapter) Stream(ctx context.Context, request ModelRequest, opts ...ModelOption) iter.Seq2[Event, error] {
+func (a streamingModelAdapter) Stream(ctx context.Context, request ModelRequest) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
 		if a.model == nil {
 			err := errNilResponseModel
 			yield(Event{Type: EventModelProviderAttemptFailed, IDs: request.IDs, Err: err, CreatedAt: now()}, err)
 			return
 		}
-		for event, err := range a.model.Stream(ctx, request, opts...) {
+		for event, err := range a.model.Stream(ctx, request) {
 			if !yield(event, err) {
 				return
 			}
@@ -101,70 +101,128 @@ type ModelRequest struct {
 	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
-// ModelOption overrides one model call without mutating the caller's ModelRequest.
-type ModelOption interface {
-	ApplyModelOption(*ModelRequest)
+// ModelRequestOption configures a ModelRequest without exposing provider-specific request shapes.
+type ModelRequestOption interface {
+	ApplyModelRequestOption(*ModelRequest)
 }
 
-// ModelOptionFunc adapts a function into a ModelOption.
-type ModelOptionFunc func(*ModelRequest)
+// ModelRequestOptionFunc adapts a function into a ModelRequestOption.
+type ModelRequestOptionFunc func(*ModelRequest)
 
-func (f ModelOptionFunc) ApplyModelOption(request *ModelRequest) {
+func (f ModelRequestOptionFunc) ApplyModelRequestOption(request *ModelRequest) {
 	if f != nil {
 		f(request)
 	}
 }
 
-// ApplyModelOptions applies model call options to a shallow-safe request copy.
-func ApplyModelOptions(request ModelRequest, opts ...ModelOption) ModelRequest {
-	request.Capabilities = append([]Capability(nil), request.Capabilities...)
-	request.Metadata = copyAnyMap(request.Metadata)
+// NewModelRequest creates a provider-neutral model request from request options.
+func NewModelRequest(opts ...ModelRequestOption) ModelRequest {
+	return ApplyModelRequestOptions(ModelRequest{}, opts...)
+}
+
+// ApplyModelRequestOptions applies request options to a mutable-safe request copy.
+func ApplyModelRequestOptions(request ModelRequest, opts ...ModelRequestOption) ModelRequest {
+	request = copyModelRequest(request)
 	for _, opt := range opts {
 		if opt != nil {
-			opt.ApplyModelOption(&request)
+			opt.ApplyModelRequestOption(&request)
 		}
 	}
 	return request
 }
 
-func WithModel(model string) ModelOption {
-	return ModelOptionFunc(func(request *ModelRequest) {
+func WithMessages(messages ...Message) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.Messages = copyMessages(messages)
+	})
+}
+
+func WithTools(tools ...ToolSpec) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.Tools = copyToolSpecs(tools)
+	})
+}
+
+func WithModelRequestIDs(ids RuntimeIDs) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.IDs = ids
+	})
+}
+
+func WithModel(model string) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		request.Model = model
 	})
 }
 
-func WithMaxOutputTokens(tokens int) ModelOption {
-	return ModelOptionFunc(func(request *ModelRequest) {
+func WithResponseSchema(schema JSONSchema) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.ResponseSchema = copyJSONSchema(schema)
+	})
+}
+
+func WithRouteHint(route string) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.RouteHint = route
+	})
+}
+
+func WithBudget(budget Budget) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.Budget = budget
+	})
+}
+
+func WithMaxInputTokens(tokens int) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.Budget.MaxInputTokens = tokens
+	})
+}
+
+func WithMaxOutputTokens(tokens int) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		request.Budget.MaxOutputTokens = tokens
 	})
 }
 
-func WithTemperature(temperature float64) ModelOption {
-	return ModelOptionFunc(func(request *ModelRequest) {
+func WithMaxCostUSD(cost float64) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.Budget.MaxCostUSD = cost
+	})
+}
+
+func WithTemperature(temperature float64) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		request.Temperature = &temperature
 	})
 }
 
-func WithTopP(topP float64) ModelOption {
-	return ModelOptionFunc(func(request *ModelRequest) {
+func WithTopP(topP float64) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		request.TopP = &topP
 	})
 }
 
-func WithThinkingType(thinkingType string) ModelOption {
-	return ModelOptionFunc(func(request *ModelRequest) {
+func WithThinkingType(thinkingType string) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		request.ThinkingType = thinkingType
 	})
 }
 
-func WithReasoningEffort(effort string) ModelOption {
-	return ModelOptionFunc(func(request *ModelRequest) {
+func WithReasoningEffort(effort string) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		request.ReasoningEffort = effort
 	})
 }
 
-func EnableCapability(capability Capability) ModelOption {
-	return ModelOptionFunc(func(request *ModelRequest) {
+func WithCapabilities(capabilities ...Capability) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.Capabilities = append([]Capability(nil), capabilities...)
+	})
+}
+
+func EnableCapability(capability Capability) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		for _, existing := range request.Capabilities {
 			if existing == capability {
 				return
@@ -174,28 +232,34 @@ func EnableCapability(capability Capability) ModelOption {
 	})
 }
 
-func EnableStreaming() ModelOption {
+func EnableStreaming() ModelRequestOption {
 	return EnableCapability(CapabilityStreaming)
 }
 
-func EnableToolCalling() ModelOption {
+func EnableToolCalling() ModelRequestOption {
 	return EnableCapability(CapabilityToolCalling)
 }
 
-func EnableJSONSchema() ModelOption {
+func EnableJSONSchema() ModelRequestOption {
 	return EnableCapability(CapabilityJSONSchema)
 }
 
-func EnableVision() ModelOption {
+func EnableVision() ModelRequestOption {
 	return EnableCapability(CapabilityVision)
 }
 
-func EnableReasoning() ModelOption {
+func EnableReasoning() ModelRequestOption {
 	return EnableCapability(CapabilityReasoning)
 }
 
-func EnableStructuredOutput() ModelOption {
+func EnableStructuredOutput() ModelRequestOption {
 	return EnableCapability(CapabilityStructuredOutput)
+}
+
+func WithMetadata(metadata map[string]any) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.Metadata = copyAnyMap(metadata)
+	})
 }
 
 // Capability describes a hard capability a model request or route candidate must support.

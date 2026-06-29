@@ -14,9 +14,12 @@ func TestAdaptResponseModelReturnsChatMessage(t *testing.T) {
 	}
 	chat := AdaptResponseModel(model)
 
-	message, err := chat.Generate(context.Background(), ModelRequest{
-		Messages: []Message{{Role: RoleUser, Content: "hi"}},
-	}, WithModel("default-model"), WithMaxOutputTokens(7))
+	request := NewModelRequest(
+		WithMessages(Message{Role: RoleUser, Content: "hi"}),
+		WithModel("default-model"),
+		WithMaxOutputTokens(7),
+	)
+	message, err := chat.Generate(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -47,7 +50,8 @@ func TestAdaptStreamingModelPreservesStream(t *testing.T) {
 	}
 
 	var got []Event
-	for event, err := range streamer.Stream(context.Background(), ModelRequest{}, WithModel("stream-model"), EnableStreaming()) {
+	request := NewModelRequest(WithModel("stream-model"), EnableStreaming())
+	for event, err := range streamer.Stream(context.Background(), request) {
 		if err != nil {
 			t.Fatalf("Stream() error = %v", err)
 		}
@@ -72,6 +76,60 @@ func TestAdaptStreamingModelPreservesStream(t *testing.T) {
 	}
 }
 
+func TestNewModelRequestAppliesOptionsWithoutAliasingMutableFields(t *testing.T) {
+	metadata := map[string]any{"trace": "original"}
+	messages := []Message{{
+		Role:  RoleUser,
+		Parts: []ContentPart{TextPart("hi")},
+	}}
+	tools := []ToolSpec{{
+		Name:        "lookup",
+		InputSchema: JSONSchema{"type": "object"},
+	}}
+
+	request := NewModelRequest(
+		WithMessages(messages...),
+		WithTools(tools...),
+		WithModelRequestIDs(RuntimeIDs{RunID: "run-1"}),
+		WithModel("default-model"),
+		WithResponseSchema(JSONSchema{"type": "object"}),
+		WithRouteHint("fast"),
+		WithMaxInputTokens(10),
+		WithMaxOutputTokens(7),
+		WithMaxCostUSD(0.01),
+		WithTemperature(0.2),
+		WithTopP(0.9),
+		WithThinkingType("enabled"),
+		WithReasoningEffort("high"),
+		EnableToolCalling(),
+		EnableToolCalling(),
+		WithMetadata(metadata),
+	)
+
+	messages[0].Parts[0].Text = "changed"
+	tools[0].InputSchema["type"] = "changed"
+	metadata["trace"] = "changed"
+
+	if request.Model != "default-model" || request.IDs.RunID != "run-1" || request.RouteHint != "fast" {
+		t.Fatalf("request identity = %+v, want model/id/route", request)
+	}
+	if request.Messages[0].Text() != "hi" || request.Tools[0].InputSchema["type"] != "object" || request.Metadata["trace"] != "original" {
+		t.Fatalf("request aliases mutable input: %+v", request)
+	}
+	if request.Budget.MaxInputTokens != 10 || request.Budget.MaxOutputTokens != 7 || request.Budget.MaxCostUSD != 0.01 {
+		t.Fatalf("budget = %+v, want configured limits", request.Budget)
+	}
+	if request.Temperature == nil || *request.Temperature != 0.2 || request.TopP == nil || *request.TopP != 0.9 {
+		t.Fatalf("sampling = temperature %#v top_p %#v, want 0.2/0.9", request.Temperature, request.TopP)
+	}
+	if request.ThinkingType != "enabled" || request.ReasoningEffort != "high" {
+		t.Fatalf("reasoning = %q/%q, want enabled/high", request.ThinkingType, request.ReasoningEffort)
+	}
+	if len(request.Capabilities) != 1 || request.Capabilities[0] != CapabilityToolCalling {
+		t.Fatalf("capabilities = %+v, want one tool calling capability", request.Capabilities)
+	}
+}
+
 type responseModelStub struct {
 	response ModelResponse
 	err      error
@@ -79,11 +137,10 @@ type responseModelStub struct {
 	requests []ModelRequest
 }
 
-func (s *responseModelStub) Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (ModelResponse, error) {
+func (s *responseModelStub) Generate(ctx context.Context, request ModelRequest) (ModelResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return ModelResponse{}, err
 	}
-	request = ApplyModelOptions(request, opts...)
 	s.requests = append(s.requests, request)
 	if s.err != nil {
 		return ModelResponse{}, s.err
@@ -91,9 +148,8 @@ func (s *responseModelStub) Generate(ctx context.Context, request ModelRequest, 
 	return s.response, nil
 }
 
-func (s *responseModelStub) Stream(ctx context.Context, request ModelRequest, opts ...ModelOption) iter.Seq2[Event, error] {
+func (s *responseModelStub) Stream(ctx context.Context, request ModelRequest) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
-		request = ApplyModelOptions(request, opts...)
 		s.requests = append(s.requests, request)
 		if err := ctx.Err(); err != nil {
 			yield(Event{Type: EventModelProviderAttemptFailed, IDs: request.IDs, Err: err}, err)

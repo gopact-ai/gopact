@@ -1128,6 +1128,10 @@
           "kind": "func"
         },
         {
+          "name": "ApplyModelRequestOptions",
+          "kind": "func"
+        },
+        {
           "name": "Budget",
           "kind": "type"
         },
@@ -1164,7 +1168,43 @@
           "kind": "type"
         },
         {
+          "name": "EnableCapability",
+          "kind": "func"
+        },
+        {
+          "name": "EnableJSONSchema",
+          "kind": "func"
+        },
+        {
+          "name": "EnableReasoning",
+          "kind": "func"
+        },
+        {
+          "name": "EnableStreaming",
+          "kind": "func"
+        },
+        {
+          "name": "EnableStructuredOutput",
+          "kind": "func"
+        },
+        {
+          "name": "EnableToolCalling",
+          "kind": "func"
+        },
+        {
+          "name": "EnableVision",
+          "kind": "func"
+        },
+        {
           "name": "ModelRequest",
+          "kind": "type"
+        },
+        {
+          "name": "ModelRequestOption",
+          "kind": "type"
+        },
+        {
+          "name": "ModelRequestOptionFunc",
           "kind": "type"
         },
         {
@@ -1174,6 +1214,10 @@
         {
           "name": "ModelRoute",
           "kind": "type"
+        },
+        {
+          "name": "NewModelRequest",
+          "kind": "func"
         },
         {
           "name": "ResponseModel",
@@ -1190,6 +1234,70 @@
         {
           "name": "Usage",
           "kind": "type"
+        },
+        {
+          "name": "WithBudget",
+          "kind": "func"
+        },
+        {
+          "name": "WithCapabilities",
+          "kind": "func"
+        },
+        {
+          "name": "WithMaxCostUSD",
+          "kind": "func"
+        },
+        {
+          "name": "WithMaxInputTokens",
+          "kind": "func"
+        },
+        {
+          "name": "WithMaxOutputTokens",
+          "kind": "func"
+        },
+        {
+          "name": "WithMessages",
+          "kind": "func"
+        },
+        {
+          "name": "WithMetadata",
+          "kind": "func"
+        },
+        {
+          "name": "WithModel",
+          "kind": "func"
+        },
+        {
+          "name": "WithModelRequestIDs",
+          "kind": "func"
+        },
+        {
+          "name": "WithReasoningEffort",
+          "kind": "func"
+        },
+        {
+          "name": "WithResponseSchema",
+          "kind": "func"
+        },
+        {
+          "name": "WithRouteHint",
+          "kind": "func"
+        },
+        {
+          "name": "WithTemperature",
+          "kind": "func"
+        },
+        {
+          "name": "WithThinkingType",
+          "kind": "func"
+        },
+        {
+          "name": "WithTools",
+          "kind": "func"
+        },
+        {
+          "name": "WithTopP",
+          "kind": "func"
         }
       ]
     },

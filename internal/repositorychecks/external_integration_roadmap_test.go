@@ -1,8 +1,7 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -217,10 +216,7 @@ type externalIntegrationRoadmapEntry struct {
 func loadExternalIntegrationRoadmap(t *testing.T) externalIntegrationRoadmap {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "external-integration-roadmap.json"))
-	if err != nil {
-		t.Fatalf("read external integration roadmap: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "external-integration-roadmap.json"))
 	var roadmap externalIntegrationRoadmap
 	if err := json.Unmarshal(raw, &roadmap); err != nil {
 		t.Fatalf("decode external integration roadmap: %v", err)

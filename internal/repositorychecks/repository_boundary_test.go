@@ -1,4 +1,4 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
@@ -89,10 +89,7 @@ var repositoryBoundaryDispositions = map[string]struct{}{
 func loadRepositoryBoundaryManifest(t *testing.T) repositoryBoundaryManifest {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "repository-boundary.json"))
-	if err != nil {
-		t.Fatalf("read repository boundary manifest: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "repository-boundary.json"))
 	var manifest repositoryBoundaryManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode repository boundary manifest: %v", err)
@@ -124,7 +121,8 @@ func repositoryBoundaryPackageDirs(t *testing.T, root string) []string {
 	t.Helper()
 
 	seen := map[string]struct{}{}
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+	base := repoRoot(t)
+	err := filepath.WalkDir(repoPath(t, root), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -143,7 +141,11 @@ func repositoryBoundaryPackageDirs(t *testing.T, root string) []string {
 			if strings.HasSuffix(goFile, "_test.go") {
 				continue
 			}
-			seen[filepath.ToSlash(path)] = struct{}{}
+			rel, err := filepath.Rel(base, path)
+			if err != nil {
+				return err
+			}
+			seen[filepath.ToSlash(rel)] = struct{}{}
 			break
 		}
 		return nil
@@ -163,7 +165,7 @@ func repositoryBoundaryPackageDirs(t *testing.T, root string) []string {
 func packageImports(t *testing.T, dir string) []string {
 	t.Helper()
 
-	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	files, err := filepath.Glob(filepath.Join(repoPath(t, dir), "*.go"))
 	if err != nil {
 		t.Fatalf("glob go files for %q: %v", dir, err)
 	}

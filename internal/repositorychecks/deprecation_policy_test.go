@@ -1,7 +1,6 @@
-package gopact
+package repositorychecks
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,14 +51,4 @@ func TestDeprecationPolicyCoversPublicAPIStabilityStates(t *testing.T) {
 			t.Fatalf("deprecation policy does not describe public API stability %q", stability)
 		}
 	}
-}
-
-func readTextFile(t *testing.T, path string) string {
-	t.Helper()
-
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return string(raw)
 }

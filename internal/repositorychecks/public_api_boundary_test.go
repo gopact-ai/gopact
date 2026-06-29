@@ -1,4 +1,4 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
@@ -166,10 +166,7 @@ type rootExportedMethod struct {
 func loadPublicAPIBoundaryManifest(t *testing.T) publicAPIBoundaryManifest {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "public-api-boundary.json"))
-	if err != nil {
-		t.Fatalf("read public api boundary manifest: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "public-api-boundary.json"))
 	var manifest publicAPIBoundaryManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode public api boundary manifest: %v", err)
@@ -186,7 +183,7 @@ func loadPublicAPIBoundaryManifest(t *testing.T) publicAPIBoundaryManifest {
 func rootTopLevelExports(t *testing.T) map[string]rootExportSymbol {
 	t.Helper()
 
-	files, err := os.ReadDir(".")
+	files, err := os.ReadDir(repoRoot(t))
 	if err != nil {
 		t.Fatalf("read root package files: %v", err)
 	}
@@ -197,7 +194,7 @@ func rootTopLevelExports(t *testing.T) map[string]rootExportSymbol {
 		if file.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		parsed, err := parser.ParseFile(fset, name, nil, 0)
+		parsed, err := parser.ParseFile(fset, repoPath(t, name), nil, 0)
 		if err != nil {
 			t.Fatalf("parse root package file %q: %v", name, err)
 		}
@@ -247,7 +244,7 @@ func rootTopLevelExports(t *testing.T) map[string]rootExportSymbol {
 func rootExportedMethods(t *testing.T) []rootExportedMethod {
 	t.Helper()
 
-	files, err := os.ReadDir(".")
+	files, err := os.ReadDir(repoRoot(t))
 	if err != nil {
 		t.Fatalf("read root package files: %v", err)
 	}
@@ -258,7 +255,7 @@ func rootExportedMethods(t *testing.T) []rootExportedMethod {
 		if file.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		parsed, err := parser.ParseFile(fset, name, nil, 0)
+		parsed, err := parser.ParseFile(fset, repoPath(t, name), nil, 0)
 		if err != nil {
 			t.Fatalf("parse root package file %q: %v", name, err)
 		}

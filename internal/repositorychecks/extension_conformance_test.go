@@ -1,8 +1,7 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -193,10 +192,7 @@ type movedRepositoryBoundaryTarget struct {
 func loadExtensionConformanceManifest(t *testing.T) extensionConformanceManifest {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "extension-conformance.json"))
-	if err != nil {
-		t.Fatalf("read extension conformance manifest: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "extension-conformance.json"))
 	var manifest extensionConformanceManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode extension conformance manifest: %v", err)
@@ -210,11 +206,7 @@ func loadExtensionConformanceManifest(t *testing.T) extensionConformanceManifest
 func readExtensionConformanceFile(t *testing.T, path string) string {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		t.Fatalf("read extension conformance file %q: %v", path, err)
-	}
-	return string(raw)
+	return readTextFile(t, filepath.Clean(path))
 }
 
 func movedRepositoryBoundaryTargets(manifest repositoryBoundaryManifest) []movedRepositoryBoundaryTarget {

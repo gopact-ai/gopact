@@ -1,4 +1,4 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
@@ -149,7 +149,7 @@ func TestExtensionScaffoldSpecCoversExternalRepositories(t *testing.T) {
 			t.Fatalf("extension scaffold file template %q must define template_path or content_rules", file.Path)
 		}
 		if file.TemplatePath != "" {
-			if _, err := os.Stat(filepath.Clean(file.TemplatePath)); err != nil {
+			if _, err := os.Stat(repoPath(t, filepath.Clean(file.TemplatePath))); err != nil {
 				t.Fatalf("extension scaffold file template %q template_path %q: %v", file.Path, file.TemplatePath, err)
 			}
 		}
@@ -318,10 +318,7 @@ type extensionScaffoldTarget struct {
 func loadExternalRepositoryManifest(t *testing.T) externalRepositoryManifest {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "external-repositories.json"))
-	if err != nil {
-		t.Fatalf("read external repositories manifest: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "external-repositories.json"))
 	var manifest externalRepositoryManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode external repositories manifest: %v", err)
@@ -335,10 +332,7 @@ func loadExternalRepositoryManifest(t *testing.T) externalRepositoryManifest {
 func loadExtensionScaffoldSpec(t *testing.T) extensionScaffoldSpec {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "extension-scaffold-spec.json"))
-	if err != nil {
-		t.Fatalf("read extension scaffold spec: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "extension-scaffold-spec.json"))
 	var spec extensionScaffoldSpec
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		t.Fatalf("decode extension scaffold spec: %v", err)

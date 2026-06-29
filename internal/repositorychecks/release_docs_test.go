@@ -1,7 +1,6 @@
-package gopact
+package repositorychecks
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -69,6 +68,13 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 		path     string
 		sections []string
 	}{
+		{
+			path: "LICENSE",
+			sections: []string{
+				"MIT License",
+				"Permission is hereby granted",
+			},
+		},
 		{
 			path: "CONTRIBUTING.md",
 			sections: []string{
@@ -215,9 +221,5 @@ func TestDevAgentProcessRecordsAreDocumented(t *testing.T) {
 func readReleaseDoc(t *testing.T, path string) string {
 	t.Helper()
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return string(raw)
+	return readTextFile(t, path)
 }

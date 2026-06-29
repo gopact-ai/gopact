@@ -1,4 +1,4 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
@@ -81,10 +81,7 @@ type publicAPIExampleEntry struct {
 func loadPublicAPIExamplesManifest(t *testing.T) publicAPIExamplesManifest {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "public-api-examples.json"))
-	if err != nil {
-		t.Fatalf("read public api examples manifest: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "public-api-examples.json"))
 	var manifest publicAPIExamplesManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode public api examples manifest: %v", err)
@@ -115,7 +112,7 @@ func publicAPISymbolEntries(manifest publicAPIBoundaryManifest) map[string]publi
 func rootExampleFunctions(t *testing.T) map[string]bool {
 	t.Helper()
 
-	files, err := os.ReadDir(".")
+	files, err := os.ReadDir(repoRoot(t))
 	if err != nil {
 		t.Fatalf("read root package files: %v", err)
 	}
@@ -126,7 +123,7 @@ func rootExampleFunctions(t *testing.T) map[string]bool {
 		if file.IsDir() || !strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		parsed, err := parser.ParseFile(fset, name, nil, 0)
+		parsed, err := parser.ParseFile(fset, repoPath(t, name), nil, 0)
 		if err != nil {
 			t.Fatalf("parse root package test file %q: %v", name, err)
 		}

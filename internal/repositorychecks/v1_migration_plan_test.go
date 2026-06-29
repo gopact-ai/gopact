@@ -1,4 +1,4 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
@@ -153,7 +153,7 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 			t.Fatalf("v1 release gate check %q source_manifests is empty", check.ID)
 		}
 		for _, path := range check.SourceManifests {
-			if _, err := os.Stat(filepath.Clean(path)); err != nil {
+			if _, err := os.Stat(repoPath(t, filepath.Clean(path))); err != nil {
 				t.Fatalf("v1 release gate check %q source_manifest %q: %v", check.ID, path, err)
 			}
 		}
@@ -303,7 +303,7 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		if strings.TrimSpace(migration.ExternalSourceRef) == "" {
 			t.Fatalf("%s migration external_source_ref is empty", sourcePath)
 		}
-		if _, err := os.Stat(filepath.FromSlash(migration.SourcePath)); !os.IsNotExist(err) {
+		if _, err := os.Stat(repoPath(t, migration.SourcePath)); !os.IsNotExist(err) {
 			t.Fatalf("%s source path still exists in core repo: %v", sourcePath, err)
 		}
 	}
@@ -440,10 +440,7 @@ type v1PublicAPITransition struct {
 func loadV1MigrationPlan(t *testing.T) v1MigrationPlan {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "v1-migration-plan.json"))
-	if err != nil {
-		t.Fatalf("read v1 migration plan: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "v1-migration-plan.json"))
 	var plan v1MigrationPlan
 	if err := json.Unmarshal(raw, &plan); err != nil {
 		t.Fatalf("decode v1 migration plan: %v", err)

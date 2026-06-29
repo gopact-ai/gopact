@@ -1,4 +1,4 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
@@ -41,7 +41,7 @@ func TestMilestoneReadinessManifestCoversMStages(t *testing.T) {
 			t.Fatalf("milestone readiness %q evidence_docs is empty", milestone.ID)
 		}
 		for _, path := range milestone.EvidenceDocs {
-			if _, err := os.Stat(filepath.Clean(path)); err != nil {
+			if _, err := os.Stat(repoPath(t, filepath.Clean(path))); err != nil {
 				t.Fatalf("milestone readiness %q evidence doc %q: %v", milestone.ID, path, err)
 			}
 		}
@@ -237,10 +237,7 @@ type bootstrapLevel struct {
 func loadMilestoneReadinessManifest(t *testing.T) milestoneReadinessManifest {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "milestone-readiness.json"))
-	if err != nil {
-		t.Fatalf("read milestone readiness manifest: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "milestone-readiness.json"))
 	var manifest milestoneReadinessManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode milestone readiness manifest: %v", err)

@@ -1,8 +1,7 @@
-package gopact
+package repositorychecks
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -133,10 +132,7 @@ type coreCIGatesManifest struct {
 func loadCoreCIGatesManifest(t *testing.T) coreCIGatesManifest {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "core-ci-gates.json"))
-	if err != nil {
-		t.Fatalf("read core CI gates manifest: %v", err)
-	}
+	raw := readFile(t, filepath.Join("docs", "design", "core-ci-gates.json"))
 	var manifest coreCIGatesManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode core CI gates manifest: %v", err)

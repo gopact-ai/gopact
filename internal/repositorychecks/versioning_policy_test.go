@@ -1,4 +1,4 @@
-package gopact
+package repositorychecks
 
 import (
 	"path/filepath"
