@@ -39,6 +39,24 @@ func ExampleSetup() {
 	// level=WARN msg="ready" agent_id=agent-1
 }
 
+func ExampleNewMessageFromTemplate() {
+	system, err := gopact.NewMessageFromTemplate(
+		gopact.RoleSystem,
+		"You are a {{.Style}} assistant.",
+		map[string]string{"Style": "concise"},
+	)
+	if err != nil {
+		panic(err)
+	}
+	user := gopact.UserMessage("Summarize the release notes.")
+
+	fmt.Println(system.Text())
+	fmt.Println(user.Role, user.Text())
+	// Output:
+	// You are a concise assistant.
+	// user Summarize the release notes.
+}
+
 func ExampleNewRunner() {
 	runner, err := gopact.NewRunner(
 		exampleRunnable{},

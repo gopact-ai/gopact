@@ -1056,8 +1056,20 @@
       "rationale": "Provider-neutral SDK contract intentionally exposed from the root package.",
       "symbols": [
         {
+          "name": "AssistantMessage",
+          "kind": "func"
+        },
+        {
           "name": "Message",
           "kind": "type"
+        },
+        {
+          "name": "NewMessage",
+          "kind": "func"
+        },
+        {
+          "name": "NewMessageFromTemplate",
+          "kind": "func"
         },
         {
           "name": "Role",
@@ -1080,8 +1092,20 @@
           "kind": "const"
         },
         {
+          "name": "SystemMessage",
+          "kind": "func"
+        },
+        {
           "name": "ToolCall",
           "kind": "type"
+        },
+        {
+          "name": "ToolMessage",
+          "kind": "func"
+        },
+        {
+          "name": "UserMessage",
+          "kind": "func"
         }
       ]
     },
