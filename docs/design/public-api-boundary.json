@@ -2664,6 +2664,14 @@
           "kind": "type"
         },
         {
+          "name": "ObjectToolSpec",
+          "kind": "func"
+        },
+        {
+          "name": "RequiredStringField",
+          "kind": "func"
+        },
+        {
           "name": "Tool",
           "kind": "type"
         },
@@ -2673,6 +2681,10 @@
         },
         {
           "name": "ToolFunc",
+          "kind": "type"
+        },
+        {
+          "name": "ToolField",
           "kind": "type"
         },
         {
