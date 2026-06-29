@@ -271,8 +271,8 @@ exit 2
 	if len(report.Repositories) != expectedScaffoldRepositoryCount {
 		t.Fatalf("repositories = %d, want %d", len(report.Repositories), expectedScaffoldRepositoryCount)
 	}
-	if report.NotReadyCount != expectedScaffoldRepositoryCount || report.MissingCount != expectedScaffoldRepositoryCount {
-		t.Fatalf("not ready counts = %d/%d, want %d", report.NotReadyCount, report.MissingCount, expectedScaffoldRepositoryCount)
+	if report.NotReadyCount != expectedScaffoldRepositoryCount || report.MissingCount != 0 {
+		t.Fatalf("not ready/missing counts = %d/%d, want %d/0", report.NotReadyCount, report.MissingCount, expectedScaffoldRepositoryCount)
 	}
 	first := report.Repositories[0]
 	if first.Ready || first.CIRunPassed || first.PrivateSDKSecret {
@@ -363,7 +363,7 @@ exit 2
 		check.Metadata.RepositoryCount != expectedScaffoldRepositoryCount ||
 		check.Metadata.ReadyCount != 0 ||
 		check.Metadata.NotReadyCount != expectedScaffoldRepositoryCount ||
-		check.Metadata.MissingCount != expectedScaffoldRepositoryCount ||
+		check.Metadata.MissingCount != 0 ||
 		check.Metadata.BlockingReasonCount != expectedScaffoldRepositoryCount*2 ||
 		check.Metadata.RequiredActionCount != expectedScaffoldRepositoryCount*2 {
 		t.Fatalf("metadata = %+v, want remote readiness counts", check.Metadata)

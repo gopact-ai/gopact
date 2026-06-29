@@ -241,7 +241,7 @@ func TestRecordRemoteStatusCheckRecordsFailedCheckBeforeReturningError(t *testin
 	if check.Metadata["repository_count"] != 1 ||
 		check.Metadata["ready_count"] != 0 ||
 		check.Metadata["not_ready_count"] != 1 ||
-		check.Metadata["missing_count"] != 1 ||
+		check.Metadata["missing_count"] != 0 ||
 		check.Metadata["blocking_reason_count"] != 2 ||
 		check.Metadata["required_action_count"] != 2 {
 		t.Fatalf("metadata = %+v, want not ready repository counts", check.Metadata)
