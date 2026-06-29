@@ -222,7 +222,7 @@ ReAct template 至少有这些 trajectory tests：
 
 ## Agent-as-Tool 第一片
 
-`templates/agenttool` 把子 agent 暴露成普通 `gopact.Tool`，供 ReAct、Supervisor 或业务 template 调用。当前第一片覆盖本地 runner、direct `a2a.Agent` 适配、可选 HTTP JSON/JSONL wrapper 和可选 JSON-RPC 2.0 + SSE wrapper，并允许宿主注入 discovered card 与 sanitized auth context；它不绑定具体配置文件、OAuth 流程或完整 official A2A proto/schema：
+`github.com/gopact-ai/gopact-templates-agenttool/agenttool` 把子 agent 暴露成普通 `gopact.Tool`，供 ReAct、Supervisor 或业务 template 调用。当前第一片覆盖本地 runner、direct `a2a.Agent` 适配、可选 HTTP JSON/JSONL wrapper 和可选 JSON-RPC 2.0 + SSE wrapper，并允许宿主注入 discovered card 与 sanitized auth context；它不绑定具体配置文件、OAuth 流程或完整 official A2A proto/schema：
 
 - A2A `AgentCard` 可以转成 `ToolSpec`，`ToolSpec` 也可以转回最小 `AgentCard`；
 - 默认 tool args 支持 `{"input":"..."}` 和 `{"messages":[...]}`；

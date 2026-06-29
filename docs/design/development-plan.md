@@ -308,7 +308,7 @@
 
 交付：
 
-- `[done: first slice]` `templates/agenttool` 支持 A2A `AgentCard` 与 `ToolSpec` 互转。
+- `[done: first slice]` `github.com/gopact-ai/gopact-templates-agenttool/agenttool` 支持 A2A `AgentCard` 与 `ToolSpec` 互转。
 - `[done: first slice]` 本地 `gopact.Runnable` 可包装为 `gopact.Tool`，默认输入支持 `input` / `messages` JSON payload。
 - `[done: first slice]` 远程 `a2a.Agent` 可通过 `agenttool.NewA2A` 包装为 `gopact.Tool`，调用时发送 `a2a.Task`，并把 `a2a.Result` 映射回 `ToolResult`。
 - `[done: first slice]` `tools.Registry` 会把 `Scope.IDs` 注入 tool context，Agent-as-Tool 可派生 child `CallID` 并保留 `ParentCallID`。
