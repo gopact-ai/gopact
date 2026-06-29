@@ -206,6 +206,8 @@
       "extension_target": "gopact-adapters-checkpoint-gcs",
       "external_repository": "gopact-adapters-checkpoint",
       "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@49ef3db82fbf4d2ea7eb57c715aadc65d62bd717:gcsstore",
+      "core_source_removed": true,
       "v1_condition": "The GCS checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
