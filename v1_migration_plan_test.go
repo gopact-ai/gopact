@@ -256,6 +256,30 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 	}
 }
 
+func TestV1MigrationPlanRecordsFirstExternalizedSource(t *testing.T) {
+	plan := loadV1MigrationPlan(t)
+
+	var migration v1RepositoryMigration
+	for _, candidate := range plan.RepositoryMigrations {
+		if candidate.SourcePath == "adapters/model/openaicompatible" {
+			migration = candidate
+			break
+		}
+	}
+	if migration.SourcePath == "" {
+		t.Fatal("v1 migration plan missing adapters/model/openaicompatible")
+	}
+	if !migration.CoreSourceRemoved {
+		t.Fatalf("openaicompatible migration core_source_removed = false, want true")
+	}
+	if strings.TrimSpace(migration.ExternalSourceRef) == "" {
+		t.Fatalf("openaicompatible migration external_source_ref is empty")
+	}
+	if _, err := os.Stat(filepath.FromSlash(migration.SourcePath)); !os.IsNotExist(err) {
+		t.Fatalf("openaicompatible source path still exists in core repo: %v", err)
+	}
+}
+
 func TestV1MigrationPlanCoversTransitionalPublicAPI(t *testing.T) {
 	boundary := loadPublicAPIBoundaryManifest(t)
 	plan := loadV1MigrationPlan(t)
@@ -368,6 +392,8 @@ type v1RepositoryMigration struct {
 	ExtensionTarget    string   `json:"extension_target,omitempty"`
 	ExternalRepository string   `json:"external_repository,omitempty"`
 	ExternalModule     string   `json:"external_module,omitempty"`
+	ExternalSourceRef  string   `json:"external_source_ref,omitempty"`
+	CoreSourceRemoved  bool     `json:"core_source_removed,omitempty"`
 	V1Condition        string   `json:"v1_condition"`
 	Verification       []string `json:"verification"`
 }

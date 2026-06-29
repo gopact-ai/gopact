@@ -316,9 +316,9 @@ Router 不能只靠字符串匹配决定 fallback。错误类型要支持 `error
 - `provider.CapabilityFilter`：按 model capability 过滤候选。
 - `provider.SimpleHealth`：内存健康状态和基础 circuit breaker。
 - `provider.FakeProvider`：无外部依赖测试用 provider。
-- `adapters/model/openaicompatible`：建议作为第一批 adapter，因为 GLM/BigModel、Z.AI、Volcengine Ark、Alibaba DashScope/Model Studio、OpenRouter、很多企业网关和本地模型服务都能走这个协议形态。
+- `github.com/gopact-ai/gopact-adapters-model/openaicompatible`：已作为第一批外部 model adapter 从 core 迁出，因为 GLM/BigModel、Z.AI、Volcengine Ark、Alibaba DashScope/Model Studio、OpenRouter、很多企业网关和本地模型服务都能走这个协议形态。
 
-OpenAI 和 Anthropic native adapter 是 M6 model adapter 的优先目标；Gemini、Bedrock、Vertex、DeepSeek、Moonshot、xAI、Mistral 等 native adapter 可以在独立 adapter module 里继续扩展。Core 只要求 contract、router、fake provider 和 openai-compatible 的最小可用路径。
+OpenAI 和 Anthropic native adapter 是 M6 model adapter 的优先目标；Gemini、Bedrock、Vertex、DeepSeek、Moonshot、xAI、Mistral 等 native adapter 可以在独立 adapter module 里继续扩展。Core 只保留 contract、router 和 fake provider。
 
 ### 安全规则
 

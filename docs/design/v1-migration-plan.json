@@ -375,6 +375,8 @@
       "extension_target": "gopact-adapters-model-openaicompatible",
       "external_repository": "gopact-adapters-model",
       "external_module": "github.com/gopact-ai/gopact-adapters-model",
+      "external_source_ref": "gopact-ai/gopact-adapters-model@07edc0efb1bfed57e67da28331c3347b0b8e2ddb:openaicompatible",
+      "core_source_removed": true,
       "v1_condition": "The OpenAI-compatible model adapter is removed from the core module after the external model repository owns the source path, keeps provider conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
