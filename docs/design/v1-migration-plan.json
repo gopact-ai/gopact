@@ -245,6 +245,8 @@
       "extension_target": "gopact-adapters-checkpoint-redis",
       "external_repository": "gopact-adapters-checkpoint",
       "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@57efe8fe1eb42a9059222a2b11e52cf635fb55bc:redisstore",
+      "core_source_removed": true,
       "v1_condition": "The Redis checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",

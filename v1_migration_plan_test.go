@@ -271,6 +271,7 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/devagent/channelreview",
 		"adapters/devagent/modelreview",
 		"adapters/checkpoint/sqlstore",
+		"adapters/checkpoint/redisstore",
 	} {
 		migration := migrations[sourcePath]
 		if migration.SourcePath == "" {
