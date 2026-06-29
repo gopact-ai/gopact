@@ -35,7 +35,7 @@ go test -run Example_graphRun .
 
 `gopact` 仍是 pre-v1 SDK。当前适合内部实验、SDK API 评审、template/conformance 开发和外部 adapter scaffold，不应被包装成成熟的完整 agent 平台。
 
-当前路线状态以 [docs/design/milestone-readiness.json](docs/design/milestone-readiness.json) 为准：M1 已完成，M2/M3/M4 是 first-slice complete，M5 partial，M6 in-progress。公开发布前仍需要项目 owner 选择并添加 `LICENSE`，外部私有仓库也必须完成 `GOPACT_GITHUB_TOKEN` secret 配置和 CI readiness。
+当前路线状态以 [docs/design/milestone-readiness.json](docs/design/milestone-readiness.json) 为准：M1 已完成，M2/M3/M4 是 first-slice complete，M5 partial，M6 in-progress。公开发布前仍需要项目 owner 选择并添加 `LICENSE`；外部私有仓库 `GOPACT_GITHUB_TOKEN` secret 和 CI readiness 已在 M6 evidence 中记录。
 
 ## 文档地图
 

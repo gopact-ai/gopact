@@ -130,13 +130,13 @@ func TestMilestoneReadinessRecordsM6RemoteCIEvidence(t *testing.T) {
 	}
 
 	var coreCI milestoneEvidenceRecord
-	var externalBlocker milestoneEvidenceRecord
+	var externalReadiness milestoneEvidenceRecord
 	for _, record := range m6.EvidenceRecords {
 		switch {
 		case record.Type == "github_actions_run" && record.Scope == "core-ci":
 			coreCI = record
-		case record.Type == "remote_extension_ci_blocker" && record.Scope == "external-repositories":
-			externalBlocker = record
+		case record.Type == "remote_extension_ci_readiness" && record.Scope == "external-repositories":
+			externalReadiness = record
 		}
 	}
 	if coreCI.Type == "" {
@@ -154,20 +154,29 @@ func TestMilestoneReadinessRecordsM6RemoteCIEvidence(t *testing.T) {
 	if !slices.Equal(coreCI.RequiredGates, coreGates.RequiredGates) {
 		t.Fatalf("M6 core CI required_gates = %v, want core-ci-gates required_gates %v", coreCI.RequiredGates, coreGates.RequiredGates)
 	}
-	if externalBlocker.Type == "" {
-		t.Fatal("M6 missing external repository CI blocker evidence record")
+	if externalReadiness.Type == "" {
+		t.Fatal("M6 missing external repository CI readiness evidence record")
 	}
-	if externalBlocker.Conclusion != "blocked" ||
-		!strings.Contains(externalBlocker.Notes, "GOPACT_GITHUB_TOKEN") {
-		t.Fatalf("M6 external blocker evidence = %+v, want GOPACT_GITHUB_TOKEN blocker", externalBlocker)
+	if externalReadiness.Conclusion != "success" ||
+		!strings.Contains(externalReadiness.Notes, "ready=11 / not_ready=0 / missing=0") {
+		t.Fatalf("M6 external readiness evidence = %+v, want successful external repository readiness", externalReadiness)
 	}
-	if !strings.Contains(externalBlocker.Notes, "ready=0 / not_ready=11 / missing=0") ||
-		strings.Contains(externalBlocker.Notes, "missing=11") {
-		t.Fatalf("M6 external blocker evidence notes = %q, want corrected remote readiness counts", externalBlocker.Notes)
+	for _, stale := range []string{
+		"ready=0 / not_ready=11 / missing=0",
+		"GOPACT_GITHUB_TOKEN secret is missing",
+		"missing=11",
+	} {
+		if strings.Contains(externalReadiness.Notes, stale) {
+			t.Fatalf("M6 external readiness evidence notes = %q, still contains stale blocker %q", externalReadiness.Notes, stale)
+		}
 	}
 	for _, item := range m6.OpenItems {
 		if strings.Contains(item, "M6 release 前仍必须在 GitHub CI") {
 			t.Fatalf("M6 open item still contains stale core GitHub CI blocker: %q", item)
+		}
+		if strings.Contains(item, "secret 未配置前 M6 不能视为完成") ||
+			strings.Contains(item, "GOPACT_GITHUB_TOKEN repo/org secret") {
+			t.Fatalf("M6 open item still contains stale external repository secret blocker: %q", item)
 		}
 	}
 }
