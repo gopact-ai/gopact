@@ -536,7 +536,7 @@ func (r *VerificationRecorder) Report(export RunExport) (VerificationReport, err
 - `metadata_keys` 只在已经声明 key 摘要的 evidence bridge 上是保留键；未暴露该字段的 bridge 仍以各自 ref、计数、runtime ids、状态、错误和 shape 摘要等 canonical 字段为准。
 - `RecordEntropyAuditCheck` 会在 check/evidence metadata 两层暴露非保留补充 metadata key 摘要，并把 `metadata_keys` 视为 canonical 字段，避免外部 metadata 伪造 entropy audit 的可审计 key 列表。
 - `memory.RecordReplayCheck` 和 `templates/react.RecordDeferredMemoryWorkScheduleCheck` 会在 check/evidence metadata 两层暴露非保留补充 metadata key 摘要，并把 `metadata_keys` 视为 canonical 字段，避免外部 metadata 伪造 memory replay / work schedule 的可审计 key 列表。
-- `templates/devagent.RecordReleaseGateCheck` 和 `templates/devagent.RecordReleaseBundleCheck` 会在 check/evidence metadata 两层暴露非保留补充 metadata key 摘要，并把 `metadata_keys` 视为 canonical 字段，避免外部 metadata 伪造 release gate / release bundle 的可审计 key 列表。
+- `github.com/gopact-ai/gopact-templates-devagent/devagent.RecordReleaseGateCheck` 和 `github.com/gopact-ai/gopact-templates-devagent/devagent.RecordReleaseBundleCheck` 会在 check/evidence metadata 两层暴露非保留补充 metadata key 摘要，并把 `metadata_keys` 视为 canonical 字段，避免外部 metadata 伪造 release gate / release bundle 的可审计 key 列表。
 - `checkpoint.RecordVerificationCheck` 和 `sandbox.RecordExecCheck` 会在 check/evidence metadata 两层暴露非保留补充 metadata key 摘要，并把 `metadata_keys` 视为 canonical 字段，避免外部 metadata 伪造 checkpoint / sandbox exec 的可审计 key 列表。
 - `objectstore.RecordIndexConsistencyCheck` 会在 check/evidence metadata 两层暴露非保留补充 metadata key 摘要，并把 `metadata_keys` 视为 canonical 字段，避免外部 metadata 伪造 checkpoint objectstore index 巡检的可审计 key 列表。
 - `StepExport` 必须能被另一个 runner 验证 integrity 后导入；

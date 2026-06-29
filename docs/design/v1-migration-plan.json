@@ -557,6 +557,8 @@
       "extension_target": "gopact-templates-devagent",
       "external_repository": "gopact-templates-devagent",
       "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@558778afbccecca9c3a74a5d93ed25a6c134e909:devagent",
+      "core_source_removed": true,
       "v1_condition": "The Dev Agent template is removed from the core module after the external template repository owns the source path, keeps workflow/release conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",

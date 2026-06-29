@@ -291,6 +291,7 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/turnloop/redisstore",
 		"adapters/turnloop/sqlstore",
 		"templates/agenttool",
+		"templates/devagent",
 	} {
 		migration := migrations[sourcePath]
 		if migration.SourcePath == "" {

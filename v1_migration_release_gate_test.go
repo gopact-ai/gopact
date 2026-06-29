@@ -10,15 +10,14 @@ import (
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/gopacttest"
-	"github.com/gopact-ai/gopact/templates/devagent"
 )
 
-func TestV1MigrationReleaseGateChecksDriveSDKReleaseGateRequirements(t *testing.T) {
+func TestV1MigrationReleaseGateChecksDriveSDKVerificationRequirements(t *testing.T) {
 	plan := loadV1ReleaseGatePlan(t)
 
 	for _, check := range plan.ReleaseGateChecks {
 		t.Run(check.ID, func(t *testing.T) {
-			export, report := v1SyntheticReleaseGateReport(t, check)
+			_, report := v1SyntheticReleaseGateReport(t, check)
 			requirement := []gopacttest.VerificationEvidenceRequirement{
 				{
 					Name:                  check.ID,
@@ -28,47 +27,6 @@ func TestV1MigrationReleaseGateChecksDriveSDKReleaseGateRequirements(t *testing.
 				},
 			}
 			gopacttest.RequireVerificationEvidenceRequirements(t, report, requirement)
-
-			review := devagent.ReviewDecision{
-				Status:   devagent.ReviewApproved,
-				Reviewer: "v1-release-gate-test",
-				Summary:  "v1 release gate requirement is satisfied by observed evidence",
-			}
-			gate, err := devagent.EvaluateReleaseGate(devagent.GateInput{
-				Mode:   devagent.ModeWrite,
-				Report: report,
-				Review: review,
-			},
-				devagent.RequireCheckIDs(check.RequiredCheckIDs...),
-				devagent.RequireEvidenceTypes(check.EvidenceTypes...),
-				devagent.RequireCIGates(check.RequiredCIGates...),
-			)
-			if err != nil {
-				t.Fatalf("EvaluateReleaseGate(%s) error = %v", check.ID, err)
-			}
-
-			bundle, err := devagent.BuildReleaseBundle(devagent.ReleaseBundleInput{
-				Export:                export,
-				Report:                report,
-				RequiredCheckIDs:      check.RequiredCheckIDs,
-				RequiredEvidenceTypes: check.EvidenceTypes,
-				RequiredCIGates:       check.RequiredCIGates,
-				Action: devagent.ActionResult{
-					Status: devagent.ActionAllowed,
-					Mode:   devagent.ModeWrite,
-					Action: devagent.ActionRelease,
-				},
-				Review:    review,
-				Gate:      gate,
-				CreatedAt: export.CreatedAt,
-				Metadata:  map[string]any{"v1_release_gate_check": check.ID},
-			})
-			if err != nil {
-				t.Fatalf("BuildReleaseBundle(%s) error = %v", check.ID, err)
-			}
-			if bundle.Metadata["v1_release_gate_check"] != check.ID {
-				t.Fatalf("bundle metadata = %+v, want v1 release gate check id", bundle.Metadata)
-			}
 		})
 	}
 }
