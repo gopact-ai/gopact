@@ -268,6 +268,7 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/model/openaicompatible",
 		"adapters/devagent/gitdiff",
 		"adapters/devagent/cireview",
+		"adapters/devagent/channelreview",
 	} {
 		migration := migrations[sourcePath]
 		if migration.SourcePath == "" {

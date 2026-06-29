@@ -284,6 +284,8 @@
       "extension_target": "gopact-templates-devagent",
       "external_repository": "gopact-templates-devagent",
       "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@da65fc532ddfa85c21b22e592c109bf13e79d108:channelreview",
+      "core_source_removed": true,
       "v1_condition": "The channel reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps review evidence conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
