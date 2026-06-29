@@ -256,27 +256,31 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 	}
 }
 
-func TestV1MigrationPlanRecordsFirstExternalizedSource(t *testing.T) {
+func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 	plan := loadV1MigrationPlan(t)
 
-	var migration v1RepositoryMigration
+	migrations := map[string]v1RepositoryMigration{}
 	for _, candidate := range plan.RepositoryMigrations {
-		if candidate.SourcePath == "adapters/model/openaicompatible" {
-			migration = candidate
-			break
+		migrations[candidate.SourcePath] = candidate
+	}
+
+	for _, sourcePath := range []string{
+		"adapters/model/openaicompatible",
+		"adapters/devagent/gitdiff",
+	} {
+		migration := migrations[sourcePath]
+		if migration.SourcePath == "" {
+			t.Fatalf("v1 migration plan missing %s", sourcePath)
 		}
-	}
-	if migration.SourcePath == "" {
-		t.Fatal("v1 migration plan missing adapters/model/openaicompatible")
-	}
-	if !migration.CoreSourceRemoved {
-		t.Fatalf("openaicompatible migration core_source_removed = false, want true")
-	}
-	if strings.TrimSpace(migration.ExternalSourceRef) == "" {
-		t.Fatalf("openaicompatible migration external_source_ref is empty")
-	}
-	if _, err := os.Stat(filepath.FromSlash(migration.SourcePath)); !os.IsNotExist(err) {
-		t.Fatalf("openaicompatible source path still exists in core repo: %v", err)
+		if !migration.CoreSourceRemoved {
+			t.Fatalf("%s migration core_source_removed = false, want true", sourcePath)
+		}
+		if strings.TrimSpace(migration.ExternalSourceRef) == "" {
+			t.Fatalf("%s migration external_source_ref is empty", sourcePath)
+		}
+		if _, err := os.Stat(filepath.FromSlash(migration.SourcePath)); !os.IsNotExist(err) {
+			t.Fatalf("%s source path still exists in core repo: %v", sourcePath, err)
+		}
 	}
 }
 

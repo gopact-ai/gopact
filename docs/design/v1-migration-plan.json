@@ -310,6 +310,8 @@
       "extension_target": "gopact-templates-devagent",
       "external_repository": "gopact-templates-devagent",
       "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@7ba23ebce5dc90f9065ee6bdb5fe3c8b1a2462fc:gitdiff",
+      "core_source_removed": true,
       "v1_condition": "The git diff scanner adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps observed diff evidence conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
