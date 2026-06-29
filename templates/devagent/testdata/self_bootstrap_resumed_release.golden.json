@@ -1,8 +1,0 @@
-[
-  {"type":"run_started"},
-  {"type":"step_imported","node":"devagent.release_gate","step":3},
-  {"type":"resume_received","node":"devagent.release_gate","step":3},
-  {"type":"node_resumed","node":"devagent.release_gate","step":4},
-  {"type":"node_completed","node":"devagent.release_gate","step":4},
-  {"type":"run_completed"}
-]

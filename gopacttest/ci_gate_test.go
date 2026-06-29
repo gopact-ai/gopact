@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gopact-ai/gopact"
-	"github.com/gopact-ai/gopact/templates/devagent"
 )
 
 func TestRecordCIGateSuiteCheckRecordsPassedSuite(t *testing.T) {
@@ -503,7 +502,7 @@ func TestRecordCIRunSetCheckRejectsMissingRequiredRepositoryWithoutRecording(t *
 	}
 }
 
-func TestRecordCIRunCheckEvidenceIsDevAgentCompatible(t *testing.T) {
+func TestRecordCIRunCheckEvidenceSatisfiesCIGateRequirements(t *testing.T) {
 	recorder := gopact.NewVerificationRecorder()
 
 	if err := RecordCIRunCheck(recorder, CIRun{
@@ -529,20 +528,14 @@ func TestRecordCIRunCheckEvidenceIsDevAgentCompatible(t *testing.T) {
 		PassedCount: 1,
 		CreatedAt:   time.Now(),
 	}
-	result, err := devagent.EvaluateReleaseGate(
-		devagent.GateInput{
-			Mode:   devagent.ModeWrite,
-			Report: report,
-			Review: devagent.ReviewDecision{Status: devagent.ReviewApproved},
+	RequireVerificationEvidenceRequirements(t, report, []VerificationEvidenceRequirement{
+		{
+			Name:                  "ci-run",
+			RequiredCheckIDs:      []string{"ci-run:github-actions:gopact-ai/gopact:ci:28201163807"},
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
+			RequiredCIGates:       []string{"test", "race"},
 		},
-		devagent.RequireCIGates("test", "race"),
-	)
-	if err != nil {
-		t.Fatalf("EvaluateReleaseGate() error = %v", err)
-	}
-	if result.Status != devagent.GatePassed {
-		t.Fatalf("gate status = %q, want passed", result.Status)
-	}
+	})
 }
 
 func TestRecordCIRunCheckNormalizesGateNames(t *testing.T) {
