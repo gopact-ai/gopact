@@ -217,7 +217,7 @@ func remoteCIGateMetadata(repository RemoteRepositoryStatus) map[string]any {
 
 func remoteStatusCheck(report RemoteStatusReport) gopact.VerificationCheck {
 	organization := strings.TrimSpace(report.Organization)
-	ready, notReady, blockingReasons, requiredActions := remoteStatusCounts(report.Repositories)
+	ready, notReady, missing, blockingReasons, requiredActions := remoteStatusCounts(report.Repositories)
 	status := gopact.VerificationStatusPassed
 	if notReady > 0 {
 		status = gopact.VerificationStatusFailed
@@ -228,7 +228,7 @@ func remoteStatusCheck(report RemoteStatusReport) gopact.VerificationCheck {
 		"repository_count":      len(report.Repositories),
 		"ready_count":           ready,
 		"not_ready_count":       notReady,
-		"missing_count":         notReady,
+		"missing_count":         missing,
 		"blocking_reason_count": blockingReasons,
 		"required_action_count": requiredActions,
 	}
@@ -248,17 +248,20 @@ func remoteStatusCheck(report RemoteStatusReport) gopact.VerificationCheck {
 	}
 }
 
-func remoteStatusCounts(repositories []RemoteRepositoryStatus) (ready, notReady, blockingReasons, requiredActions int) {
+func remoteStatusCounts(repositories []RemoteRepositoryStatus) (ready, notReady, missing, blockingReasons, requiredActions int) {
 	for _, repository := range repositories {
 		if repository.Ready {
 			ready++
 		} else {
 			notReady++
 		}
+		if !repository.Exists {
+			missing++
+		}
 		blockingReasons += len(repository.BlockingReasons)
 		requiredActions += len(repository.RequiredActions)
 	}
-	return ready, notReady, blockingReasons, requiredActions
+	return ready, notReady, missing, blockingReasons, requiredActions
 }
 
 func remoteStatusDetails(organization string, repositories []RemoteRepositoryStatus) ([]string, []string) {

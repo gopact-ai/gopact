@@ -113,6 +113,8 @@ func CheckRemoteRepositories(ctx context.Context, root string, options RemoteSta
 			report.ReadyCount++
 		} else {
 			report.NotReadyCount++
+		}
+		if !status.Exists {
 			report.MissingCount++
 		}
 		report.Repositories = append(report.Repositories, status)

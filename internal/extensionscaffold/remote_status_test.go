@@ -178,6 +178,12 @@ exit 2
 	if model.Ready {
 		t.Fatalf("Ready = true, want false while latest CI failed")
 	}
+	if report.MissingCount != 0 {
+		t.Fatalf("MissingCount = %d, want 0 for existing repositories with readiness blockers", report.MissingCount)
+	}
+	if report.NotReadyCount != expectedScaffoldRepositoryCount {
+		t.Fatalf("NotReadyCount = %d, want %d", report.NotReadyCount, expectedScaffoldRepositoryCount)
+	}
 	assertContainsString(t, model.BlockingReasons, "GOPACT_GITHUB_TOKEN secret is missing")
 	assertContainsString(t, model.BlockingReasons, "latest ci workflow run did not pass")
 	assertContainsString(t, model.RequiredActions, "configure GOPACT_GITHUB_TOKEN with sync-secrets.sh")

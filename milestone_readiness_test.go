@@ -161,6 +161,10 @@ func TestMilestoneReadinessRecordsM6RemoteCIEvidence(t *testing.T) {
 		!strings.Contains(externalBlocker.Notes, "GOPACT_GITHUB_TOKEN") {
 		t.Fatalf("M6 external blocker evidence = %+v, want GOPACT_GITHUB_TOKEN blocker", externalBlocker)
 	}
+	if !strings.Contains(externalBlocker.Notes, "ready=0 / not_ready=11 / missing=0") ||
+		strings.Contains(externalBlocker.Notes, "missing=11") {
+		t.Fatalf("M6 external blocker evidence notes = %q, want corrected remote readiness counts", externalBlocker.Notes)
+	}
 	for _, item := range m6.OpenItems {
 		if strings.Contains(item, "M6 release 前仍必须在 GitHub CI") {
 			t.Fatalf("M6 open item still contains stale core GitHub CI blocker: %q", item)
