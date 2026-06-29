@@ -271,6 +271,8 @@
       "extension_target": "gopact-adapters-checkpoint-sql",
       "external_repository": "gopact-adapters-checkpoint",
       "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@6fa3b5eb74e332c6f79bfdf27b48333a0a585910:sqlstore",
+      "core_source_removed": true,
       "v1_condition": "The database/sql checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
