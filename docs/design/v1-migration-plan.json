@@ -232,6 +232,8 @@
       "extension_target": "gopact-adapters-checkpoint-r2",
       "external_repository": "gopact-adapters-checkpoint",
       "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@120c254d655124f5864bbbad2368525650dc3bc8:r2store",
+      "core_source_removed": true,
       "v1_condition": "The R2 checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
@@ -260,6 +262,8 @@
       "extension_target": "gopact-adapters-checkpoint-s3",
       "external_repository": "gopact-adapters-checkpoint",
       "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@f8c3f64bcdc98a08ee4e13db3a88827216e339f6:s3store",
+      "core_source_removed": true,
       "v1_condition": "The S3 checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
