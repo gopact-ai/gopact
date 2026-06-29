@@ -269,6 +269,7 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/devagent/gitdiff",
 		"adapters/devagent/cireview",
 		"adapters/devagent/channelreview",
+		"adapters/devagent/modelreview",
 	} {
 		migration := migrations[sourcePath]
 		if migration.SourcePath == "" {
