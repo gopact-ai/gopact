@@ -110,7 +110,7 @@ func (mutatingProvider) Models(ctx context.Context) ([]provider.ModelInfo, error
 	return []provider.ModelInfo{{Name: "mutating-model", Provider: "mutating-provider"}}, nil
 }
 
-func (mutatingProvider) Generate(ctx context.Context, req gopact.ModelRequest) (gopact.ModelResponse, error) {
+func (mutatingProvider) Generate(ctx context.Context, req gopact.ModelRequest, _ ...gopact.ModelOption) (gopact.ModelResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return gopact.ModelResponse{}, err
 	}
@@ -118,7 +118,7 @@ func (mutatingProvider) Generate(ctx context.Context, req gopact.ModelRequest) (
 	return gopact.ModelResponse{Message: gopact.Message{Role: gopact.RoleAssistant, Content: "hello"}}, nil
 }
 
-func (mutatingProvider) Stream(ctx context.Context, req gopact.ModelRequest) iter.Seq2[gopact.Event, error] {
+func (mutatingProvider) Stream(ctx context.Context, req gopact.ModelRequest, _ ...gopact.ModelOption) iter.Seq2[gopact.Event, error] {
 	return func(yield func(gopact.Event, error) bool) {
 		if err := ctx.Err(); err != nil {
 			yield(gopact.Event{Type: gopact.EventModelProviderAttemptFailed, IDs: req.IDs, Err: err}, err)
@@ -142,14 +142,14 @@ func (silentStreamProvider) Models(ctx context.Context) ([]provider.ModelInfo, e
 	return []provider.ModelInfo{{Name: "silent-model", Provider: "silent-provider"}}, nil
 }
 
-func (silentStreamProvider) Generate(ctx context.Context, _ gopact.ModelRequest) (gopact.ModelResponse, error) {
+func (silentStreamProvider) Generate(ctx context.Context, _ gopact.ModelRequest, _ ...gopact.ModelOption) (gopact.ModelResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return gopact.ModelResponse{}, err
 	}
 	return gopact.ModelResponse{Message: gopact.Message{Role: gopact.RoleAssistant, Content: "hello"}}, nil
 }
 
-func (silentStreamProvider) Stream(ctx context.Context, req gopact.ModelRequest) iter.Seq2[gopact.Event, error] {
+func (silentStreamProvider) Stream(ctx context.Context, req gopact.ModelRequest, _ ...gopact.ModelOption) iter.Seq2[gopact.Event, error] {
 	return func(yield func(gopact.Event, error) bool) {
 		if err := ctx.Err(); err != nil {
 			yield(gopact.Event{Type: gopact.EventModelProviderAttemptFailed, IDs: req.IDs, Err: err}, err)

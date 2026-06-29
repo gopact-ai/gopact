@@ -8,17 +8,17 @@ import (
 
 // ChatModel 是 agent 对模型 provider 的最小依赖契约。
 type ChatModel interface {
-	Generate(ctx context.Context, request ModelRequest) (Message, error)
+	Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (Message, error)
 }
 
 // ResponseModel returns a full model response with route, usage, and middleware events.
 type ResponseModel interface {
-	Generate(ctx context.Context, request ModelRequest) (ModelResponse, error)
+	Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (ModelResponse, error)
 }
 
 // StreamingModel streams model invocation events, including route and fallback attempts.
 type StreamingModel interface {
-	Stream(ctx context.Context, request ModelRequest) iter.Seq2[Event, error]
+	Stream(ctx context.Context, request ModelRequest, opts ...ModelOption) iter.Seq2[Event, error]
 }
 
 // StreamingResponseModel is the adapter input for models that expose both response and stream APIs.
@@ -43,11 +43,11 @@ type responseModelAdapter struct {
 	model ResponseModel
 }
 
-func (a responseModelAdapter) Generate(ctx context.Context, request ModelRequest) (Message, error) {
+func (a responseModelAdapter) Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (Message, error) {
 	if a.model == nil {
 		return Message{}, errNilResponseModel
 	}
-	response, err := a.model.Generate(ctx, request)
+	response, err := a.model.Generate(ctx, request, opts...)
 	if err != nil {
 		return Message{}, err
 	}
@@ -58,25 +58,25 @@ type streamingModelAdapter struct {
 	model StreamingResponseModel
 }
 
-func (a streamingModelAdapter) Generate(ctx context.Context, request ModelRequest) (Message, error) {
+func (a streamingModelAdapter) Generate(ctx context.Context, request ModelRequest, opts ...ModelOption) (Message, error) {
 	if a.model == nil {
 		return Message{}, errNilResponseModel
 	}
-	response, err := a.model.Generate(ctx, request)
+	response, err := a.model.Generate(ctx, request, opts...)
 	if err != nil {
 		return Message{}, err
 	}
 	return response.Message, nil
 }
 
-func (a streamingModelAdapter) Stream(ctx context.Context, request ModelRequest) iter.Seq2[Event, error] {
+func (a streamingModelAdapter) Stream(ctx context.Context, request ModelRequest, opts ...ModelOption) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
 		if a.model == nil {
 			err := errNilResponseModel
 			yield(Event{Type: EventModelProviderAttemptFailed, IDs: request.IDs, Err: err, CreatedAt: now()}, err)
 			return
 		}
-		for event, err := range a.model.Stream(ctx, request) {
+		for event, err := range a.model.Stream(ctx, request, opts...) {
 			if !yield(event, err) {
 				return
 			}
@@ -86,15 +86,116 @@ func (a streamingModelAdapter) Stream(ctx context.Context, request ModelRequest)
 
 // ModelRequest 向模型 provider 传递消息、工具 schema，以及可选的结构化输出提示。
 type ModelRequest struct {
-	IDs            RuntimeIDs     `json:"ids,omitempty"`
-	Model          string         `json:"model,omitempty"`
-	Messages       []Message      `json:"messages"`
-	Tools          []ToolSpec     `json:"tools,omitempty"`
-	ResponseSchema JSONSchema     `json:"response_schema,omitempty"`
-	RouteHint      string         `json:"route_hint,omitempty"`
-	Capabilities   []Capability   `json:"capabilities,omitempty"`
-	Budget         Budget         `json:"budget,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
+	IDs             RuntimeIDs     `json:"ids,omitempty"`
+	Model           string         `json:"model,omitempty"`
+	Messages        []Message      `json:"messages"`
+	Tools           []ToolSpec     `json:"tools,omitempty"`
+	ResponseSchema  JSONSchema     `json:"response_schema,omitempty"`
+	RouteHint       string         `json:"route_hint,omitempty"`
+	Capabilities    []Capability   `json:"capabilities,omitempty"`
+	Budget          Budget         `json:"budget,omitempty"`
+	Temperature     *float64       `json:"temperature,omitempty"`
+	TopP            *float64       `json:"top_p,omitempty"`
+	ThinkingType    string         `json:"thinking_type,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+}
+
+// ModelOption overrides one model call without mutating the caller's ModelRequest.
+type ModelOption interface {
+	ApplyModelOption(*ModelRequest)
+}
+
+// ModelOptionFunc adapts a function into a ModelOption.
+type ModelOptionFunc func(*ModelRequest)
+
+func (f ModelOptionFunc) ApplyModelOption(request *ModelRequest) {
+	if f != nil {
+		f(request)
+	}
+}
+
+// ApplyModelOptions applies model call options to a shallow-safe request copy.
+func ApplyModelOptions(request ModelRequest, opts ...ModelOption) ModelRequest {
+	request.Capabilities = append([]Capability(nil), request.Capabilities...)
+	request.Metadata = copyAnyMap(request.Metadata)
+	for _, opt := range opts {
+		if opt != nil {
+			opt.ApplyModelOption(&request)
+		}
+	}
+	return request
+}
+
+func WithModel(model string) ModelOption {
+	return ModelOptionFunc(func(request *ModelRequest) {
+		request.Model = model
+	})
+}
+
+func WithMaxOutputTokens(tokens int) ModelOption {
+	return ModelOptionFunc(func(request *ModelRequest) {
+		request.Budget.MaxOutputTokens = tokens
+	})
+}
+
+func WithTemperature(temperature float64) ModelOption {
+	return ModelOptionFunc(func(request *ModelRequest) {
+		request.Temperature = &temperature
+	})
+}
+
+func WithTopP(topP float64) ModelOption {
+	return ModelOptionFunc(func(request *ModelRequest) {
+		request.TopP = &topP
+	})
+}
+
+func WithThinkingType(thinkingType string) ModelOption {
+	return ModelOptionFunc(func(request *ModelRequest) {
+		request.ThinkingType = thinkingType
+	})
+}
+
+func WithReasoningEffort(effort string) ModelOption {
+	return ModelOptionFunc(func(request *ModelRequest) {
+		request.ReasoningEffort = effort
+	})
+}
+
+func EnableCapability(capability Capability) ModelOption {
+	return ModelOptionFunc(func(request *ModelRequest) {
+		for _, existing := range request.Capabilities {
+			if existing == capability {
+				return
+			}
+		}
+		request.Capabilities = append(request.Capabilities, capability)
+	})
+}
+
+func EnableStreaming() ModelOption {
+	return EnableCapability(CapabilityStreaming)
+}
+
+func EnableToolCalling() ModelOption {
+	return EnableCapability(CapabilityToolCalling)
+}
+
+func EnableJSONSchema() ModelOption {
+	return EnableCapability(CapabilityJSONSchema)
+}
+
+func EnableVision() ModelOption {
+	return EnableCapability(CapabilityVision)
+}
+
+func EnableReasoning() ModelOption {
+	return EnableCapability(CapabilityReasoning)
+}
+
+func EnableStructuredOutput() ModelOption {
+	return EnableCapability(CapabilityStructuredOutput)
 }
 
 // Capability describes a hard capability a model request or route candidate must support.
