@@ -449,6 +449,8 @@
       "extension_target": "gopact-adapters-storage-r2",
       "external_repository": "gopact-adapters-storage",
       "external_module": "github.com/gopact-ai/gopact-adapters-storage",
+      "external_source_ref": "gopact-ai/gopact-adapters-storage@5cd6b85b7ac0d4877895361484286c3328d0dabc:r2blob",
+      "core_source_removed": true,
       "v1_condition": "The R2 blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
@@ -462,6 +464,8 @@
       "extension_target": "gopact-adapters-storage-s3",
       "external_repository": "gopact-adapters-storage",
       "external_module": "github.com/gopact-ai/gopact-adapters-storage",
+      "external_source_ref": "gopact-ai/gopact-adapters-storage@5cd6b85b7ac0d4877895361484286c3328d0dabc:s3blob",
+      "core_source_removed": true,
       "v1_condition": "The S3 blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
       "verification": [
         "extension-conformance",

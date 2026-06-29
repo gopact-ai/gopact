@@ -276,6 +276,8 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/checkpoint/ossstore",
 		"adapters/checkpoint/r2store",
 		"adapters/checkpoint/s3store",
+		"adapters/storage/r2blob",
+		"adapters/storage/s3blob",
 	} {
 		migration := migrations[sourcePath]
 		if migration.SourcePath == "" {
