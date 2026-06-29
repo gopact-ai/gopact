@@ -2762,7 +2762,7 @@ type scriptedModel struct {
 	requests  []gopact.ModelRequest
 }
 
-func (m *scriptedModel) Generate(ctx context.Context, request gopact.ModelRequest, _ ...gopact.ModelOption) (gopact.Message, error) {
+func (m *scriptedModel) Generate(ctx context.Context, request gopact.ModelRequest) (gopact.Message, error) {
 	if err := ctx.Err(); err != nil {
 		return gopact.Message{}, err
 	}

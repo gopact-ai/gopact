@@ -128,9 +128,9 @@ func (r *Router) Plan(ctx context.Context, req RouteRequest) (RoutePlan, error) 
 }
 
 // Generate runs the request through the selected provider route.
-func (r *Router) Generate(ctx context.Context, req gopact.ModelRequest, opts ...gopact.ModelOption) (gopact.ModelResponse, error) {
+func (r *Router) Generate(ctx context.Context, req gopact.ModelRequest) (gopact.ModelResponse, error) {
 	var response gopact.ModelResponse
-	for event, err := range r.Stream(ctx, req, opts...) {
+	for event, err := range r.Stream(ctx, req) {
 		if event.Type == gopact.EventPolicyRequested || event.Type == gopact.EventPolicyDecided {
 			response.Events = append(response.Events, event)
 		}
@@ -151,9 +151,9 @@ func (r *Router) Generate(ctx context.Context, req gopact.ModelRequest, opts ...
 }
 
 // Stream emits route and attempt events while running a model request.
-func (r *Router) Stream(ctx context.Context, req gopact.ModelRequest, opts ...gopact.ModelOption) iter.Seq2[gopact.Event, error] {
+func (r *Router) Stream(ctx context.Context, req gopact.ModelRequest) iter.Seq2[gopact.Event, error] {
 	return func(yield func(gopact.Event, error) bool) {
-		req = gopact.ApplyModelOptions(req, opts...)
+		req = gopact.ApplyModelRequestOptions(req)
 		plan, route, err := r.planWithRoute(ctx, req)
 		if err != nil {
 			yield(modelEvent(gopact.EventModelProviderAttemptFailed, req.IDs, gopact.ModelRoute{}, nil, nil, err), err)
