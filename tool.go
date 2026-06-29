@@ -17,6 +17,45 @@ type ToolSpec struct {
 	InputSchema JSONSchema `json:"input_schema,omitempty"`
 }
 
+// ToolField describes one object property in a tool input schema.
+type ToolField struct {
+	Name     string
+	Schema   JSONSchema
+	Required bool
+}
+
+// RequiredStringField creates a required string property for ObjectToolSpec.
+func RequiredStringField(name, description string) ToolField {
+	schema := JSONSchema{"type": "string"}
+	if description != "" {
+		schema["description"] = description
+	}
+	return ToolField{Name: name, Schema: schema, Required: true}
+}
+
+// ObjectToolSpec creates a ToolSpec whose input schema is a JSON object.
+func ObjectToolSpec(name, description string, fields ...ToolField) ToolSpec {
+	properties := map[string]any{}
+	var required []string
+	for _, field := range fields {
+		if field.Name == "" {
+			continue
+		}
+		properties[field.Name] = copyJSONSchema(field.Schema)
+		if field.Required {
+			required = append(required, field.Name)
+		}
+	}
+	schema := JSONSchema{
+		"type":       "object",
+		"properties": properties,
+	}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return ToolSpec{Name: name, Description: description, InputSchema: schema}
+}
+
 // ToolResult 是工具返回的标准化结果。
 type ToolResult struct {
 	Content   string         `json:"content,omitempty"`
