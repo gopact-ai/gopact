@@ -17,9 +17,14 @@
       "integrations": [
         "OpenAI",
         "Anthropic",
+        "GLM/BigModel",
+        "Z.AI",
+        "Volcengine Ark",
+        "Alibaba DashScope/Model Studio",
         "Gemini",
         "OpenRouter",
-        "OpenAI-compatible"
+        "OpenAI-compatible",
+        "models.dev catalog"
       ],
       "extension_targets": [
         "gopact-adapters-model-openaicompatible"
@@ -29,7 +34,10 @@
         "StreamingModel",
         "ModelRequest",
         "ModelResponse",
+        "provider.Provider",
+        "provider.Registry",
         "provider.Router",
+        "provider.Capability",
         "model middleware"
       ],
       "conformance_suites": [
@@ -37,11 +45,13 @@
         "gopacttest-provider-conformance",
         "streaming-model",
         "provider-routing",
+        "provider-profile",
+        "model-catalog-hints",
         "model-redaction",
         "model-policy"
       ],
       "host_owned_config": true,
-      "rationale": "Hosted model providers carry credentials, endpoint policy, SDK churn, retry semantics, and vendor capability drift. Core keeps provider-neutral model contracts and routing only."
+      "rationale": "Hosted model providers carry credentials, endpoint policy, SDK churn, retry semantics, and vendor capability drift. Core keeps provider-neutral model contracts and routing only; external adapters prioritize OpenAI and Anthropic native support, then OpenAI-compatible provider profiles for GLM/BigModel, Z.AI, Volcengine Ark, Alibaba DashScope/Model Studio, OpenRouter, enterprise gateways, and optional models.dev catalog hints."
     },
     {
       "id": "checkpoint-backends",

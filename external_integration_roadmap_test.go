@@ -152,6 +152,44 @@ func TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore(t *tes
 			t.Fatalf("mcp-a2a-transports target %q has no extension conformance contract", target)
 		}
 	}
+
+	modelEntry := entries["model-providers"]
+	for _, integration := range []string{
+		"OpenAI",
+		"Anthropic",
+		"GLM/BigModel",
+		"Z.AI",
+		"Volcengine Ark",
+		"Alibaba DashScope/Model Studio",
+		"OpenRouter",
+		"OpenAI-compatible",
+		"models.dev catalog",
+	} {
+		if !slices.Contains(modelEntry.Integrations, integration) {
+			t.Fatalf("model-providers missing integration %q", integration)
+		}
+	}
+	for _, contract := range []string{
+		"provider.Provider",
+		"provider.Registry",
+		"provider.Router",
+		"provider.Capability",
+		"ModelRequest",
+		"ModelResponse",
+		"StreamingModel",
+	} {
+		if !slices.Contains(modelEntry.CoreContracts, contract) {
+			t.Fatalf("model-providers missing core contract %q", contract)
+		}
+	}
+	for _, suite := range []string{
+		"provider-profile",
+		"model-catalog-hints",
+	} {
+		if !slices.Contains(modelEntry.ConformanceSuites, suite) {
+			t.Fatalf("model-providers missing conformance suite %q", suite)
+		}
+	}
 }
 
 type externalIntegrationRoadmap struct {

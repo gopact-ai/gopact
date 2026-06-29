@@ -175,7 +175,17 @@ type Candidate struct {
 
 Template 层可以继续依赖 root `ChatModel` 的最小 `Generate -> Message` 契约。需要接入 provider router 时，应用层使用 `gopact.AdaptStreamingModel(router)` 生成 `ChatModel`；支持 streaming 的 template 应检测 `gopact.StreamingModel` 并把 route planned、provider attempt、fallback started 和 model message events 原样纳入自身 event stream。
 
-`provider.Provider` 是 core contract；OpenAI、Anthropic、Gemini、Ollama、OpenRouter、企业网关都应该是 adapter。OpenRouter 这类 OpenAI-compatible gateway 可以用同一个 adapter 实现，但它的 gateway routing 参数必须留在 adapter metadata 或 typed route policy 中，不能污染 `ModelRequest` 的核心字段。
+`provider.Provider` 是 core contract；具体商业模型服务都应该是 adapter。第一优先级是 OpenAI native adapter 和 Anthropic native adapter；第二优先级是 OpenAI-compatible generic adapter + provider profile，覆盖 GLM/BigModel、Z.AI、Volcengine Ark、Alibaba DashScope/Model Studio、OpenRouter、企业网关和本地模型服务。Gemini、Ollama、Bedrock、Vertex、DeepSeek、Moonshot、xAI、Mistral 等继续作为同一 adapter 仓的扩展目标。OpenAI-compatible gateway 的 gateway routing 参数必须留在 adapter metadata 或 typed route policy 中，不能污染 `ModelRequest` 的核心字段。
+
+### Provider 支持目标
+
+模型层是 LLM Agent SDK 的核心能力，但实现仍然分层：
+
+- core：保留 provider-neutral `ModelRequest` / `ModelResponse`、stream event、tool call、structured output、usage/cost、capability、router、fallback 和 error taxonomy；
+- native adapter：OpenAI 优先覆盖 Responses API / Chat Completions，Anthropic 优先覆盖 Messages API / tool use / streaming；
+- OpenAI-compatible adapter：用 provider profile 处理 base URL、auth header、endpoint 形态、role/tool/structured output/streaming/reasoning/usage/error 差异，优先覆盖 GLM/BigModel、Z.AI、Volcengine Ark、Alibaba DashScope/Model Studio、OpenRouter 和企业网关；
+- catalog adapter：可选接入 models.dev 这类模型目录作为 capability / limit / price hint，但不能替代真实 provider conformance，也不能让 core 主动联网或读取配置文件；
+- conformance：每个真实 provider adapter 至少覆盖文本、streaming、tool call、tool result round trip、structured output、image/file 输入、context length error、rate limit/auth error classification、usage parsing 和 cancel/timeout。
 
 ### Provider 注入模型
 
@@ -306,9 +316,9 @@ Router 不能只靠字符串匹配决定 fallback。错误类型要支持 `error
 - `provider.CapabilityFilter`：按 model capability 过滤候选。
 - `provider.SimpleHealth`：内存健康状态和基础 circuit breaker。
 - `provider.FakeProvider`：无外部依赖测试用 provider。
-- `adapters/model/openai-compatible`：建议作为第一批 adapter，因为 OpenRouter、很多企业网关和本地模型服务都能走这个协议形态。
+- `adapters/model/openaicompatible`：建议作为第一批 adapter，因为 GLM/BigModel、Z.AI、Volcengine Ark、Alibaba DashScope/Model Studio、OpenRouter、很多企业网关和本地模型服务都能走这个协议形态。
 
-OpenAI、Anthropic、Gemini 等 native adapter 可以在独立 adapter module 里实现。Core 只要求 contract、router、fake provider 和 openai-compatible 的最小可用路径。
+OpenAI 和 Anthropic native adapter 是 M6 model adapter 的优先目标；Gemini、Bedrock、Vertex、DeepSeek、Moonshot、xAI、Mistral 等 native adapter 可以在独立 adapter module 里继续扩展。Core 只要求 contract、router、fake provider 和 openai-compatible 的最小可用路径。
 
 ### 安全规则
 

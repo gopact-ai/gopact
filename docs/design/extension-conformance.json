@@ -253,12 +253,16 @@
         "chat-model",
         "gopacttest-provider-conformance",
         "streaming-model",
-        "provider-routing"
+        "provider-routing",
+        "provider-profile",
+        "model-catalog-hints"
       ],
       "required_examples": [
         "host-injected HTTP client",
         "chat completion",
-        "streaming completion"
+        "streaming completion",
+        "provider profile for OpenAI-compatible gateways",
+        "model catalog hint mapping"
       ]
     },
     {
