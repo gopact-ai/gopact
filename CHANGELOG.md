@@ -12,7 +12,7 @@ template, adapter-boundary, and release-process changes.
 - Model reviewer governance field requirements through
   `adapters/devagent/modelreview.WithRequiredGovernanceFields`.
 - CI reviewer required `ci_gate` checks through
-  `adapters/devagent/cireview.WithRequiredCIGates`.
+  `github.com/gopact-ai/gopact-templates-devagent/cireview.WithRequiredCIGates`.
 - External repository readiness evidence export and remote CI gate evidence for
   `gopact-ai` extension repositories.
 
