@@ -489,6 +489,8 @@
       "extension_target": "gopact-adapters-turnloop-http",
       "external_repository": "gopact-adapters-turnloop",
       "external_module": "github.com/gopact-ai/gopact-adapters-turnloop",
+      "external_source_ref": "gopact-ai/gopact-adapters-turnloop@d0138857c3d8989b4f766eafedaf2166d9f5a78c:httpstore",
+      "core_source_removed": true,
       "v1_condition": "The HTTP TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
@@ -502,6 +504,8 @@
       "extension_target": "gopact-adapters-turnloop-redis",
       "external_repository": "gopact-adapters-turnloop",
       "external_module": "github.com/gopact-ai/gopact-adapters-turnloop",
+      "external_source_ref": "gopact-ai/gopact-adapters-turnloop@d0138857c3d8989b4f766eafedaf2166d9f5a78c:redisstore",
+      "core_source_removed": true,
       "v1_condition": "The Redis TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
@@ -515,6 +519,8 @@
       "extension_target": "gopact-adapters-turnloop-sql",
       "external_repository": "gopact-adapters-turnloop",
       "external_module": "github.com/gopact-ai/gopact-adapters-turnloop",
+      "external_source_ref": "gopact-ai/gopact-adapters-turnloop@d0138857c3d8989b4f766eafedaf2166d9f5a78c:sqlstore",
+      "core_source_removed": true,
       "v1_condition": "The database/sql TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
       "verification": [
         "extension-conformance",

@@ -283,6 +283,9 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/storage/ossblob",
 		"adapters/storage/r2blob",
 		"adapters/storage/s3blob",
+		"adapters/turnloop/httpstore",
+		"adapters/turnloop/redisstore",
+		"adapters/turnloop/sqlstore",
 	} {
 		migration := migrations[sourcePath]
 		if migration.SourcePath == "" {
