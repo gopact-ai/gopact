@@ -297,6 +297,8 @@
       "extension_target": "gopact-templates-devagent",
       "external_repository": "gopact-templates-devagent",
       "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@518ea787bac5deb354a30c5907cf61529f8aeacd:cireview",
+      "core_source_removed": true,
       "v1_condition": "The CI reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps review evidence conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
