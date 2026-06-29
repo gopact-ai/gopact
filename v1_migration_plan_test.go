@@ -265,6 +265,9 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 	}
 
 	for _, sourcePath := range []string{
+		"adapters/channel/a2ui",
+		"adapters/channel/agui",
+		"adapters/channel/lark",
 		"adapters/model/openaicompatible",
 		"adapters/devagent/gitdiff",
 		"adapters/devagent/cireview",

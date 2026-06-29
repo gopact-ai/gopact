@@ -167,6 +167,8 @@
       "extension_target": "gopact-adapters-channel-a2ui",
       "external_repository": "gopact-adapters-channel",
       "external_module": "github.com/gopact-ai/gopact-adapters-channel",
+      "external_source_ref": "gopact-ai/gopact-adapters-channel@846642fc0c0dd0e369f14cf91331bda7f82d86d4:a2ui",
+      "core_source_removed": true,
       "v1_condition": "The A2UI adapter is removed from the core module after the external repository owns the source path, runs the channel-transfer conformance suites, and passes remote readiness.",
       "verification": [
         "extension-conformance",
@@ -180,6 +182,8 @@
       "extension_target": "gopact-adapters-channel-agui",
       "external_repository": "gopact-adapters-channel",
       "external_module": "github.com/gopact-ai/gopact-adapters-channel",
+      "external_source_ref": "gopact-ai/gopact-adapters-channel@846642fc0c0dd0e369f14cf91331bda7f82d86d4:agui",
+      "core_source_removed": true,
       "v1_condition": "The AG-UI adapter is removed from the core module after the external repository owns the source path, runs the channel-transfer conformance suites, and passes remote readiness.",
       "verification": [
         "extension-conformance",
@@ -193,6 +197,8 @@
       "extension_target": "gopact-adapters-channel-lark",
       "external_repository": "gopact-adapters-channel",
       "external_module": "github.com/gopact-ai/gopact-adapters-channel",
+      "external_source_ref": "gopact-ai/gopact-adapters-channel@846642fc0c0dd0e369f14cf91331bda7f82d86d4:lark",
+      "core_source_removed": true,
       "v1_condition": "The Lark adapter is removed from the core module after the external repository owns the source path, documents host-owned client and callback configuration, and passes remote readiness.",
       "verification": [
         "extension-conformance",
