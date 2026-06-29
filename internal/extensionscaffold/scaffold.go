@@ -84,7 +84,7 @@ var conformanceHelperCatalog = map[string][]conformanceHelperReference{
 		{Suite: "json-schema-validator", ImportPath: "github.com/gopact-ai/gopact/gopacttest", Function: "RequirePortableJSONSchemaValidatorConformance"},
 	},
 	"trace-exporter-conformance": {
-		{Suite: "trace-exporter-conformance", ImportPath: "github.com/gopact-ai/gopact/adapters/observability/trace", Function: "RequireExporterConformance"},
+		{Suite: "trace-exporter-conformance", ImportPath: "github.com/gopact-ai/gopact-plugins-observability/trace", Function: "RequireExporterConformance"},
 	},
 }
 

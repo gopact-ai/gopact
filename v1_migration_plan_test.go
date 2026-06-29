@@ -282,6 +282,7 @@ func TestV1MigrationPlanRecordsExternalizedSources(t *testing.T) {
 		"adapters/lease/httpstore",
 		"adapters/lease/redisstore",
 		"adapters/lease/sqlstore",
+		"adapters/observability/trace",
 		"adapters/storage/gcsblob",
 		"adapters/storage/ossblob",
 		"adapters/storage/r2blob",

@@ -422,6 +422,8 @@
       "extension_target": "gopact-adapters-observability-trace",
       "external_repository": "gopact-plugins-observability",
       "external_module": "github.com/gopact-ai/gopact-plugins-observability",
+      "external_source_ref": "gopact-ai/gopact-plugins-observability@c7331078378fb9c63384c3504d2dd5136c4ecd6c:trace",
+      "core_source_removed": true,
       "v1_condition": "The trace exporter plugin is removed from the core module after the observability plugin repository owns the source path, keeps exporter conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",

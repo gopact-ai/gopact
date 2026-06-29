@@ -401,7 +401,7 @@
 
 交付：
 
-- `[done: first slice]` provider-neutral trace plugin：`adapters/observability/trace` 已提供 `gopact.Plugin`，通过 event subscriber 消费 runtime events，并把 run/turn/node/model/tool/policy/checkpoint/A2A/memory/sandbox event 投影成稳定 `SpanRecord`；当前提供 `MemoryExporter`、`ExporterFunc`、HTTP/JSON `HTTPExporter`、OTLP/HTTP JSON `OTLPHTTPExporter`、LangSmith-compatible `LangSmithHTTPExporter`、LangGraph-style `LangGraphHTTPExporter`、`PolicyExporter` 和 `CheckExporterConformance` / `RequireExporterConformance` trace exporter conformance helper；redacted event 对应 span 会保留 `redaction.applied` / `redaction.field_count` 低基数边界属性；不引入具体 SaaS 或 OTel SDK 依赖；
+- `[done: first slice]` provider-neutral trace plugin：`github.com/gopact-ai/gopact-plugins-observability/trace` 已提供 `gopact.Plugin`，通过 event subscriber 消费 runtime events，并把 run/turn/node/model/tool/policy/checkpoint/A2A/memory/sandbox event 投影成稳定 `SpanRecord`；当前提供 `MemoryExporter`、`ExporterFunc`、HTTP/JSON `HTTPExporter`、OTLP/HTTP JSON `OTLPHTTPExporter`、LangSmith-compatible `LangSmithHTTPExporter`、LangGraph-style `LangGraphHTTPExporter`、`PolicyExporter` 和 `CheckExporterConformance` / `RequireExporterConformance` trace exporter conformance helper；redacted event 对应 span 会保留 `redaction.applied` / `redaction.field_count` 低基数边界属性；不引入具体 SaaS 或 OTel SDK 依赖；
 - `[done: first slice]` OpenTelemetry OTLP/HTTP JSON exporter adapter；
 - `[done: first slice]` LangGraph-style HTTP event exporter adapter：把 `SpanRecord` 转成 thread/run/attempt/node/step/event/status/metadata envelope，供宿主 collector 或后续 LangGraph bridge 消费；
 - 真实 LangSmith SDK / LangGraph-style trace exporter policy/redaction 深化；
