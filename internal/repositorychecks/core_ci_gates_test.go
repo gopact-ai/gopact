@@ -132,6 +132,19 @@ func TestCoreCIGatesRunGraphConformance(t *testing.T) {
 	}
 }
 
+func TestCoreCIConfiguresPrivateModuleAccess(t *testing.T) {
+	workflow := readTextFile(t, ".github/workflows/ci.yml")
+	for _, want := range []string{
+		"GOPRIVATE: github.com/gopact-ai/*",
+		"GOPACT_GITHUB_TOKEN",
+		`git config --global url."https://x-access-token:${GOPACT_GITHUB_TOKEN}@github.com/gopact-ai/".insteadOf "https://github.com/gopact-ai/"`,
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("core CI workflow missing private module access config %q", want)
+		}
+	}
+}
+
 func TestSelfBootstrapReleaseGateTracksCoreCIGates(t *testing.T) {
 	manifest := loadCoreCIGatesManifest(t)
 	var selfBootstrapGates []string
