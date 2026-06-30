@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,6 +121,37 @@ func TestLoadRepositoriesFromDesignRendersConformantScaffolds(t *testing.T) {
 	}
 	if len(reactTemplate.Targets) != 1 || !slices.Contains(reactTemplate.Targets[0].ConformanceSuites, "gopacttest-react-deferred-memory-queue-conformance") {
 		t.Fatalf("gopact-templates-react targets = %#v, want deferred memory queue conformance", reactTemplate.Targets)
+	}
+	for _, templateName := range []string{
+		"gopact-templates-react",
+		"gopact-templates-agenttool",
+		"gopact-templates-devagent",
+	} {
+		template := byName[templateName]
+		if len(template.Targets) != 1 {
+			t.Fatalf("%s targets = %#v, want 1 target", templateName, template.Targets)
+		}
+		if !slices.Contains(template.Targets[0].ConformanceSuites, "gopacttest-graph-conformance") {
+			t.Fatalf("%s ConformanceSuites = %#v, want graph conformance", templateName, template.Targets[0].ConformanceSuites)
+		}
+	}
+
+	transport := byName["gopact-adapters-transport"]
+	if transport.Kind != "adapter" {
+		t.Fatalf("gopact-adapters-transport Kind = %q, want adapter", transport.Kind)
+	}
+	a2aTarget := targetByName(transport.Targets, "gopact-adapters-transport-a2a")
+	if a2aTarget.Name == "" {
+		t.Fatalf("gopact-adapters-transport targets = %#v, want a2a target", transport.Targets)
+	}
+	if !slices.Contains(a2aTarget.ConformanceSuites, "gopacttest-a2a-agent-conformance") {
+		t.Fatalf("a2a target ConformanceSuites = %#v, want a2a agent conformance", a2aTarget.ConformanceSuites)
+	}
+	if !slices.Contains(a2aTarget.ConformanceSuites, "gopacttest-a2a-discoverer-conformance") {
+		t.Fatalf("a2a target ConformanceSuites = %#v, want a2a discoverer conformance", a2aTarget.ConformanceSuites)
+	}
+	if !slices.Contains(a2aTarget.ConformanceSuites, "gopacttest-a2a-agent-mesh-conformance") {
+		t.Fatalf("a2a target ConformanceSuites = %#v, want a2a agent mesh conformance", a2aTarget.ConformanceSuites)
 	}
 }
 
@@ -314,6 +346,15 @@ func TestWriteBootstrapWorkspaceSupportsGeneratedRepositoryTests(t *testing.T) {
 	}
 }
 
+func targetByName(targets []Target, name string) Target {
+	for _, target := range targets {
+		if target.Name == name {
+			return target
+		}
+	}
+	return Target{}
+}
+
 func TestVerifyBootstrapWorkspaceRunsGeneratedRepositoryTests(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -415,6 +456,44 @@ func TestVerifyBootstrapWorkspaceRemovesTemporaryGitRepository(t *testing.T) {
 	}
 }
 
+func TestCleanupVerificationGitRepositoryHandlesRecreatedGitDir(t *testing.T) {
+	dir := tempDirWithRetryCleanup(t)
+	repoDir := filepath.Join(dir, "repo")
+	gitDir := filepath.Join(repoDir, ".git")
+	if err := os.MkdirAll(filepath.Join(gitDir, "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var recreated atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+				_ = os.MkdirAll(filepath.Join(gitDir, "ai"), 0o755)
+				recreated.Store(true)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	if err := cleanupVerificationGitRepository(repoDir, true); err != nil {
+		t.Fatalf("cleanupVerificationGitRepository() error = %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("test did not observe .git recreation")
+	}
+	if !recreated.Load() {
+		t.Fatal("recreated = false, want true")
+	}
+	if _, err := os.Stat(gitDir); !os.IsNotExist(err) {
+		t.Fatalf(".git exists after cleanup: %v", err)
+	}
+}
+
 func TestRenderSyncPlanFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 	plan, err := RenderSyncPlanFromDesign(filepath.Join("..", ".."))
 	if err != nil {
@@ -467,6 +546,9 @@ func TestRenderSyncPlanFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 	if !slices.Contains(model.CICommands, "go vet ./...") {
 		t.Fatalf("model CICommands = %#v, want go vet ./...", model.CICommands)
 	}
+	if !slices.Contains(model.CICommands, "go mod tidy && git diff --exit-code") {
+		t.Fatalf("model CICommands = %#v, want module tidiness gate", model.CICommands)
+	}
 	if len(model.ExtensionTargets) != 1 || model.ExtensionTargets[0] != "gopact-adapters-model-openaicompatible" {
 		t.Fatalf("model ExtensionTargets = %#v", model.ExtensionTargets)
 	}
@@ -497,8 +579,8 @@ func TestRenderSyncScriptFromDesignCapturesRemoteBootstrapSteps(t *testing.T) {
 		"GIT_CONFIG_KEY_0=\"${git_key}\"",
 		"run_ci_command \"${repo_dir}\" \"${command}\"",
 		"gh repo clone \"${repo}\" \"${sync_dir}\"",
-		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
-		"sync_repo 'gopact-templates-devagent' 'gopact-templates-devagent' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
+		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go mod tidy && git diff --exit-code' 'go test -count=1 ./...' 'go vet ./...'",
+		"sync_repo 'gopact-templates-devagent' 'gopact-templates-devagent' 'private' 'git diff --check' 'go mod tidy && git diff --exit-code' 'go test -count=1 ./...' 'go vet ./...'",
 		"git -C \"${repo_dir}\" push -u origin HEAD:main",
 	} {
 		if !strings.Contains(file.Body, want) {

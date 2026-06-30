@@ -139,7 +139,8 @@ func (r *Runner) Run(ctx context.Context, input any, opts ...RunOption) iter.Seq
 		}
 
 		cfg := ResolveRunOptions(opts...)
-		ids := cfg.IDs.WithDefaults(r.ids).WithDefaults(Defaults().RuntimeIDs)
+		contextIDs, _ := RuntimeIDsFromContext(ctx)
+		ids := cfg.IDs.WithDefaults(r.ids).WithDefaults(contextIDs).WithDefaults(Defaults().RuntimeIDs)
 		if r.pluginHost != nil {
 			if err := r.pluginHost.beginRun(ctx); err != nil {
 				event := Event{

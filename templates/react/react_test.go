@@ -40,6 +40,38 @@ func TestAgentDirectFinalMatchesGoldenTrajectory(t *testing.T) {
 	}
 }
 
+func TestAgentInheritsRuntimeIDsFromContext(t *testing.T) {
+	want := gopact.RuntimeIDs{
+		RunID:    "ctx-run",
+		ThreadID: "thread-1",
+		TraceID:  "trace-1",
+	}
+	ctx := gopact.ContextWithRuntimeIDs(context.Background(), want)
+	model := &scriptedModel{
+		responses: []gopact.Message{
+			{Role: gopact.RoleAssistant, Content: "done"},
+		},
+	}
+	agent, err := New(model, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	events, err := gopacttest.CollectEvents(agent.Run(ctx, State{
+		Messages: []gopact.Message{{Role: gopact.RoleUser, Content: "hi"}},
+	}))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if len(events) == 0 || events[0].IDs != want {
+		t.Fatalf("first event IDs = %+v, want %+v", events[0].IDs, want)
+	}
+	if len(model.requests) != 1 || model.requests[0].IDs != want {
+		t.Fatalf("model request IDs = %+v, want %+v", model.requests, want)
+	}
+}
+
 func TestAgentToolCallThenFinalMatchesGoldenTrajectory(t *testing.T) {
 	ctx := context.Background()
 	registry := tools.NewRegistry()

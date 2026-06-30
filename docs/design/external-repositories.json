@@ -30,6 +30,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -58,6 +59,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -83,6 +85,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -108,6 +111,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -134,6 +138,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -159,6 +164,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -182,6 +188,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -206,6 +213,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -229,6 +237,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -252,6 +261,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]
@@ -275,6 +285,7 @@
       ],
       "required_ci_commands": [
         "git diff --check",
+        "go mod tidy && git diff --exit-code",
         "go test -count=1 ./...",
         "go vet ./..."
       ]

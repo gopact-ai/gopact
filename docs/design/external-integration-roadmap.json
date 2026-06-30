@@ -293,6 +293,9 @@
       "conformance_suites": [
         "mcp-client",
         "mcp-server",
+        "gopacttest-a2a-agent-conformance",
+        "gopacttest-a2a-discoverer-conformance",
+        "gopacttest-a2a-agent-mesh-conformance",
         "a2a-client",
         "a2a-streaming",
         "transport-policy"
@@ -327,6 +330,7 @@
       "conformance_suites": [
         "react-template",
         "gopacttest-template-trajectory-conformance",
+        "gopacttest-graph-conformance",
         "gopacttest-react-deferred-memory-queue-conformance",
         "gopacttest-react-deferred-memory-queue-visibility-conformance",
         "memory-replay",
@@ -366,6 +370,7 @@
         "gopacttest-verification-evidence-conformance",
         "channel-reviewer",
         "gopacttest-template-trajectory-conformance",
+        "gopacttest-graph-conformance",
         "trajectory-golden"
       ],
       "host_owned_config": true,
@@ -399,6 +404,7 @@
         "parent-child-runtime-ids",
         "artifact-propagation",
         "gopacttest-template-trajectory-conformance",
+        "gopacttest-graph-conformance",
         "trajectory-golden"
       ],
       "host_owned_config": true,

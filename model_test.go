@@ -130,6 +130,24 @@ func TestNewModelRequestAppliesOptionsWithoutAliasingMutableFields(t *testing.T)
 	}
 }
 
+func TestApplyModelRequestOptionsCopiesSamplingPointers(t *testing.T) {
+	temperature := 0.2
+	topP := 0.9
+	original := ModelRequest{
+		Messages:    []Message{{Role: RoleUser, Content: "hi"}},
+		Temperature: &temperature,
+		TopP:        &topP,
+	}
+
+	got := ApplyModelRequestOptions(original)
+	temperature = 1
+	topP = 1
+
+	if got.Temperature == nil || *got.Temperature != 0.2 || got.TopP == nil || *got.TopP != 0.9 {
+		t.Fatalf("sampling = temperature %#v top_p %#v, want copied 0.2/0.9", got.Temperature, got.TopP)
+	}
+}
+
 type responseModelStub struct {
 	response ModelResponse
 	err      error

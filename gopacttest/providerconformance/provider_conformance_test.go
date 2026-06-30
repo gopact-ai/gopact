@@ -78,6 +78,18 @@ func TestCheckProviderConformanceReportsMissingStreamEvent(t *testing.T) {
 	}
 }
 
+func TestCheckProviderConformanceReportsMissingStreamRuntimeIDs(t *testing.T) {
+	harness := ProviderConformanceHarness{
+		Provider: missingStreamRuntimeIDsProvider{},
+		Request:  gopact.ModelRequest{Messages: []gopact.Message{{Role: gopact.RoleUser, Content: "hi"}}},
+	}
+
+	results := CheckProviderConformance(context.Background(), harness)
+	if !hasFailedProviderConformanceCase(results, "streams-events") {
+		t.Fatalf("CheckProviderConformance() did not report stream runtime id failure: %+v", results)
+	}
+}
+
 func failedProviderConformanceCases(results []ProviderConformanceResult) []string {
 	var failed []string
 	for _, result := range results {
@@ -154,5 +166,36 @@ func (silentStreamProvider) Stream(ctx context.Context, req gopact.ModelRequest)
 		if err := ctx.Err(); err != nil {
 			yield(gopact.Event{Type: gopact.EventModelProviderAttemptFailed, IDs: req.IDs, Err: err}, err)
 		}
+	}
+}
+
+type missingStreamRuntimeIDsProvider struct{}
+
+func (missingStreamRuntimeIDsProvider) Name() string {
+	return "missing-stream-runtime-ids-provider"
+}
+
+func (missingStreamRuntimeIDsProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []provider.ModelInfo{{Name: "missing-stream-runtime-ids-model", Provider: "missing-stream-runtime-ids-provider"}}, nil
+}
+
+func (missingStreamRuntimeIDsProvider) Generate(ctx context.Context, _ gopact.ModelRequest) (gopact.ModelResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return gopact.ModelResponse{}, err
+	}
+	return gopact.ModelResponse{Message: gopact.Message{Role: gopact.RoleAssistant, Content: "hello"}}, nil
+}
+
+func (missingStreamRuntimeIDsProvider) Stream(ctx context.Context, _ gopact.ModelRequest) iter.Seq2[gopact.Event, error] {
+	return func(yield func(gopact.Event, error) bool) {
+		if err := ctx.Err(); err != nil {
+			yield(gopact.Event{Type: gopact.EventModelProviderAttemptFailed, Err: err}, err)
+			return
+		}
+		message := gopact.Message{Role: gopact.RoleAssistant, Content: "hello"}
+		yield(gopact.Event{Type: gopact.EventModelMessage, Message: &message}, nil)
 	}
 }

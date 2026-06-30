@@ -51,6 +51,7 @@ var (
 	_ Agent          = (*JSONRPCAgent)(nil)
 	_ StreamingAgent = (*JSONRPCAgent)(nil)
 	_ Discoverer     = (*JSONRPCAgent)(nil)
+	_ CardLister     = (*JSONRPCAgent)(nil)
 )
 
 // NewJSONRPCAgent creates a JSON-RPC A2A agent client.
@@ -162,7 +163,19 @@ func (a *JSONRPCAgent) Discover(ctx context.Context, query DiscoveryQuery) (Disc
 	if card.URL == "" {
 		card.URL = endpoint
 	}
+	if !matchesRemoteDiscoveryQuery(card, query) {
+		return DiscoveryResult{}, ErrAgentNotFound
+	}
 	return DiscoveryResult{Card: copyAgentCard(card)}, nil
+}
+
+// ListCards returns the JSON-RPC endpoint's well-known agent card.
+func (a *JSONRPCAgent) ListCards(ctx context.Context) ([]AgentCard, error) {
+	result, err := a.Discover(ctx, DiscoveryQuery{})
+	if err != nil {
+		return nil, err
+	}
+	return []AgentCard{copyAgentCard(result.Card)}, nil
 }
 
 // Send invokes the A2A SendMessage operation over JSON-RPC.

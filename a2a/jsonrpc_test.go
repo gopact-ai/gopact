@@ -109,6 +109,63 @@ func TestJSONRPCAgentRoundTripsDiscoverSendAndCancel(t *testing.T) {
 	}
 }
 
+func TestJSONRPCAgentListCardsReturnsWellKnownAgentCard(t *testing.T) {
+	ctx := context.Background()
+	agent := FakeAgent{CardValue: AgentCard{Name: "planner", Description: "plans tasks"}}
+	server := httptest.NewServer(NewJSONRPCHandler(agent))
+	defer server.Close()
+	remote, err := NewJSONRPCAgent(server.URL, WithJSONRPCClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewJSONRPCAgent() error = %v", err)
+	}
+
+	cards, err := remote.ListCards(ctx)
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if len(cards) != 1 ||
+		cards[0].Name != "planner" ||
+		cards[0].Description != "plans tasks" ||
+		cards[0].URL != server.URL {
+		t.Fatalf("ListCards() = %+v, want well-known card with endpoint URL", cards)
+	}
+}
+
+func TestJSONRPCAgentDiscoverMatchesNameAndMetadata(t *testing.T) {
+	ctx := context.Background()
+	agent := FakeAgent{
+		CardValue: AgentCard{
+			Name:     "reviewer",
+			Metadata: map[string]any{"domain": "code"},
+		},
+	}
+	server := httptest.NewServer(NewJSONRPCHandler(agent))
+	defer server.Close()
+
+	remote, err := NewJSONRPCAgent(server.URL, WithJSONRPCClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewJSONRPCAgent() error = %v", err)
+	}
+
+	result, err := remote.Discover(ctx, DiscoveryQuery{
+		Metadata: map[string]any{"domain": "code"},
+	})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if result.Card.Name != "reviewer" {
+		t.Fatalf("Discover() = %+v, want reviewer card", result.Card)
+	}
+
+	_, err = remote.Discover(ctx, DiscoveryQuery{
+		Name:     "reviewer",
+		Metadata: map[string]any{"domain": "research"},
+	})
+	if !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Discover() mismatched metadata error = %v, want %v", err, ErrAgentNotFound)
+	}
+}
+
 func TestJSONRPCAgentStreamsTaskEventsOverSSE(t *testing.T) {
 	ctx := context.Background()
 	artifact := gopact.ArtifactRef{ID: "artifact-1", Name: "plan.md", URI: "memory://artifact-1"}

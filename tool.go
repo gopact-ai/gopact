@@ -24,13 +24,20 @@ type ToolField struct {
 	Required bool
 }
 
-// RequiredStringField creates a required string property for ObjectToolSpec.
-func RequiredStringField(name, description string) ToolField {
+// StringField creates an optional string property for ObjectToolSpec.
+func StringField(name, description string) ToolField {
 	schema := JSONSchema{"type": "string"}
 	if description != "" {
 		schema["description"] = description
 	}
-	return ToolField{Name: name, Schema: schema, Required: true}
+	return ToolField{Name: name, Schema: schema}
+}
+
+// RequiredStringField creates a required string property for ObjectToolSpec.
+func RequiredStringField(name, description string) ToolField {
+	field := StringField(name, description)
+	field.Required = true
+	return field
 }
 
 // ObjectToolSpec creates a ToolSpec whose input schema is a JSON object.

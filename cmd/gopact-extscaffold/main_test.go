@@ -96,7 +96,7 @@ func TestRunPrintsSyncPlanShellScript(t *testing.T) {
 		"copy_generated_scaffold \"${repo_dir}\" \"${sync_dir}\"",
 		"gh repo clone \"${repo}\" \"${sync_dir}\"",
 		"run_ci_command \"${repo_dir}\" \"${command}\"",
-		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go test -count=1 ./...' 'go vet ./...'",
+		"sync_repo 'gopact-adapters-model' 'gopact-adapters-model' 'private' 'git diff --check' 'go mod tidy && git diff --exit-code' 'go test -count=1 ./...' 'go vet ./...'",
 		"gh repo create \"${repo}\" \"${visibility_flag}\" --source \"${repo_dir}\" --remote origin --push",
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -460,13 +460,13 @@ exit 2
 	}
 	if check.Metadata.RunCount != expectedScaffoldRepositoryCount ||
 		check.Metadata.RepositoryCount != expectedScaffoldRepositoryCount ||
-		check.Metadata.GateCount != expectedScaffoldRepositoryCount*3 {
-		t.Fatalf("metadata = %+v, want one CI run with three gates per repository", check.Metadata)
+		check.Metadata.GateCount != expectedScaffoldRepositoryCount*4 {
+		t.Fatalf("metadata = %+v, want one CI run with four gates per repository", check.Metadata)
 	}
-	if got, want := check.Metadata.RequiredGates, []string{"whitespace", "unit", "vet"}; !reflect.DeepEqual(got, want) {
+	if got, want := check.Metadata.RequiredGates, []string{"whitespace", "module-tidiness", "unit", "vet"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("required gates = %#v, want %#v", got, want)
 	}
-	if len(check.Evidence) != expectedScaffoldRepositoryCount*3 {
+	if len(check.Evidence) != expectedScaffoldRepositoryCount*4 {
 		t.Fatalf("evidence count = %d, want one evidence item per repository gate", len(check.Evidence))
 	}
 	first := check.Evidence[0]

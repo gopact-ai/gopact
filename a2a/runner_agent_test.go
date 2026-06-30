@@ -74,6 +74,61 @@ func TestRunnableAgentSendRunsLocalRunnableAndReturnsResult(t *testing.T) {
 	}
 }
 
+func TestRunnableAgentSendPropagatesRuntimeIDsThroughContext(t *testing.T) {
+	want := gopact.RuntimeIDs{RunID: "task-run", ThreadID: "thread-1", CallID: "call-1", TraceID: "trace-1"}
+	ctx := gopact.ContextWithRuntimeIDs(context.Background(), gopact.RuntimeIDs{
+		RunID:   "ctx-run",
+		TraceID: "trace-1",
+	})
+	var mapperIDs, mapperTaskIDs, runnableContextIDs, runnableOptionIDs, resultIDs, resultTaskIDs gopact.RuntimeIDs
+	runnable := runnableFunc(func(ctx context.Context, input any, opts ...gopact.RunOption) iter.Seq2[gopact.Event, error] {
+		runnableContextIDs, _ = gopact.RuntimeIDsFromContext(ctx)
+		runnableOptionIDs = gopact.ResolveRunOptions(opts...).IDs
+		return func(yield func(gopact.Event, error) bool) {
+			yield(gopact.Event{Type: gopact.EventRunStarted}, nil)
+			yield(gopact.Event{Type: gopact.EventRunCompleted}, nil)
+		}
+	})
+	agent, err := NewRunnableAgent(AgentCard{Name: "planner"}, runnable,
+		WithRunnableInputMapper(func(ctx context.Context, task Task) (any, error) {
+			mapperIDs, _ = gopact.RuntimeIDsFromContext(ctx)
+			mapperTaskIDs = task.IDs
+			return task.Input, nil
+		}),
+		WithRunnableResultMapper(func(ctx context.Context, task Task, events []gopact.Event) (Result, error) {
+			resultIDs, _ = gopact.RuntimeIDsFromContext(ctx)
+			resultTaskIDs = task.IDs
+			return Result{TaskID: task.ID}, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewRunnableAgent() error = %v", err)
+	}
+
+	_, err = agent.Send(ctx, Task{
+		ID:       "task-1",
+		IDs:      gopact.RuntimeIDs{RunID: "task-run", ThreadID: "thread-1", CallID: "call-1"},
+		Input:    "write tests",
+		Metadata: map[string]any{"kind": "unit"},
+	})
+	if err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+
+	for name, got := range map[string]gopact.RuntimeIDs{
+		"mapper context":   mapperIDs,
+		"mapper task":      mapperTaskIDs,
+		"runnable context": runnableContextIDs,
+		"runnable options": runnableOptionIDs,
+		"result context":   resultIDs,
+		"result task":      resultTaskIDs,
+	} {
+		if got != want {
+			t.Fatalf("%s IDs = %+v, want %+v", name, got, want)
+		}
+	}
+}
+
 func TestRunnableAgentStreamProjectsRuntimeEvents(t *testing.T) {
 	ctx := context.Background()
 	artifact := gopact.ArtifactRef{ID: "artifact-1", Name: "plan.md", URI: "memory://artifact-1"}
@@ -128,6 +183,58 @@ func TestRunnableAgentStreamProjectsRuntimeEvents(t *testing.T) {
 			event.IDs.RunID != "run-1" ||
 			event.IDs.CallID != "call-1" {
 			t.Fatalf("stream event ids = %+v task=%q, want task identity", event.IDs, event.TaskID)
+		}
+	}
+}
+
+func TestRunnableAgentStreamPropagatesRuntimeIDsThroughContext(t *testing.T) {
+	want := gopact.RuntimeIDs{RunID: "ctx-run", CallID: "call-1", TraceID: "trace-1"}
+	ctx := gopact.ContextWithRuntimeIDs(context.Background(), gopact.RuntimeIDs{
+		RunID:   "ctx-run",
+		TraceID: "trace-1",
+	})
+	var mapperIDs, runnableContextIDs, resultIDs gopact.RuntimeIDs
+	runnable := runnableFunc(func(ctx context.Context, input any, opts ...gopact.RunOption) iter.Seq2[gopact.Event, error] {
+		runnableContextIDs, _ = gopact.RuntimeIDsFromContext(ctx)
+		return func(yield func(gopact.Event, error) bool) {
+			yield(gopact.Event{Type: gopact.EventRunStarted}, nil)
+			yield(gopact.Event{Type: gopact.EventRunCompleted}, nil)
+		}
+	})
+	agent, err := NewRunnableAgent(AgentCard{Name: "planner"}, runnable,
+		WithRunnableInputMapper(func(ctx context.Context, task Task) (any, error) {
+			mapperIDs, _ = gopact.RuntimeIDsFromContext(ctx)
+			return task.Input, nil
+		}),
+		WithRunnableResultMapper(func(ctx context.Context, task Task, events []gopact.Event) (Result, error) {
+			resultIDs, _ = gopact.RuntimeIDsFromContext(ctx)
+			return Result{TaskID: task.ID}, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewRunnableAgent() error = %v", err)
+	}
+
+	events, err := collectTaskEvents(agent.Stream(ctx, Task{
+		ID:    "task-1",
+		IDs:   gopact.RuntimeIDs{CallID: "call-1"},
+		Input: "write tests",
+	}))
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("Stream() events = 0, want completed event")
+	}
+
+	for name, got := range map[string]gopact.RuntimeIDs{
+		"mapper context":   mapperIDs,
+		"runnable context": runnableContextIDs,
+		"result context":   resultIDs,
+		"completed event":  events[len(events)-1].IDs,
+	} {
+		if got != want {
+			t.Fatalf("%s IDs = %+v, want %+v", name, got, want)
 		}
 	}
 }

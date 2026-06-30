@@ -441,7 +441,7 @@
 发布前必须满足：
 
 - 根目录必须具备 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md`、`CHANGELOG.md`；是否增加 `CODE_OF_CONDUCT.md` 可由组织治理决定，但不能缺少贡献、安全和变更入口。
-- 当前 `CONTRIBUTING.md`、`SECURITY.md`、`CHANGELOG.md` 已补齐；`LICENSE` 仍需项目 owner 选择许可证后添加，不能由 SDK 实现阶段代选。
+- 当前 `LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`、`CHANGELOG.md` 已补齐。
 - `README.md` 必须面向新用户重写为短路径入口：项目定位、安装方式、最小可运行 quickstart、核心概念、当前稳定性声明、文档地图和贡献入口；完整能力清单应移入设计文档，不能让 README 变成内部研发流水账。
 - README 的第一屏必须讲清楚 `gopact` 是 Go-first agent SDK，而不是某个单一 agent template；必须说明 core 只提供过程契约、运行时原子能力、默认轻量实现和扩展点。
 - 必须明确标注包边界：stable core、experimental core、reference-only adapter、transitional adapter/template、external adapter/plugin/template。该边界以 `repository-boundary.json`、`public-api-boundary.json` 和 `v1-migration-plan.json` 为准。

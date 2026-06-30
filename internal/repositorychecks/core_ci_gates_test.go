@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/gopact-ai/gopact/gopacttest"
 )
 
 func TestCoreCIGatesDocumentedAndConfigured(t *testing.T) {
@@ -61,7 +63,7 @@ func TestCoreCIGatesDocumentedAndConfigured(t *testing.T) {
 	}
 
 	makefile := readTextFile(t, "Makefile")
-	for _, target := range []string{"check:", "test:", "race:", "vet:", "lint:", "coverage:", "examples:", "security:"} {
+	for _, target := range []string{"check:", "test:", "race:", "vet:", "lint:", "coverage:", "examples:", "graph:", "a2a-mesh:", "security:"} {
 		if !strings.Contains(makefile, target) {
 			t.Fatalf("Makefile missing target %q", strings.TrimSuffix(target, ":"))
 		}
@@ -110,6 +112,37 @@ func TestCoreCIGateEvidenceBridgeIsDocumented(t *testing.T) {
 		if !strings.Contains(content, "ci_gate") {
 			t.Fatalf("%s does not document ci_gate evidence", path)
 		}
+	}
+}
+
+func TestCoreCIGatesRunGraphConformance(t *testing.T) {
+	const command = "go test -count=1 ./graph ./gopacttest/graphconformance"
+
+	manifest := loadCoreCIGatesManifest(t)
+	if !slices.Contains(manifest.RequiredCommands, command) {
+		t.Fatalf("core CI required_commands = %#v, want %q", manifest.RequiredCommands, command)
+	}
+	workflow := readTextFile(t, manifest.WorkflowPath)
+	if !strings.Contains(workflow, command) {
+		t.Fatalf("core CI workflow missing graph conformance command %q", command)
+	}
+	makefile := readTextFile(t, "Makefile")
+	if !strings.Contains(makefile, command) {
+		t.Fatalf("Makefile missing graph conformance command %q", command)
+	}
+}
+
+func TestSelfBootstrapReleaseGateTracksCoreCIGates(t *testing.T) {
+	manifest := loadCoreCIGatesManifest(t)
+	var selfBootstrapGates []string
+	for _, requirement := range gopacttest.SelfBootstrapReleaseGateRequirements() {
+		if requirement.Name == "self-bootstrap-ci" {
+			selfBootstrapGates = requirement.RequiredCIGates
+			break
+		}
+	}
+	if !slices.Equal(selfBootstrapGates, manifest.RequiredGates) {
+		t.Fatalf("self-bootstrap CI gates = %v, want core gates %v", selfBootstrapGates, manifest.RequiredGates)
 	}
 }
 

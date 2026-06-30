@@ -31,6 +31,7 @@ Run the required conformance suites from `docs/design/extension-conformance.json
 
 ```bash
 git diff --check
+go mod tidy && git diff --exit-code
 go test -count=1 ./...
 go vet ./...
 ```

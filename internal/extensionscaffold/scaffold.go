@@ -65,6 +65,18 @@ var conformanceHelperCatalog = map[string][]conformanceHelperReference{
 	"gopacttest-extension-scaffold-conformance": {
 		{Suite: "gopacttest-extension-scaffold-conformance", ImportPath: "github.com/gopact-ai/gopact/gopacttest", Function: "RequireExtensionScaffoldConformance"},
 	},
+	"gopacttest-graph-conformance": {
+		{Suite: "gopacttest-graph-conformance", ImportPath: "github.com/gopact-ai/gopact/gopacttest/graphconformance", Function: "RequireGraphConformance"},
+	},
+	"gopacttest-a2a-agent-conformance": {
+		{Suite: "gopacttest-a2a-agent-conformance", ImportPath: "github.com/gopact-ai/gopact/gopacttest/a2aconformance", Function: "RequireAgentConformance"},
+	},
+	"gopacttest-a2a-discoverer-conformance": {
+		{Suite: "gopacttest-a2a-discoverer-conformance", ImportPath: "github.com/gopact-ai/gopact/gopacttest/a2aconformance", Function: "RequireDiscovererConformance"},
+	},
+	"gopacttest-a2a-agent-mesh-conformance": {
+		{Suite: "gopacttest-a2a-agent-mesh-conformance", ImportPath: "github.com/gopact-ai/gopact/gopacttest/a2aconformance", Function: "RequireAgentMeshConformance"},
+	},
 	"gopacttest-provider-conformance": {
 		{Suite: "gopacttest-provider-conformance", ImportPath: "github.com/gopact-ai/gopact/gopacttest/providerconformance", Function: "RequireProviderConformance"},
 	},
@@ -429,6 +441,8 @@ func ciStepName(command string) string {
 	switch command {
 	case "git diff --check":
 		return "Check formatting whitespace"
+	case "go mod tidy && git diff --exit-code":
+		return "Check module tidiness"
 	case "go test -count=1 ./...":
 		return "Test"
 	case "go vet ./...":

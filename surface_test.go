@@ -239,6 +239,32 @@ func TestProjectSurfaceMessagesCopiesMutableFields(t *testing.T) {
 	}
 }
 
+func TestProjectSurfaceMessagesProjectsA2AAgentRegistered(t *testing.T) {
+	event := Event{
+		Type: EventA2AAgentRegistered,
+		IDs:  RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Metadata: map[string]any{
+			"agent_name":       "planner",
+			"capability_count": 2,
+		},
+	}
+
+	messages := ProjectSurfaceMessages(event)
+	if len(messages) != 1 ||
+		messages[0].Type != SurfaceMessageStatus ||
+		messages[0].SourceEvent != string(EventA2AAgentRegistered) ||
+		messages[0].Parts[0].Text != "a2a agent registered" ||
+		messages[0].Metadata["agent_name"] != "planner" ||
+		messages[0].Metadata["capability_count"] != 2 {
+		t.Fatalf("ProjectSurfaceMessages() = %+v, want A2A registration status", messages)
+	}
+	messages[0].Metadata["agent_name"] = "mutated"
+	again := ProjectSurfaceMessages(event)
+	if again[0].Metadata["agent_name"] != "planner" {
+		t.Fatalf("surface metadata shared: %+v", again[0].Metadata)
+	}
+}
+
 func TestTransferFuncConvertsSurfaceMessage(t *testing.T) {
 	wantPayload := ChannelPayload{Target: ChannelTarget("tui"), Data: "hello"}
 	transfer := TransferFunc{

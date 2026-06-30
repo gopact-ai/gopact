@@ -1,13 +1,17 @@
-.PHONY: check test race fmt vet lint coverage examples security
+.PHONY: check test race tidy fmt vet lint coverage examples graph a2a-mesh security
 
 check:
 	git diff --check
+	go mod tidy
+	git diff --exit-code
 	go test -count=1 ./...
 	go test -race -count=1 ./...
 	go vet ./...
 	golangci-lint run ./...
 	go test -coverprofile=coverage.out ./...
 	go test -run '^Example' ./...
+	go test -count=1 ./graph ./gopacttest/graphconformance
+	go test -count=1 ./a2a ./gopacttest/a2aconformance
 	govulncheck ./...
 
 test:
@@ -15,6 +19,10 @@ test:
 
 race:
 	go test -race -count=1 ./...
+
+tidy:
+	go mod tidy
+	git diff --exit-code
 
 fmt:
 	gofmt -w .
@@ -30,6 +38,12 @@ coverage:
 
 examples:
 	go test -run '^Example' ./...
+
+graph:
+	go test -count=1 ./graph ./gopacttest/graphconformance
+
+a2a-mesh:
+	go test -count=1 ./a2a ./gopacttest/a2aconformance
 
 security:
 	govulncheck ./...

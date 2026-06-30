@@ -25,6 +25,7 @@ The default external repository CI must run:
 
 ```bash
 git diff --check
+go mod tidy && git diff --exit-code
 go test -count=1 ./...
 go vet ./...
 ```

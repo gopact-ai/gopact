@@ -51,6 +51,7 @@
       "template_path": "docs/design/extension-ci-workflow.yml",
       "content_rules": [
         "run git diff --check",
+        "run go mod tidy && git diff --exit-code",
         "run go test -count=1 ./...",
         "run go vet ./..."
       ]

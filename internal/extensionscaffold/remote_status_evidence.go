@@ -26,7 +26,7 @@ const (
 	VerificationEvidenceTypeRemoteRepositoryReadiness = "external_repository_readiness"
 )
 
-var defaultRemoteCIGates = []string{"whitespace", "unit", "vet"}
+var defaultRemoteCIGates = []string{"whitespace", "module-tidiness", "unit", "vet"}
 
 // DefaultRemoteCIGates returns the standard external scaffold CI gate names.
 func DefaultRemoteCIGates() []string {
@@ -191,6 +191,8 @@ func remoteCIGateStep(gate string) string {
 	switch gate {
 	case "whitespace":
 		return "Check formatting whitespace"
+	case "module-tidiness":
+		return "Check module tidiness"
 	case "unit":
 		return "Test"
 	case "vet":

@@ -2696,6 +2696,10 @@
           "kind": "func"
         },
         {
+          "name": "StringField",
+          "kind": "func"
+        },
+        {
           "name": "Tool",
           "kind": "type"
         },

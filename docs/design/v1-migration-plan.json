@@ -32,12 +32,16 @@
       "required_check_ids": [
         "ci-gates",
         "command:git diff --check",
+        "command:go mod tidy",
+        "command:git diff --exit-code",
         "command:go test -count=1 ./...",
         "command:go test -race -count=1 ./...",
         "command:go vet ./...",
         "command:golangci-lint run ./...",
         "command:go test -coverprofile=coverage.out ./...",
         "command:go test -run '^Example' ./...",
+        "command:go test -count=1 ./graph ./gopacttest/graphconformance",
+        "command:go test -count=1 ./a2a ./gopacttest/a2aconformance",
         "command:govulncheck ./..."
       ],
       "required_ci_gates": [
@@ -72,6 +76,7 @@
       ],
       "required_ci_gates": [
         "whitespace",
+        "module-tidiness",
         "unit",
         "vet"
       ],

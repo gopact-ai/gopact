@@ -38,6 +38,9 @@ jobs:
       - name: Check formatting whitespace
         run: git diff --check
 
+      - name: Check module tidiness
+        run: go mod tidy && git diff --exit-code
+
       - name: Test
         run: go test -count=1 ./...
 

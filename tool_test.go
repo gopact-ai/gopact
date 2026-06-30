@@ -53,13 +53,17 @@ func TestObjectToolSpecBuildsRequiredStringInputSchema(t *testing.T) {
 		"uppercase",
 		"Uppercase a text string.",
 		RequiredStringField("text", "Text to uppercase."),
+		StringField("locale", "Locale hint."),
 	)
 
 	if spec.Name != "uppercase" || spec.Description != "Uppercase a text string." {
 		t.Fatalf("tool = %+v, want name and description", spec)
 	}
-	if err := ValidateJSONSchemaValue(spec.InputSchema, map[string]any{"text": "gopact"}); err != nil {
+	if err := ValidateJSONSchemaValue(spec.InputSchema, map[string]any{"text": "gopact", "locale": "en"}); err != nil {
 		t.Fatalf("ValidateJSONSchemaValue(valid) error = %v", err)
+	}
+	if err := ValidateJSONSchemaValue(spec.InputSchema, map[string]any{"text": "gopact"}); err != nil {
+		t.Fatalf("ValidateJSONSchemaValue(without optional locale) error = %v", err)
 	}
 	if err := ValidateJSONSchemaValue(spec.InputSchema, map[string]any{}); err == nil {
 		t.Fatal("ValidateJSONSchemaValue(missing text) error = nil, want required field error")

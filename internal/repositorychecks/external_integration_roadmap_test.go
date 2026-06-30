@@ -191,6 +191,32 @@ func TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore(t *tes
 	}
 }
 
+func TestTemplateRoadmapEntriesRequireGraphConformance(t *testing.T) {
+	roadmap := loadExternalIntegrationRoadmap(t)
+	conformance := loadExtensionConformanceManifest(t)
+
+	templateTargets := map[string]bool{}
+	for _, target := range conformance.Targets {
+		if target.Kind == "template" {
+			templateTargets[target.Name] = true
+		}
+	}
+
+	for _, entry := range roadmap.Entries {
+		if entry.Area != "template" {
+			continue
+		}
+		for _, target := range entry.ExtensionTargets {
+			if !templateTargets[target] {
+				continue
+			}
+			if !slices.Contains(entry.ConformanceSuites, "gopacttest-graph-conformance") {
+				t.Fatalf("template roadmap entry %q conformance_suites = %#v, want graph conformance", entry.ID, entry.ConformanceSuites)
+			}
+		}
+	}
+}
+
 type externalIntegrationRoadmap struct {
 	Version       int                               `json:"version"`
 	Scope         string                            `json:"scope"`

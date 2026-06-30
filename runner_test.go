@@ -56,6 +56,33 @@ func TestRunnerRunPassesResolvedRuntimeIDsToRunnable(t *testing.T) {
 	}
 }
 
+func TestRunnerRunInheritsRuntimeIDsFromContext(t *testing.T) {
+	resetDefaultsForTest(t)
+	ctx := ContextWithRuntimeIDs(context.Background(), RuntimeIDs{
+		RunID:    "ctx-run",
+		ThreadID: "thread-1",
+		TraceID:  "trace-1",
+	})
+	runnable := &recordingOptionsRunnable{}
+	runner, err := NewRunner(runnable, WithRunnerRuntimeIDs(RuntimeIDs{AgentID: "runner-agent"}))
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	events, err := collectRootEvents(runner.Run(ctx, "input"))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	want := RuntimeIDs{RunID: "ctx-run", ThreadID: "thread-1", AgentID: "runner-agent", TraceID: "trace-1"}
+	if runnable.ids != want {
+		t.Fatalf("runnable IDs = %+v, want %+v", runnable.ids, want)
+	}
+	if len(events) == 0 || events[0].IDs != want {
+		t.Fatalf("first event IDs = %+v, want %+v", events[0].IDs, want)
+	}
+}
+
 func TestResolveRunOptionsReturnsRuntimeIDs(t *testing.T) {
 	got := ResolveRunOptions(
 		WithRuntimeIDs(RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"}),

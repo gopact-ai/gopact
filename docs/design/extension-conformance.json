@@ -29,6 +29,7 @@
   },
   "required_ci_commands": [
     "git diff --check",
+    "go mod tidy && git diff --exit-code",
     "go test -count=1 ./...",
     "go vet ./..."
   ],
@@ -290,6 +291,9 @@
         "a2a"
       ],
       "conformance_suites": [
+        "gopacttest-a2a-agent-conformance",
+        "gopacttest-a2a-discoverer-conformance",
+        "gopacttest-a2a-agent-mesh-conformance",
         "a2a-client",
         "a2a-streaming",
         "agent-card-discovery",
@@ -448,6 +452,7 @@
       "conformance_suites": [
         "template-trajectory",
         "gopacttest-template-trajectory-conformance",
+        "gopacttest-graph-conformance",
         "deferred-memory-work-queue",
         "gopacttest-react-deferred-memory-queue-conformance",
         "gopacttest-react-deferred-memory-queue-visibility-conformance",
@@ -468,6 +473,7 @@
       "conformance_suites": [
         "template-trajectory",
         "gopacttest-template-trajectory-conformance",
+        "gopacttest-graph-conformance",
         "a2a-tool-contract",
         "policy-boundary"
       ],
@@ -490,6 +496,7 @@
       "conformance_suites": [
         "template-trajectory",
         "gopacttest-template-trajectory-conformance",
+        "gopacttest-graph-conformance",
         "verification-evidence",
         "gopacttest-verification-evidence-conformance",
         "release-gate",

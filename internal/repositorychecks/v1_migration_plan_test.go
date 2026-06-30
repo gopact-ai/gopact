@@ -227,7 +227,7 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 		}
 	}
 	gotExternalCIGates := slices.Clone(externalGateCheck.RequiredCIGates)
-	wantExternalCIGates := []string{"unit", "vet", "whitespace"}
+	wantExternalCIGates := []string{"module-tidiness", "unit", "vet", "whitespace"}
 	slices.Sort(gotExternalCIGates)
 	slices.Sort(wantExternalCIGates)
 	if !slices.Equal(gotExternalCIGates, wantExternalCIGates) {
