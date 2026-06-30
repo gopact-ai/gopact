@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -188,63 +189,87 @@ func VerifyBootstrapWorkspace(ctx context.Context, dir string, workspace Bootstr
 	report := VerificationReport{
 		Results: make([]VerificationResult, 0, resultCount),
 	}
-	for _, scaffold := range workspace.Scaffolds {
-		if err := ctx.Err(); err != nil {
-			return report, err
-		}
-		repoDir := filepath.Join(dir, filepath.FromSlash(scaffold.Directory))
-		temporaryGitRepository, err := ensureVerificationGitRepository(ctx, repoDir)
+
+	results := make([][]VerificationResult, len(workspace.Scaffolds))
+	errors := make([]error, len(workspace.Scaffolds))
+	var wg sync.WaitGroup
+	for i, scaffold := range workspace.Scaffolds {
+		i, scaffold := i, scaffold
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i], errors[i] = verifyBootstrapScaffold(ctx, dir, cacheDir, scaffold)
+		}()
+	}
+	wg.Wait()
+
+	for _, repoResults := range results {
+		report.Results = append(report.Results, repoResults...)
+	}
+	for _, err := range errors {
 		if err != nil {
-			return report, fmt.Errorf("extensionscaffold: prepare verification repository %q: %w", scaffold.Repository.Name, err)
-		}
-		for _, commandLine := range scaffold.Repository.RequiredCICommands {
-			command, err := commandShell(commandLine)
-			if err != nil {
-				return report, fmt.Errorf("extensionscaffold: verify repository %q: %w", scaffold.Repository.Name, err)
-			}
-			cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-			cmd.Dir = repoDir
-			cmd.Env = append(os.Environ(), "GOCACHE="+cacheDir)
-			output, err := cmd.CombinedOutput()
-			result := VerificationResult{
-				Repository:  scaffold.Repository.Name,
-				Directory:   repoDir,
-				CommandLine: commandLine,
-				Command:     command,
-				Output:      string(output),
-				Passed:      err == nil,
-			}
-			report.Results = append(report.Results, result)
-			if err != nil {
-				cleanupErr := cleanupVerificationGitRepository(repoDir, temporaryGitRepository)
-				if cleanupErr != nil {
-					return report, fmt.Errorf(
-						"extensionscaffold: verify repository %q command %q: %w; cleanup temporary git repository: %v\n%s",
-						scaffold.Repository.Name,
-						commandLine,
-						err,
-						cleanupErr,
-						strings.TrimSpace(result.Output),
-					)
-				}
-				return report, fmt.Errorf(
-					"extensionscaffold: verify repository %q command %q: %w\n%s",
-					scaffold.Repository.Name,
-					commandLine,
-					err,
-					strings.TrimSpace(result.Output),
-				)
-			}
-		}
-		if err := cleanupVerificationGitRepository(repoDir, temporaryGitRepository); err != nil {
-			return report, fmt.Errorf(
-				"extensionscaffold: cleanup temporary git repository %q: %w",
-				scaffold.Repository.Name,
-				err,
-			)
+			return report, err
 		}
 	}
 	return report, nil
+}
+
+func verifyBootstrapScaffold(ctx context.Context, dir, cacheDir string, scaffold RepositoryScaffold) ([]VerificationResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	repoDir := filepath.Join(dir, filepath.FromSlash(scaffold.Directory))
+	temporaryGitRepository, err := ensureVerificationGitRepository(ctx, repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("extensionscaffold: prepare verification repository %q: %w", scaffold.Repository.Name, err)
+	}
+
+	results := make([]VerificationResult, 0, len(scaffold.Repository.RequiredCICommands))
+	for _, commandLine := range scaffold.Repository.RequiredCICommands {
+		command, err := commandShell(commandLine)
+		if err != nil {
+			return results, cleanupBootstrapScaffold(repoDir, scaffold.Repository.Name, temporaryGitRepository, fmt.Errorf("extensionscaffold: verify repository %q: %w", scaffold.Repository.Name, err))
+		}
+		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+		cmd.Dir = repoDir
+		cmd.Env = append(os.Environ(),
+			"GOCACHE="+cacheDir,
+			"GOPRIVATE=github.com/gopact-ai/*",
+			"GONOSUMDB=github.com/gopact-ai/*",
+			"GONOPROXY=github.com/gopact-ai/*",
+		)
+		output, err := cmd.CombinedOutput()
+		result := VerificationResult{
+			Repository:  scaffold.Repository.Name,
+			Directory:   repoDir,
+			CommandLine: commandLine,
+			Command:     command,
+			Output:      string(output),
+			Passed:      err == nil,
+		}
+		results = append(results, result)
+		if err != nil {
+			return results, cleanupBootstrapScaffold(repoDir, scaffold.Repository.Name, temporaryGitRepository, fmt.Errorf(
+				"extensionscaffold: verify repository %q command %q: %w\n%s",
+				scaffold.Repository.Name,
+				commandLine,
+				err,
+				strings.TrimSpace(result.Output),
+			))
+		}
+	}
+	return results, cleanupBootstrapScaffold(repoDir, scaffold.Repository.Name, temporaryGitRepository, nil)
+}
+
+func cleanupBootstrapScaffold(repoDir, repository string, temporary bool, result error) error {
+	cleanupErr := cleanupVerificationGitRepository(repoDir, temporary)
+	if cleanupErr == nil {
+		return result
+	}
+	if result != nil {
+		return fmt.Errorf("%w; cleanup temporary git repository: %v", result, cleanupErr)
+	}
+	return fmt.Errorf("extensionscaffold: cleanup temporary git repository %q: %w", repository, cleanupErr)
 }
 
 func ensureVerificationGitRepository(ctx context.Context, repoDir string) (bool, error) {
@@ -254,7 +279,7 @@ func ensureVerificationGitRepository(ctx context.Context, repoDir string) (bool,
 		if output, initErr := initCmd.CombinedOutput(); initErr != nil {
 			return false, fmt.Errorf("%w\n%s", initErr, strings.TrimSpace(string(output)))
 		}
-		addCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "add", "-N", ".")
+		addCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "add", "-A", ".")
 		if output, addErr := addCmd.CombinedOutput(); addErr != nil {
 			cleanupErr := cleanupVerificationGitRepository(repoDir, true)
 			if cleanupErr != nil {
@@ -281,14 +306,31 @@ func cleanupVerificationGitRepository(repoDir string, temporary bool) error {
 		return nil
 	}
 	gitDir := filepath.Join(repoDir, ".git")
+	var lastErr error
 	for range 10 {
-		err := os.RemoveAll(gitDir)
-		if err == nil {
-			return nil
+		if err := os.RemoveAll(gitDir); err != nil {
+			lastErr = err
+			time.Sleep(50 * time.Millisecond)
+			continue
 		}
+		time.Sleep(20 * time.Millisecond)
+		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		lastErr = fmt.Errorf("temporary git repository still exists: %s", gitDir)
 		time.Sleep(50 * time.Millisecond)
 	}
-	return os.RemoveAll(gitDir)
+	if err := os.RemoveAll(gitDir); err != nil {
+		return err
+	}
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return lastErr
 }
 
 func commandShell(commandLine string) ([]string, error) {

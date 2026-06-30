@@ -49,7 +49,7 @@ go test -run Example_graphRun .
 
 ## 贡献与安全
 
-贡献入口见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全策略见 [SECURITY.md](SECURITY.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。公开发布前仍需要项目 owner 确认并添加 `LICENSE`。
+贡献入口见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全策略见 [SECURITY.md](SECURITY.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。本仓库采用 [MIT 协议](LICENSE)。
 
 ## 开发
 

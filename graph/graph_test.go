@@ -47,6 +47,884 @@ func TestGraphRunExecutesNodesInEdgeOrder(t *testing.T) {
 	}
 }
 
+func TestGraphRunInheritsRuntimeIDsFromContext(t *testing.T) {
+	want := gopact.RuntimeIDs{
+		RunID:    "ctx-run",
+		ThreadID: "thread-1",
+		TraceID:  "trace-1",
+	}
+	ctx := gopact.ContextWithRuntimeIDs(context.Background(), want)
+	var got gopact.RuntimeIDs
+	var ok bool
+	g := New[traceState]()
+	g.AddNode("step", func(ctx context.Context, state traceState) (traceState, error) {
+		got, ok = gopact.RuntimeIDsFromContext(ctx)
+		state.Trace = append(state.Trace, "step")
+		return state, nil
+	})
+	g.AddEdge(Start, "step")
+	g.AddEdge("step", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if !ok {
+		t.Fatal("RuntimeIDsFromContext() ok = false, want true")
+	}
+	if got != want {
+		t.Fatalf("RuntimeIDsFromContext() = %+v, want %+v", got, want)
+	}
+	if len(events) == 0 || events[0].IDs != want {
+		t.Fatalf("first event IDs = %+v, want %+v", events[0].IDs, want)
+	}
+}
+
+func TestGraphRunnableNodeExecutesSubgraph(t *testing.T) {
+	ctx := context.Background()
+	subgraph := New[traceState]()
+	subgraph.AddNode("sub-one", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "sub-one")
+		return state, nil
+	})
+	subgraph.AddNode("sub-two", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "sub-two")
+		return state, nil
+	})
+	subgraph.AddEdge(Start, "sub-one")
+	subgraph.AddEdge("sub-one", "sub-two")
+	subgraph.AddEdge("sub-two", End)
+	subrun, err := subgraph.Compile()
+	if err != nil {
+		t.Fatalf("Compile(subgraph) error = %v", err)
+	}
+
+	g := New[traceState]()
+	g.AddNode("before", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "before")
+		return state, nil
+	})
+	g.AddRunnableNode("subgraph", subrun)
+	g.AddNode("after", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "after")
+		return state, nil
+	})
+	g.AddEdge(Start, "before")
+	g.AddEdge("before", "subgraph")
+	g.AddEdge("subgraph", "after")
+	g.AddEdge("after", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"before", "sub-one", "sub-two", "after"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphRunnableNodeStreamsNestedEvents(t *testing.T) {
+	ctx := context.Background()
+	ids := gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"}
+	subgraph := New[traceState]()
+	subgraph.AddNode("sub-one", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "sub-one")
+		return state, nil
+	})
+	subgraph.AddNode("sub-two", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "sub-two")
+		return state, nil
+	})
+	subgraph.AddEdge(Start, "sub-one")
+	subgraph.AddEdge("sub-one", "sub-two")
+	subgraph.AddEdge("sub-two", End)
+	subrun, err := subgraph.Compile()
+	if err != nil {
+		t.Fatalf("Compile(subgraph) error = %v", err)
+	}
+
+	g := New[traceState]()
+	g.AddNode("before", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "before")
+		return state, nil
+	})
+	g.AddRunnableNode("subgraph", subrun)
+	g.AddNode("after", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "after")
+		return state, nil
+	})
+	g.AddEdge(Start, "before")
+	g.AddEdge("before", "subgraph")
+	g.AddEdge("subgraph", "after")
+	g.AddEdge("after", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}, WithRuntimeIDs(ids)))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	)
+	if events[3].Node != "subgraph" {
+		t.Fatalf("parent subgraph start node = %q, want subgraph", events[3].Node)
+	}
+	for _, index := range []int{4, 5, 6, 7, 8, 9} {
+		event := events[index]
+		if event.IDs != ids {
+			t.Fatalf("nested event ids = %+v, want %+v", event.IDs, ids)
+		}
+		if event.Metadata["graph_parent_node"] != "subgraph" || event.Metadata["graph_parent_step"] != 2 {
+			t.Fatalf("nested event metadata = %+v, want parent subgraph step 2", event.Metadata)
+		}
+	}
+	output, ok := events[12].StepSnapshot.Output.(traceState)
+	if !ok {
+		t.Fatalf("after output type = %T, want traceState", events[12].StepSnapshot.Output)
+	}
+	expected := []string{"before", "sub-one", "sub-two", "after"}
+	if !reflect.DeepEqual(output.Trace, expected) {
+		t.Fatalf("final trace = %v, want %v", output.Trace, expected)
+	}
+}
+
+func TestGraphRunnableNodeInheritsRuntimeIDs(t *testing.T) {
+	ctx := context.Background()
+	want := gopact.RuntimeIDs{
+		RunID:    "run-1",
+		ThreadID: "thread-1",
+		TraceID:  "trace-1",
+	}
+	var got gopact.RuntimeIDs
+	var ok bool
+
+	subgraph := New[traceState]()
+	subgraph.AddNode("child", func(ctx context.Context, state traceState) (traceState, error) {
+		got, ok = gopact.RuntimeIDsFromContext(ctx)
+		state.Trace = append(state.Trace, "child")
+		return state, nil
+	})
+	subgraph.AddEdge(Start, "child")
+	subgraph.AddEdge("child", End)
+	subrun, err := subgraph.Compile()
+	if err != nil {
+		t.Fatalf("Compile(subgraph) error = %v", err)
+	}
+
+	g := New[traceState]()
+	g.AddRunnableNode("subgraph", subrun)
+	g.AddEdge(Start, "subgraph")
+	g.AddEdge("subgraph", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	_, err = run.Invoke(ctx, traceState{}, WithRuntimeIDs(want))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("RuntimeIDsFromContext() ok = false, want true")
+	}
+	if got != want {
+		t.Fatalf("RuntimeIDsFromContext() = %+v, want %+v", got, want)
+	}
+}
+
+func TestGraphRunnableNodeRuntimeIDsCanOverrideParentDefaults(t *testing.T) {
+	ctx := context.Background()
+	parent := gopact.RuntimeIDs{
+		RunID:    "parent-run",
+		ThreadID: "thread-1",
+		TraceID:  "trace-1",
+	}
+	override := gopact.RuntimeIDs{
+		RunID:   "child-run",
+		AgentID: "child-agent",
+	}
+	want := gopact.RuntimeIDs{
+		RunID:    "child-run",
+		ThreadID: "thread-1",
+		TraceID:  "trace-1",
+		AgentID:  "child-agent",
+	}
+	var got gopact.RuntimeIDs
+	var ok bool
+
+	subgraph := New[traceState]()
+	subgraph.AddNode("child", func(ctx context.Context, state traceState) (traceState, error) {
+		got, ok = gopact.RuntimeIDsFromContext(ctx)
+		state.Trace = append(state.Trace, "child")
+		return state, nil
+	})
+	subgraph.AddEdge(Start, "child")
+	subgraph.AddEdge("child", End)
+	subrun, err := subgraph.Compile()
+	if err != nil {
+		t.Fatalf("Compile(subgraph) error = %v", err)
+	}
+
+	g := New[traceState]()
+	g.AddRunnableNode("subgraph", subrun, WithRuntimeIDs(override))
+	g.AddEdge(Start, "subgraph")
+	g.AddEdge("subgraph", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	_, err = run.Invoke(ctx, traceState{}, WithRuntimeIDs(parent))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("RuntimeIDsFromContext() ok = false, want true")
+	}
+	if got != want {
+		t.Fatalf("RuntimeIDsFromContext() = %+v, want %+v", got, want)
+	}
+}
+
+func TestGraphCompileRejectsNilRunnableNode(t *testing.T) {
+	g := New[traceState]()
+	g.AddRunnableNode("subgraph", nil)
+	g.AddEdge(Start, "subgraph")
+
+	_, err := g.Compile()
+	if err == nil || !strings.Contains(err.Error(), `runnable node "subgraph" is nil`) {
+		t.Fatalf("Compile() error = %v, want nil runnable node error", err)
+	}
+}
+
+func TestGraphAddNodeReplacesRunnableNode(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+	g.AddRunnableNode("step", nil)
+	g.AddNode("step", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "replacement")
+		return state, nil
+	})
+	g.AddEdge(Start, "step")
+	g.AddEdge("step", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"replacement"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphBranchRoutesToSelectedNode(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+
+	g.AddNode("decide", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "decide")
+		return state, nil
+	})
+	g.AddNode("high", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "high")
+		return state, nil
+	})
+	g.AddNode("low", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "low")
+		return state, nil
+	})
+	g.AddEdge(Start, "decide")
+	g.AddBranch("decide", func(_ context.Context, state traceState) ([]string, error) {
+		if len(state.Trace) == 1 && state.Trace[0] == "decide" {
+			return []string{"high"}, nil
+		}
+		return []string{"low"}, nil
+	})
+	g.AddEdge("high", End)
+	g.AddEdge("low", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"decide", "high"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphBranchRoutesMultipleTargetsInOrder(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+
+	g.AddNode("split", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "split")
+		return state, nil
+	})
+	g.AddNode("left", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "left")
+		return state, nil
+	})
+	g.AddNode("right", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "right")
+		return state, nil
+	})
+	g.AddEdge(Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", End)
+	g.AddEdge("right", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"split", "left", "right"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphBranchDeduplicatesSuccessors(t *testing.T) {
+	ctx := context.Background()
+	store := &recordingCheckpointer[traceState]{}
+	g := New[traceState]()
+
+	g.AddNode("split", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "split")
+		return state, nil
+	})
+	g.AddNode("next", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "next")
+		return state, nil
+	})
+	g.AddEdge(Start, "split")
+	g.AddEdge("split", "next")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"next", "next"}, nil
+	})
+	g.AddEdge("next", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{}, WithCheckpointer(store))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"split", "next"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+	if len(store.checkpoints) == 0 {
+		t.Fatal("checkpoint count = 0, want at least 1")
+	}
+	if !reflect.DeepEqual(store.checkpoints[0].Queue, []string{"next"}) {
+		t.Fatalf("checkpoint queue = %v, want [next]", store.checkpoints[0].Queue)
+	}
+}
+
+func TestGraphBranchCanEndWithNoTargets(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+
+	g.AddNode("decide", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "decide")
+		return state, nil
+	})
+	g.AddNode("unused", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "unused")
+		return state, nil
+	})
+	g.AddEdge(Start, "decide")
+	g.AddBranch("decide", func(context.Context, traceState) ([]string, error) {
+		return nil, nil
+	})
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"decide"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphDAGFanInRunsJoinOnceAfterAllParents(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+
+	g.AddNode("left", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "left")
+		return state, nil
+	})
+	g.AddNode("right", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "right")
+		return state, nil
+	})
+	g.AddNode("join", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "join")
+		return state, nil
+	})
+	g.AddEdge(Start, "left")
+	g.AddEdge(Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"left", "right", "join"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphDAGFanInStopsWhenParentFails(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("right failed")
+	joinCalled := false
+	g := New[traceState]()
+
+	g.AddNode("left", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "left")
+		return state, nil
+	})
+	g.AddNode("right", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "right")
+		return state, wantErr
+	})
+	g.AddNode("join", func(_ context.Context, state traceState) (traceState, error) {
+		joinCalled = true
+		state.Trace = append(state.Trace, "join")
+		return state, nil
+	})
+	g.AddEdge(Start, "left")
+	g.AddEdge(Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Run() error = %v, want %v", err, wantErr)
+	}
+	if joinCalled {
+		t.Fatal("join ran after a parent failed")
+	}
+	if len(events) == 0 {
+		t.Fatal("events is empty, want run_failed")
+	}
+	if events[len(events)-1].Type != gopact.EventRunFailed {
+		t.Fatalf("last event = %+v, want run_failed", events[len(events)-1])
+	}
+}
+
+func TestGraphDAGFanInCheckpointResumeKeepsJoinPending(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("stop before right")
+	store := &recordingCheckpointer[traceState]{}
+	g := New[traceState]()
+
+	g.AddNode("left", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "left")
+		return state, nil
+	})
+	g.AddNode("right", func(context.Context, traceState) (traceState, error) {
+		return traceState{}, wantErr
+	})
+	g.AddNode("join", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("join should wait for right")
+		return traceState{}, nil
+	})
+	g.AddEdge(Start, "left")
+	g.AddEdge(Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	_, err = run.Invoke(ctx, traceState{}, WithCheckpointer(store))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Invoke() error = %v, want %v", err, wantErr)
+	}
+	if len(store.checkpoints) != 1 {
+		t.Fatalf("checkpoint count = %d, want 1", len(store.checkpoints))
+	}
+	if !reflect.DeepEqual(store.checkpoints[0].Queue, []string{"right"}) {
+		t.Fatalf("checkpoint queue = %v, want [right]", store.checkpoints[0].Queue)
+	}
+
+	resumeStore := &recordingCheckpointStore[traceState]{
+		latest:    store.checkpoints[0],
+		hasLatest: true,
+	}
+	resumeStore.latest.ThreadID = "thread-fan-in"
+	g = New[traceState]()
+	g.AddNode("left", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("checkpointed left should not rerun")
+		return traceState{}, nil
+	})
+	g.AddNode("right", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "right")
+		return state, nil
+	})
+	g.AddNode("join", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "join")
+		return state, nil
+	})
+	g.AddEdge(Start, "left")
+	g.AddEdge(Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	resumed, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile(resume) error = %v", err)
+	}
+	got, err := resumed.Invoke(ctx, traceState{}, WithThreadID("thread-fan-in"), WithCheckpointLoader(resumeStore))
+	if err != nil {
+		t.Fatalf("Invoke(resume) error = %v", err)
+	}
+	expected := []string{"left", "right", "join"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("resumed trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphDynamicFanOutCheckpointResumeRunsOnlyIncompleteTargets(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("stop at right")
+	store := &recordingCheckpointer[traceState]{}
+	g := New[traceState]()
+
+	g.AddNode("split", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "split")
+		return state, nil
+	})
+	g.AddNode("left", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "left")
+		return state, nil
+	})
+	g.AddNode("right", func(context.Context, traceState) (traceState, error) {
+		return traceState{}, wantErr
+	})
+	g.AddNode("join", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("join should wait for right")
+		return traceState{}, nil
+	})
+	g.AddEdge(Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	_, err = run.Invoke(ctx, traceState{}, WithCheckpointer(store))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Invoke() error = %v, want %v", err, wantErr)
+	}
+	if len(store.checkpoints) != 2 {
+		t.Fatalf("checkpoint count = %d, want split and left checkpoints", len(store.checkpoints))
+	}
+	if !reflect.DeepEqual(store.checkpoints[1].Queue, []string{"right"}) {
+		t.Fatalf("left checkpoint queue = %v, want [right]", store.checkpoints[1].Queue)
+	}
+
+	resumeStore := &recordingCheckpointStore[traceState]{
+		latest:    store.checkpoints[1],
+		hasLatest: true,
+	}
+	resumeStore.latest.ThreadID = "thread-fan-out"
+	g = New[traceState]()
+	g.AddNode("split", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("checkpointed split should not rerun")
+		return traceState{}, nil
+	})
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		t.Fatal("checkpointed fan-out decision should not rerun")
+		return nil, nil
+	})
+	g.AddNode("left", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("completed fan-out target should not rerun")
+		return traceState{}, nil
+	})
+	g.AddNode("right", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "right")
+		return state, nil
+	})
+	g.AddNode("join", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "join")
+		return state, nil
+	})
+	g.AddEdge(Start, "split")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	resumed, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile(resume) error = %v", err)
+	}
+	got, err := resumed.Invoke(ctx, traceState{}, WithThreadID("thread-fan-out"), WithCheckpointLoader(resumeStore))
+	if err != nil {
+		t.Fatalf("Invoke(resume) error = %v", err)
+	}
+	expected := []string{"split", "left", "right", "join"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("resumed trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphBranchPersistsSelectedQueueInCheckpoint(t *testing.T) {
+	ctx := context.Background()
+	store := &recordingCheckpointer[traceState]{}
+	g := New[traceState]()
+
+	g.AddNode("decide", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "decide")
+		return state, nil
+	})
+	g.AddNode("next", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "next")
+		return state, nil
+	})
+	g.AddEdge(Start, "decide")
+	g.AddBranch("decide", func(context.Context, traceState) ([]string, error) {
+		return []string{"next"}, nil
+	})
+	g.AddEdge("next", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	_, err = run.Invoke(ctx, traceState{}, WithCheckpointer(store))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	if len(store.checkpoints) < 1 {
+		t.Fatal("checkpoint count = 0, want at least 1")
+	}
+	if !reflect.DeepEqual(store.checkpoints[0].Queue, []string{"next"}) {
+		t.Fatalf("branch checkpoint queue = %v, want [next]", store.checkpoints[0].Queue)
+	}
+}
+
+func TestGraphBranchResumeUsesCheckpointQueue(t *testing.T) {
+	ctx := context.Background()
+	store := &recordingCheckpointStore[traceState]{
+		latest: Checkpoint[traceState]{
+			ID:       "checkpoint-branch",
+			ThreadID: "thread-branch",
+			Step:     1,
+			Node:     "decide",
+			Phase:    gopact.StepCompleted,
+			State:    traceState{Trace: []string{"decide"}},
+			Queue:    []string{"next"},
+		},
+		hasLatest: true,
+	}
+	g := New[traceState]()
+	g.AddNode("decide", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("checkpointed branch source should not rerun")
+		return traceState{}, nil
+	})
+	g.AddBranch("decide", func(context.Context, traceState) ([]string, error) {
+		t.Fatal("checkpointed branch decision should not rerun")
+		return nil, nil
+	})
+	g.AddNode("next", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "next")
+		return state, nil
+	})
+	g.AddEdge(Start, "decide")
+	g.AddEdge("next", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{}, WithThreadID("thread-branch"), WithCheckpointLoader(store))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"decide", "next"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphBranchCompletedEventIncludesSelectedQueue(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+
+	g.AddNode("decide", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "decide")
+		return state, nil
+	})
+	g.AddNode("next", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "next")
+		return state, nil
+	})
+	g.AddEdge(Start, "decide")
+	g.AddBranch("decide", func(context.Context, traceState) ([]string, error) {
+		return []string{"next"}, nil
+	})
+	g.AddEdge("next", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	)
+	if !reflect.DeepEqual(events[2].StepSnapshot.Queue, []string{"next"}) {
+		t.Fatalf("completed branch queue = %v, want [next]", events[2].StepSnapshot.Queue)
+	}
+}
+
+func TestGraphBranchRejectsMissingTargetAtRuntime(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+
+	g.AddNode("decide", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "decide")
+		return state, nil
+	})
+	g.AddEdge(Start, "decide")
+	g.AddBranch("decide", func(context.Context, traceState) ([]string, error) {
+		return []string{"missing"}, nil
+	})
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}))
+	if err == nil || !strings.Contains(err.Error(), `missing target "missing"`) {
+		t.Fatalf("Run() error = %v, want missing target error", err)
+	}
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeFailed,
+		gopact.EventRunFailed,
+	)
+	if events[2].StepSnapshot == nil || events[2].StepSnapshot.Phase != gopact.StepFailed {
+		t.Fatalf("failed branch snapshot = %+v", events[2].StepSnapshot)
+	}
+}
+
+func TestGraphCompileRejectsNilBranch(t *testing.T) {
+	g := New[traceState]()
+	g.AddNode("decide", func(_ context.Context, state traceState) (traceState, error) {
+		return state, nil
+	})
+	g.AddEdge(Start, "decide")
+	g.AddBranch("decide", nil)
+
+	_, err := g.Compile()
+	if err == nil || !strings.Contains(err.Error(), `branch "decide"[0] is nil`) {
+		t.Fatalf("Compile() error = %v, want nil branch error", err)
+	}
+}
+
 func TestGraphRunPersistsCheckpointAfterEachNode(t *testing.T) {
 	ctx := context.Background()
 	store := &recordingCheckpointer[traceState]{}
@@ -88,6 +966,12 @@ func TestGraphRunPersistsCheckpointAfterEachNode(t *testing.T) {
 	}
 	if !reflect.DeepEqual(store.checkpoints[0].Queue, []string{"two"}) {
 		t.Fatalf("first checkpoint queue = %v, want [two]", store.checkpoints[0].Queue)
+	}
+	if !reflect.DeepEqual(store.checkpoints[0].Metadata[metadataCompletedNodes], []string{"one"}) {
+		t.Fatalf("first checkpoint completed nodes = %v, want [one]", store.checkpoints[0].Metadata[metadataCompletedNodes])
+	}
+	if !reflect.DeepEqual(store.checkpoints[1].Metadata[metadataCompletedNodes], []string{"one", "two"}) {
+		t.Fatalf("second checkpoint completed nodes = %v, want [one two]", store.checkpoints[1].Metadata[metadataCompletedNodes])
 	}
 	if store.checkpoints[0].IDs.ThreadID != "thread-1" {
 		t.Fatalf("first checkpoint ids = %+v, want thread-1", store.checkpoints[0].IDs)
@@ -453,6 +1337,69 @@ func TestGraphRunResumesInterruptedCheckpointWithResumeRequest(t *testing.T) {
 	}
 }
 
+func TestGraphRunInterruptedCheckpointResumeCompletesFanInSource(t *testing.T) {
+	ctx := context.Background()
+	store := &recordingCheckpointStore[traceState]{
+		latest: Checkpoint[traceState]{
+			ID:       "checkpoint-left",
+			ThreadID: "thread-fan-in",
+			IDs:      gopact.RuntimeIDs{RunID: "previous-run", ThreadID: "thread-fan-in"},
+			Step:     1,
+			Node:     "left",
+			Phase:    gopact.StepInterrupted,
+			State:    traceState{Trace: []string{"left"}},
+			Queue:    []string{"right"},
+			Pending: &gopact.InterruptRecord{
+				ID:     "interrupt-left",
+				Type:   gopact.InterruptInput,
+				Reason: "need user input",
+			},
+		},
+		hasLatest: true,
+	}
+	g := New[traceState]()
+	g.AddNode("left", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("interrupted left should not rerun after checkpoint restore")
+		return traceState{}, nil
+	})
+	g.AddNode("right", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "right")
+		return state, nil
+	})
+	g.AddNode("join", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "join")
+		return state, nil
+	})
+	g.AddEdge(Start, "left")
+	g.AddEdge(Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{},
+		WithThreadID("thread-fan-in"),
+		WithCheckpointLoader(store),
+		WithResumeRequest(gopact.ResumeRequest{
+			CheckpointID: "checkpoint-left",
+			InterruptID:  "interrupt-left",
+			Payload:      "continue",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"left", "right", "join"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("resumed trace = %v, want %v", got.Trace, expected)
+	}
+}
+
 func TestGraphRunRejectsInterruptedCheckpointResumeWhenPayloadSchemaMismatches(t *testing.T) {
 	ctx := context.Background()
 	store := &recordingCheckpointStore[traceState]{
@@ -596,6 +1543,53 @@ func TestGraphCompileRejectsMissingNode(t *testing.T) {
 	_, err := g.Compile()
 	if err == nil {
 		t.Fatal("Compile() error = nil, want missing node error")
+	}
+}
+
+func TestGraphRunAllowsPerInvokeMaxSteps(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+	g.AddNode("loop", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "loop")
+		return state, nil
+	})
+	g.AddEdge(Start, "loop")
+	g.AddEdge("loop", "loop")
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	got, err := run.Invoke(ctx, traceState{}, WithMaxSteps(2))
+	if err == nil || !strings.Contains(err.Error(), "exceeded max steps 2") {
+		t.Fatalf("Invoke() error = %v, want max steps error", err)
+	}
+	if len(got.Trace) != 2 {
+		t.Fatalf("trace length = %d, want 2", len(got.Trace))
+	}
+}
+
+func TestGraphRunRejectsInvalidMaxSteps(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+	g.AddNode("one", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "one")
+		return state, nil
+	})
+	g.AddEdge(Start, "one")
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}, WithMaxSteps(0)))
+	if err == nil || !strings.Contains(err.Error(), "max steps must be positive") {
+		t.Fatalf("Run() error = %v, want invalid max steps error", err)
+	}
+	if len(events) != 1 || events[0].Type != gopact.EventRunFailed {
+		t.Fatalf("events = %+v, want single run_failed event", events)
 	}
 }
 
@@ -1104,8 +2098,13 @@ func TestGraphRunPersistsInterruptedCheckpoint(t *testing.T) {
 	g.AddNode("answer", func(ctx context.Context, state traceState) (traceState, error) {
 		return state, nil
 	})
+	g.AddNode("sibling", func(ctx context.Context, state traceState) (traceState, error) {
+		return state, nil
+	})
 	g.AddEdge(Start, "ask")
+	g.AddEdge(Start, "sibling")
 	g.AddEdge("ask", "answer")
+	g.AddEdge("sibling", End)
 
 	run, err := g.Compile()
 	if err != nil {
@@ -1126,8 +2125,8 @@ func TestGraphRunPersistsInterruptedCheckpoint(t *testing.T) {
 	if checkpoint.Pending == nil || checkpoint.Pending.ID != "interrupt-1" {
 		t.Fatalf("checkpoint pending = %+v, want interrupt-1", checkpoint.Pending)
 	}
-	if !reflect.DeepEqual(checkpoint.Queue, []string{"answer"}) {
-		t.Fatalf("checkpoint queue = %v, want [answer]", checkpoint.Queue)
+	if !reflect.DeepEqual(checkpoint.Queue, []string{"sibling", "answer"}) {
+		t.Fatalf("checkpoint queue = %v, want [sibling answer]", checkpoint.Queue)
 	}
 	if !reflect.DeepEqual(checkpoint.State.Trace, []string{"ask"}) {
 		t.Fatalf("checkpoint state trace = %v, want [ask]", checkpoint.State.Trace)
@@ -1492,8 +2491,13 @@ func TestGraphRunPersistsCanceledCheckpoint(t *testing.T) {
 	g.AddNode("after", func(ctx context.Context, state traceState) (traceState, error) {
 		return state, nil
 	})
+	g.AddNode("sibling", func(ctx context.Context, state traceState) (traceState, error) {
+		return state, nil
+	})
 	g.AddEdge(Start, "stop")
+	g.AddEdge(Start, "sibling")
 	g.AddEdge("stop", "after")
+	g.AddEdge("sibling", End)
 
 	run, err := g.Compile()
 	if err != nil {
@@ -1511,8 +2515,8 @@ func TestGraphRunPersistsCanceledCheckpoint(t *testing.T) {
 	if checkpoint.Phase != gopact.StepCanceled {
 		t.Fatalf("checkpoint phase = %q, want canceled", checkpoint.Phase)
 	}
-	if !reflect.DeepEqual(checkpoint.Queue, []string{"after"}) {
-		t.Fatalf("checkpoint queue = %v, want [after]", checkpoint.Queue)
+	if !reflect.DeepEqual(checkpoint.Queue, []string{"sibling", "after"}) {
+		t.Fatalf("checkpoint queue = %v, want [sibling after]", checkpoint.Queue)
 	}
 	if !reflect.DeepEqual(checkpoint.State.Trace, []string{"stop"}) {
 		t.Fatalf("checkpoint state trace = %v, want [stop]", checkpoint.State.Trace)
@@ -1572,6 +2576,55 @@ func TestGraphRunResumesFromCanceledStepExport(t *testing.T) {
 	}
 	if !reflect.DeepEqual(output.Trace, []string{"stop", "after"}) {
 		t.Fatalf("resumed trace = %v, want [stop after]", output.Trace)
+	}
+}
+
+func TestGraphRunCanceledStepExportResumeCompletesFanInSource(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+	g.AddNode("left", func(context.Context, traceState) (traceState, error) {
+		t.Fatal("canceled left should not rerun after step import")
+		return traceState{}, nil
+	})
+	g.AddNode("right", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "right")
+		return state, nil
+	})
+	g.AddNode("join", func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, "join")
+		return state, nil
+	})
+	g.AddEdge(Start, "left")
+	g.AddEdge(Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	export := gopact.StepExport{
+		Version: 1,
+		Step: gopact.StepSnapshot{
+			ID:     "run-1:1",
+			Step:   1,
+			Node:   "left",
+			Phase:  gopact.StepCanceled,
+			IDs:    gopact.RuntimeIDs{RunID: "run-1"},
+			Output: traceState{Trace: []string{"left"}},
+			Queue:  []string{"right"},
+		},
+	}
+
+	got, err := run.Invoke(ctx, traceState{}, WithStepExport(export))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+
+	expected := []string{"left", "right", "join"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("resumed trace = %v, want %v", got.Trace, expected)
 	}
 }
 

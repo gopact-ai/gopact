@@ -106,6 +106,7 @@ func (a *RunnableAgent) Send(ctx context.Context, task Task) (Result, error) {
 	if a == nil || a.runnable == nil {
 		return Result{}, ErrRunnableRequired
 	}
+	ctx, task = contextWithTaskRuntimeIDs(ctx, task)
 	input, err := a.inputMapper(ctx, copyTask(task))
 	if err != nil {
 		return Result{TaskID: taskID(task)}, err
@@ -137,6 +138,7 @@ func (a *RunnableAgent) Stream(ctx context.Context, task Task) iter.Seq2[TaskEve
 			yield(failedTaskEvent(task, ErrRunnableRequired), ErrRunnableRequired)
 			return
 		}
+		ctx, task = contextWithTaskRuntimeIDs(ctx, task)
 		input, err := a.inputMapper(ctx, copyTask(task))
 		if err != nil {
 			yield(failedTaskEvent(task, err), err)
@@ -207,6 +209,18 @@ func (a *RunnableAgent) Cancel(ctx context.Context, taskID string) error {
 		return ErrRunnableRequired
 	}
 	return nil
+}
+
+func contextWithTaskRuntimeIDs(ctx context.Context, task Task) (context.Context, Task) {
+	ids := task.IDs
+	if contextIDs, ok := gopact.RuntimeIDsFromContext(ctx); ok && !contextIDs.IsZero() {
+		ids = ids.WithDefaults(contextIDs)
+	}
+	if ids.IsZero() {
+		return ctx, task
+	}
+	task.IDs = ids
+	return gopact.ContextWithRuntimeIDs(ctx, ids), task
 }
 
 func defaultRunnableInputMapper(_ context.Context, task Task) (any, error) {

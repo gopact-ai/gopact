@@ -27,6 +27,11 @@ jobs:
       - name: Check whitespace
         run: git diff --check
 
+      - name: Check module tidiness
+        run: |
+          go mod tidy
+          git diff --exit-code
+
       - name: Test
         run: go test -count=1 ./...
 
@@ -44,6 +49,12 @@ jobs:
 
       - name: Examples
         run: go test -run '^Example' ./...
+
+      - name: Graph
+        run: go test -count=1 ./graph ./gopacttest/graphconformance
+
+      - name: A2A Mesh
+        run: go test -count=1 ./a2a ./gopacttest/a2aconformance
 
       - name: Security
         run: govulncheck ./...

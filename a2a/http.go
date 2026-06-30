@@ -16,10 +16,12 @@ import (
 const (
 	defaultHTTPMaxResponseBytes int64 = 4 << 20
 
-	httpPathCard       = "/a2a/card"
+	httpPathCard       = "/.well-known/agent-card.json"
 	httpPathTaskSend   = "/a2a/task/send"
 	httpPathTaskStream = "/a2a/task/stream"
 	httpPathTaskCancel = "/a2a/task/cancel"
+	httpPathHealth     = "/healthz"
+	httpPathReady      = "/readyz"
 )
 
 var (
@@ -45,6 +47,7 @@ var (
 	_ Agent          = (*HTTPAgent)(nil)
 	_ StreamingAgent = (*HTTPAgent)(nil)
 	_ Discoverer     = (*HTTPAgent)(nil)
+	_ CardLister     = (*HTTPAgent)(nil)
 )
 
 // NewHTTPAgent creates an HTTP A2A agent client.
@@ -156,7 +159,19 @@ func (a *HTTPAgent) Discover(ctx context.Context, query DiscoveryQuery) (Discove
 	if card.URL == "" {
 		card.URL = endpoint
 	}
+	if !matchesRemoteDiscoveryQuery(card, query) {
+		return DiscoveryResult{}, ErrAgentNotFound
+	}
 	return DiscoveryResult{Card: copyAgentCard(card)}, nil
+}
+
+// ListCards returns the HTTP endpoint's well-known agent card.
+func (a *HTTPAgent) ListCards(ctx context.Context) ([]AgentCard, error) {
+	result, err := a.Discover(ctx, DiscoveryQuery{})
+	if err != nil {
+		return nil, err
+	}
+	return []AgentCard{copyAgentCard(result.Card)}, nil
 }
 
 // Send posts one task to the HTTP endpoint.
@@ -308,19 +323,57 @@ func (a *HTTPAgent) checkStatus(resp *http.Response) error {
 	return fmt.Errorf("%w: %s", ErrHTTPStatus, resp.Status)
 }
 
+// HTTPHandlerOption configures an HTTP A2A server handler.
+type HTTPHandlerOption func(*httpHandler)
+
+// WithHTTPHandlerAgentCard sets the card metadata exposed by the HTTP handler.
+func WithHTTPHandlerAgentCard(card AgentCard) HTTPHandlerOption {
+	return func(handler *httpHandler) {
+		handler.cardValue = copyAgentCard(card)
+		handler.hasCard = true
+	}
+}
+
 // NewHTTPHandler exposes an A2A agent through a minimal HTTP JSON/JSONL API.
-func NewHTTPHandler(agent Agent) http.Handler {
+func NewHTTPHandler(agent Agent, opts ...HTTPHandlerOption) http.Handler {
 	h := &httpHandler{agent: agent}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(h)
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc(httpPathCard, h.card)
 	mux.HandleFunc(httpPathTaskSend, h.send)
 	mux.HandleFunc(httpPathTaskStream, h.stream)
 	mux.HandleFunc(httpPathTaskCancel, h.cancel)
+	mux.HandleFunc(httpPathHealth, h.health)
+	mux.HandleFunc(httpPathReady, h.ready)
 	return mux
 }
 
 type httpHandler struct {
-	agent Agent
+	agent     Agent
+	cardValue AgentCard
+	hasCard   bool
+}
+
+func (h *httpHandler) health(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	writeHTTPJSON(w, http.StatusOK, httpStatusResponse{Status: "ok"})
+}
+
+func (h *httpHandler) ready(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if h.agent == nil {
+		writeHTTPJSON(w, http.StatusServiceUnavailable, httpStatusResponse{Status: "not_ready"})
+		return
+	}
+	writeHTTPJSON(w, http.StatusOK, httpStatusResponse{Status: "ready"})
 }
 
 func (h *httpHandler) card(w http.ResponseWriter, r *http.Request) {
@@ -329,6 +382,10 @@ func (h *httpHandler) card(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.agent == nil {
 		writeHTTPError(w, http.StatusInternalServerError, ErrAgentNotFound)
+		return
+	}
+	if h.hasCard {
+		writeHTTPJSON(w, http.StatusOK, copyAgentCard(h.cardValue))
 		return
 	}
 	writeHTTPJSON(w, http.StatusOK, h.agent.Card())
@@ -434,6 +491,10 @@ type httpErrorResponse struct {
 	Error string `json:"error"`
 }
 
+type httpStatusResponse struct {
+	Status string `json:"status"`
+}
+
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
 	if r.Method == method {
 		return true
@@ -449,6 +510,13 @@ func decodeHTTPJSON(r *http.Request, output any) error {
 	}()
 	decoder := json.NewDecoder(io.LimitReader(r.Body, defaultHTTPMaxResponseBytes+1))
 	if err := decoder.Decode(output); err != nil {
+		return fmt.Errorf("a2a: decode http request: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("a2a: decode http request: multiple json values")
+		}
 		return fmt.Errorf("a2a: decode http request: %w", err)
 	}
 	return nil

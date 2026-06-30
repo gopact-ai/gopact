@@ -9,6 +9,7 @@ template, adapter-boundary, and release-process changes.
 
 ### Added
 
+- MIT license in `LICENSE`.
 - Model reviewer governance field requirements through
   `adapters/devagent/modelreview.WithRequiredGovernanceFields`.
 - CI reviewer required `ci_gate` checks through
@@ -25,7 +26,5 @@ template, adapter-boundary, and release-process changes.
 
 ### Known Blockers
 
-- Public license selection is pending project owner decision; `LICENSE` must be
-  added before public release.
 - External private scaffold repositories still require `GOPACT_GITHUB_TOKEN` and
   passing latest CI before M6 can be complete.

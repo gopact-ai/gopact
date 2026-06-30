@@ -119,7 +119,7 @@ func TestRecordRemoteCIRunSetCheckRecordsPassedExternalCICheck(t *testing.T) {
 				Ready:                   true,
 			},
 		},
-	}, []string{"whitespace", "unit", "vet"}); err != nil {
+	}, []string{"whitespace", "module-tidiness", "unit", "vet"}); err != nil {
 		t.Fatalf("RecordRemoteCIRunSetCheck() error = %v", err)
 	}
 
@@ -135,14 +135,14 @@ func TestRecordRemoteCIRunSetCheckRecordsPassedExternalCICheck(t *testing.T) {
 	}
 	if check.Metadata["run_count"] != 2 ||
 		check.Metadata["repository_count"] != 2 ||
-		check.Metadata["gate_count"] != 6 ||
-		check.Metadata["passed_gate_count"] != 6 {
+		check.Metadata["gate_count"] != 8 ||
+		check.Metadata["passed_gate_count"] != 8 {
 		t.Fatalf("metadata = %+v, want external CI run set counts", check.Metadata)
 	}
-	if got, want := check.Metadata["required_gates"], []string{"whitespace", "unit", "vet"}; !reflect.DeepEqual(got, want) {
+	if got, want := check.Metadata["required_gates"], []string{"whitespace", "module-tidiness", "unit", "vet"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("required gates = %#v, want %#v", got, want)
 	}
-	if len(check.Evidence) != 6 {
+	if len(check.Evidence) != 8 {
 		t.Fatalf("evidence count = %d, want one evidence item per repo gate", len(check.Evidence))
 	}
 	evidence := check.Evidence[0]
@@ -153,6 +153,11 @@ func TestRecordRemoteCIRunSetCheckRecordsPassedExternalCICheck(t *testing.T) {
 		evidence.Metadata["gate"] != "whitespace" ||
 		evidence.Metadata["status"] != string(gopact.VerificationStatusPassed) {
 		t.Fatalf("first evidence = %+v, want repository-qualified external CI gate evidence", evidence)
+	}
+	moduleTidinessEvidence := check.Evidence[1]
+	if moduleTidinessEvidence.Ref != "ci-gate:gopact-ai/gopact-adapters-model:module-tidiness" ||
+		moduleTidinessEvidence.Metadata["step"] != "Check module tidiness" {
+		t.Fatalf("module tidiness evidence = %+v, want module tidiness CI step", moduleTidinessEvidence)
 	}
 }
 
@@ -174,7 +179,7 @@ func TestRecordRemoteCIRunSetCheckRecordsFailedExternalCIBeforeReturningError(t 
 				PrivateSDKSecretName: "GOPACT_GITHUB_TOKEN",
 			},
 		},
-	}, []string{"whitespace", "unit", "vet"})
+	}, []string{"whitespace", "module-tidiness", "unit", "vet"})
 	if !errors.Is(err, ErrRemoteCINotReady) {
 		t.Fatalf("RecordRemoteCIRunSetCheck() error = %v, want ErrRemoteCINotReady", err)
 	}
@@ -185,8 +190,21 @@ func TestRecordRemoteCIRunSetCheckRecordsFailedExternalCIBeforeReturningError(t 
 	check := checks[0]
 	if check.ID != "external-ci:gopact-ai" ||
 		check.Status != gopact.VerificationStatusFailed ||
-		check.Metadata["failed_gate_count"] != 3 {
+		check.Metadata["failed_gate_count"] != 4 {
 		t.Fatalf("check = %+v, want failed external CI check", check)
+	}
+}
+
+func TestDefaultRemoteCIGatesIncludeModuleTidiness(t *testing.T) {
+	got := DefaultRemoteCIGates()
+	want := []string{"whitespace", "module-tidiness", "unit", "vet"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DefaultRemoteCIGates() = %#v, want %#v", got, want)
+	}
+
+	got[0] = "changed"
+	if reflect.DeepEqual(DefaultRemoteCIGates(), got) {
+		t.Fatal("DefaultRemoteCIGates() returned shared backing slice")
 	}
 }
 

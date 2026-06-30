@@ -368,6 +368,9 @@ func (a *Agent) Run(ctx context.Context, input any, opts ...gopact.RunOption) it
 			return yield(event, err)
 		}
 		cfg := gopact.ResolveRunOptions(opts...)
+		if ids, ok := gopact.RuntimeIDsFromContext(ctx); ok && !ids.IsZero() {
+			cfg.IDs = cfg.IDs.WithDefaults(ids)
+		}
 		ids := cfg.IDs
 		state, err := inputState(input)
 		if err != nil {

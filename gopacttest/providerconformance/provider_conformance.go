@@ -39,6 +39,9 @@ func CheckProviderConformance(ctx context.Context, harness ProviderConformanceHa
 	if request.Model == "" {
 		request.Model = firstConformanceModelName(ctx, harness.Provider)
 	}
+	if request.IDs.IsZero() {
+		request.IDs = defaultProviderRuntimeIDs()
+	}
 
 	return []ProviderConformanceResult{
 		checkProviderName(harness.Provider),
@@ -164,6 +167,9 @@ func checkProviderStreamsEvents(ctx context.Context, modelProvider provider.Prov
 		if event.Type == "" {
 			return failedProviderConformance("streams-events", errors.New("stream event type is empty"))
 		}
+		if event.IDs != request.IDs {
+			return failedProviderConformance("streams-events", fmt.Errorf("stream event ids = %+v, want %+v", event.IDs, request.IDs))
+		}
 		return passedProviderConformance("streams-events")
 	}
 	return failedProviderConformance("streams-events", errors.New("provider stream ended without events"))
@@ -212,13 +218,17 @@ func firstConformanceModelName(ctx context.Context, modelProvider provider.Provi
 
 func defaultProviderRequest() gopact.ModelRequest {
 	return gopact.ModelRequest{
-		IDs:   gopact.RuntimeIDs{RunID: "gopact-conformance-run", AgentID: "gopact-conformance-agent", CallID: "gopact-conformance-call"},
+		IDs:   defaultProviderRuntimeIDs(),
 		Model: "gopact-conformance-model",
 		Messages: []gopact.Message{
 			{Role: gopact.RoleUser, Content: "gopact conformance"},
 		},
 		Metadata: map[string]any{"conformance": "provider"},
 	}
+}
+
+func defaultProviderRuntimeIDs() gopact.RuntimeIDs {
+	return gopact.RuntimeIDs{RunID: "gopact-conformance-run", AgentID: "gopact-conformance-agent", CallID: "gopact-conformance-call"}
 }
 
 func copyModelRequestForConformance(in gopact.ModelRequest) gopact.ModelRequest {

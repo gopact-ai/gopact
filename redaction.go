@@ -334,6 +334,14 @@ func copyModelRequest(request ModelRequest) ModelRequest {
 	request.ResponseSchema = copyJSONSchema(request.ResponseSchema)
 	request.Capabilities = append([]Capability(nil), request.Capabilities...)
 	request.Metadata = copyAnyMap(request.Metadata)
+	if request.Temperature != nil {
+		temperature := *request.Temperature
+		request.Temperature = &temperature
+	}
+	if request.TopP != nil {
+		topP := *request.TopP
+		request.TopP = &topP
+	}
 	return request
 }
 

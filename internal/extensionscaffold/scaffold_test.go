@@ -46,6 +46,8 @@ func TestRenderRepositoryProducesConformantScaffoldFiles(t *testing.T) {
 		"Configure private SDK access",
 		"GOPACT_GITHUB_TOKEN: ${{ secrets.GOPACT_GITHUB_TOKEN || github.token }}",
 		"go env -w GOPRIVATE='github.com/gopact-ai/*'",
+		"Check module tidiness",
+		"go mod tidy && git diff --exit-code",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf(".github/workflows/ci.yml missing %q:\n%s", want, workflow)
@@ -78,6 +80,52 @@ func TestRenderRepositoryProducesConformantScaffoldFiles(t *testing.T) {
 	} {
 		if !strings.Contains(minimal, want) {
 			t.Fatalf("examples/minimal_test.go missing %q:\n%s", want, minimal)
+		}
+	}
+}
+
+func TestRenderRepositoryDocumentsA2AConformanceHelperReference(t *testing.T) {
+	repo := exampleRepository()
+	repo.Targets[0].ConformanceSuites = []string{
+		"gopacttest-extension-scaffold-conformance",
+		"gopacttest-a2a-agent-conformance",
+		"gopacttest-a2a-discoverer-conformance",
+		"gopacttest-a2a-agent-mesh-conformance",
+	}
+
+	files, err := RenderRepository(repo)
+	if err != nil {
+		t.Fatalf("RenderRepository() error = %v", err)
+	}
+	byPath := filesByPath(files)
+	for _, path := range []string{"CONFORMANCE.md", "examples/minimal_test.go"} {
+		if !strings.Contains(byPath[path], "gopacttest/a2aconformance.RequireAgentConformance") {
+			t.Fatalf("%s missing a2a conformance helper reference:\n%s", path, byPath[path])
+		}
+		if !strings.Contains(byPath[path], "gopacttest/a2aconformance.RequireDiscovererConformance") {
+			t.Fatalf("%s missing a2a discoverer conformance helper reference:\n%s", path, byPath[path])
+		}
+		if !strings.Contains(byPath[path], "gopacttest/a2aconformance.RequireAgentMeshConformance") {
+			t.Fatalf("%s missing a2a agent mesh conformance helper reference:\n%s", path, byPath[path])
+		}
+	}
+}
+
+func TestRenderRepositoryDocumentsGraphConformanceHelperReference(t *testing.T) {
+	repo := exampleRepository()
+	repo.Targets[0].ConformanceSuites = []string{
+		"gopacttest-extension-scaffold-conformance",
+		"gopacttest-graph-conformance",
+	}
+
+	files, err := RenderRepository(repo)
+	if err != nil {
+		t.Fatalf("RenderRepository() error = %v", err)
+	}
+	byPath := filesByPath(files)
+	for _, path := range []string{"CONFORMANCE.md", "examples/minimal_test.go"} {
+		if !strings.Contains(byPath[path], "gopacttest/graphconformance.RequireGraphConformance") {
+			t.Fatalf("%s missing graph conformance helper reference:\n%s", path, byPath[path])
 		}
 	}
 }
@@ -171,6 +219,7 @@ func exampleRepository() Repository {
 		},
 		RequiredCICommands: []string{
 			"git diff --check",
+			"go mod tidy && git diff --exit-code",
 			"go test -count=1 ./...",
 			"go vet ./...",
 		},

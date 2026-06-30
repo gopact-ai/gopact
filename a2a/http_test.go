@@ -2,7 +2,9 @@ package a2a
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"iter"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +39,10 @@ func TestHTTPAgentRoundTripsCardSendAndCancel(t *testing.T) {
 				Output:    "planned: " + task.Input,
 				Artifacts: []gopact.ArtifactRef{artifact},
 				Metadata:  map[string]any{"route": "http"},
+				Events: []gopact.Event{{
+					Type: gopact.EventA2ATaskCompleted,
+					IDs:  task.IDs,
+				}},
 			}, nil
 		},
 		CancelFunc: func(_ context.Context, taskID string) error {
@@ -92,7 +98,9 @@ func TestHTTPAgentRoundTripsCardSendAndCancel(t *testing.T) {
 		result.Output != "planned: write tests" ||
 		len(result.Artifacts) != 1 ||
 		result.Artifacts[0].ID != artifact.ID ||
-		result.Metadata["route"] != "http" {
+		result.Metadata["route"] != "http" ||
+		len(result.Events) != 1 ||
+		result.Events[0].Type != gopact.EventA2ATaskCompleted {
 		t.Fatalf("Send() = %+v, want remote result", result)
 	}
 
@@ -101,6 +109,415 @@ func TestHTTPAgentRoundTripsCardSendAndCancel(t *testing.T) {
 	}
 	if canceledTaskID != "task-1" {
 		t.Fatalf("canceled task id = %q, want task-1", canceledTaskID)
+	}
+}
+
+func TestHTTPAgentDiscoversWellKnownAgentCard(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/.well-known/agent-card.json" {
+			http.NotFound(w, r)
+			return
+		}
+		writeHTTPJSON(w, http.StatusOK, AgentCard{Name: "planner", Description: "plans tasks"})
+	}))
+	defer server.Close()
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+
+	discovered, err := remote.Discover(ctx, DiscoveryQuery{Name: "planner"})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if discovered.Card.Name != "planner" || discovered.Card.Description != "plans tasks" {
+		t.Fatalf("Discover() = %+v, want well-known card", discovered.Card)
+	}
+}
+
+func TestHTTPAgentListCardsReturnsWellKnownAgentCard(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/.well-known/agent-card.json" {
+			http.NotFound(w, r)
+			return
+		}
+		writeHTTPJSON(w, http.StatusOK, AgentCard{Name: "planner", Description: "plans tasks"})
+	}))
+	defer server.Close()
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+
+	cards, err := remote.ListCards(ctx)
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if len(cards) != 1 ||
+		cards[0].Name != "planner" ||
+		cards[0].Description != "plans tasks" ||
+		cards[0].URL != server.URL {
+		t.Fatalf("ListCards() = %+v, want well-known card with endpoint URL", cards)
+	}
+}
+
+func TestHTTPAgentDiscoverMatchesNameAndMetadata(t *testing.T) {
+	ctx := context.Background()
+	agent := FakeAgent{
+		CardValue: AgentCard{
+			Name:     "reviewer",
+			Metadata: map[string]any{"domain": "code"},
+		},
+	}
+	server := httptest.NewServer(NewHTTPHandler(agent))
+	defer server.Close()
+
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+
+	result, err := remote.Discover(ctx, DiscoveryQuery{
+		Metadata: map[string]any{"domain": "code"},
+	})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if result.Card.Name != "reviewer" {
+		t.Fatalf("Discover() = %+v, want reviewer card", result.Card)
+	}
+
+	_, err = remote.Discover(ctx, DiscoveryQuery{
+		Name:     "reviewer",
+		Metadata: map[string]any{"domain": "research"},
+	})
+	if !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Discover() mismatched metadata error = %v, want %v", err, ErrAgentNotFound)
+	}
+}
+
+func TestHTTPAgentDiscoverMatchesCapabilities(t *testing.T) {
+	ctx := context.Background()
+	agent := FakeAgent{
+		CardValue: AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review", "git.diff"},
+		},
+	}
+	server := httptest.NewServer(NewHTTPHandler(agent))
+	defer server.Close()
+
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+
+	result, err := remote.Discover(ctx, DiscoveryQuery{
+		Require: []string{"code.review", "git.diff"},
+	})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if result.Card.Name != "reviewer" {
+		t.Fatalf("Discover() = %+v, want reviewer card", result.Card)
+	}
+
+	_, err = remote.Discover(ctx, DiscoveryQuery{
+		Name:    "reviewer",
+		Require: []string{"web.search"},
+	})
+	if !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Discover() mismatched capability error = %v, want %v", err, ErrAgentNotFound)
+	}
+}
+
+func TestHTTPHandlerServesWellKnownAgentCard(t *testing.T) {
+	agent := FakeAgent{CardValue: AgentCard{Name: "planner", Description: "plans tasks"}}
+	server := httptest.NewServer(NewHTTPHandler(agent))
+	defer server.Close()
+
+	resp, err := server.Client().Get(server.URL + "/.well-known/agent-card.json")
+	if err != nil {
+		t.Fatalf("GET well-known card error = %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET well-known card status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll card error = %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("Unmarshal card fields error = %v", err)
+	}
+	if _, ok := fields["name"]; !ok {
+		t.Fatalf("card JSON fields = %+v, want lower-case name", fields)
+	}
+	if _, ok := fields["Name"]; ok {
+		t.Fatalf("card JSON fields = %+v, want no Go field name", fields)
+	}
+	var card AgentCard
+	if err := json.Unmarshal(raw, &card); err != nil {
+		t.Fatalf("Unmarshal card error = %v", err)
+	}
+	if card.Name != "planner" || card.Description != "plans tasks" {
+		t.Fatalf("card = %+v, want handler card", card)
+	}
+}
+
+func TestHTTPHandlerOptionExposesHostOwnedAgentCard(t *testing.T) {
+	card := AgentCard{
+		Name:         "reviewer",
+		URL:          "https://agents.example/reviewer",
+		Capabilities: []string{"code.review"},
+		Protocols: []ProtocolBinding{
+			{Name: "a2a", Transport: "http", URL: "https://agents.example/reviewer"},
+		},
+		Health:   &HealthHints{HealthPath: "/healthz", ReadinessPath: "/readyz"},
+		Metadata: map[string]any{"domain": "code"},
+	}
+	server := httptest.NewServer(NewHTTPHandler(
+		FakeAgent{CardValue: AgentCard{Name: "local-reviewer"}},
+		WithHTTPHandlerAgentCard(card),
+	))
+	defer server.Close()
+	card.Metadata["domain"] = "mutated"
+	card.Protocols[0].URL = "https://mutated.example/reviewer"
+
+	resp, err := server.Client().Get(server.URL + "/.well-known/agent-card.json")
+	if err != nil {
+		t.Fatalf("GET well-known card error = %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET well-known card status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var got AgentCard
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("Decode card error = %v", err)
+	}
+	if got.Name != "reviewer" ||
+		got.URL != "https://agents.example/reviewer" ||
+		got.Metadata["domain"] != "code" ||
+		len(got.Protocols) != 1 ||
+		got.Protocols[0].URL != "https://agents.example/reviewer" ||
+		got.Health == nil ||
+		got.Health.HealthPath != "/healthz" ||
+		got.Health.ReadinessPath != "/readyz" {
+		t.Fatalf("card = %+v, want host-owned card metadata", got)
+	}
+}
+
+func TestHTTPHandlerSendUsesLowercaseWireJSON(t *testing.T) {
+	var sentTask Task
+	agent := FakeAgent{
+		CardValue: AgentCard{Name: "planner"},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			sentTask = task
+			return Result{
+				TaskID:   task.ID,
+				Output:   "planned: " + task.Input,
+				Metadata: map[string]any{"route": "http"},
+			}, nil
+		},
+	}
+	server := httptest.NewServer(NewHTTPHandler(agent))
+	defer server.Close()
+
+	resp, err := server.Client().Post(
+		server.URL+"/a2a/task/send",
+		"application/json",
+		strings.NewReader(`{"id":"task-1","input":"write tests","metadata":{"priority":"high"}}`),
+	)
+	if err != nil {
+		t.Fatalf("POST send error = %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST send status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if sentTask.ID != "task-1" || sentTask.Input != "write tests" || sentTask.Metadata["priority"] != "high" {
+		t.Fatalf("sent task = %+v, want lowercase JSON decoded", sentTask)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll send response error = %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("Unmarshal response fields error = %v", err)
+	}
+	if fields["task_id"] != "task-1" || fields["output"] != "planned: write tests" {
+		t.Fatalf("response fields = %+v, want lowercase result JSON", fields)
+	}
+	if _, ok := fields["TaskID"]; ok {
+		t.Fatalf("response fields = %+v, want no Go field name", fields)
+	}
+}
+
+func TestHTTPHandlerServesHealthAndReadiness(t *testing.T) {
+	server := httptest.NewServer(NewHTTPHandler(FakeAgent{CardValue: AgentCard{Name: "planner"}}))
+	defer server.Close()
+
+	for _, path := range []string{"/healthz", "/readyz"} {
+		resp, err := server.Client().Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s error = %v", path, err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, resp.StatusCode, http.StatusOK)
+		}
+	}
+}
+
+func TestHTTPHandlerReadinessFailsWithoutAgent(t *testing.T) {
+	server := httptest.NewServer(NewHTTPHandler(nil))
+	defer server.Close()
+
+	resp, err := server.Client().Get(server.URL + "/readyz")
+	if err != nil {
+		t.Fatalf("GET readyz error = %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET readyz status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHTTPHandlerHealthRejectsWrongMethod(t *testing.T) {
+	server := httptest.NewServer(NewHTTPHandler(FakeAgent{CardValue: AgentCard{Name: "planner"}}))
+	defer server.Close()
+
+	resp, err := server.Client().Post(server.URL+"/healthz", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("POST healthz error = %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("POST healthz status = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestRegistryDiscoversHTTPAgentForNameCall(t *testing.T) {
+	ctx := context.Background()
+	agent := FakeAgent{
+		CardValue: AgentCard{Name: "planner", Description: "plans tasks"},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			return Result{TaskID: task.ID, Output: "planned: " + task.Input}, nil
+		},
+	}
+	server := httptest.NewServer(NewHTTPHandler(agent))
+	defer server.Close()
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+	registry := NewRegistry()
+
+	if _, err := registry.Discover(ctx, remote, DiscoveryQuery{URL: server.URL}); err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	result, err := registry.Send(ctx, "planner", Task{ID: "task-1", Input: "write tests"})
+	if err != nil {
+		t.Fatalf("Send() after discovery error = %v", err)
+	}
+	if result.Output != "planned: write tests" {
+		t.Fatalf("Send() after discovery = %+v, want remote output", result)
+	}
+	if len(result.Events) == 0 || result.Events[0].Metadata["agent_name"] != "planner" {
+		t.Fatalf("Send() events = %+v, want discovered agent evidence", result.Events)
+	}
+}
+
+func TestRegistryDiscoversHTTPAgentForNameStream(t *testing.T) {
+	ctx := context.Background()
+	agent := FakeAgent{
+		CardValue: AgentCard{Name: "planner", Description: "plans tasks"},
+		StreamFunc: func(ctx context.Context, task Task) iter.Seq2[TaskEvent, error] {
+			return func(yield func(TaskEvent, error) bool) {
+				if !yield(TaskEvent{TaskID: task.ID, IDs: task.IDs, Status: TaskStatusRunning}, nil) {
+					return
+				}
+				yield(TaskEvent{
+					TaskID: task.ID,
+					IDs:    task.IDs,
+					Status: TaskStatusCompleted,
+					Result: &Result{TaskID: task.ID, Output: "planned"},
+				}, nil)
+			}
+		},
+	}
+	server := httptest.NewServer(NewHTTPHandler(agent))
+	defer server.Close()
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+	registry := NewRegistry()
+	if _, err := registry.Discover(ctx, remote, DiscoveryQuery{URL: server.URL}); err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+
+	events, err := collectTaskEvents(registry.Stream(ctx, "planner", Task{ID: "task-1"}))
+	if err != nil {
+		t.Fatalf("Stream() after discovery error = %v", err)
+	}
+	if len(events) != 2 ||
+		events[0].Status != TaskStatusRunning ||
+		events[1].Status != TaskStatusCompleted ||
+		events[1].Result.Output != "planned" {
+		t.Fatalf("Stream() after discovery events = %+v, want running/completed", events)
+	}
+}
+
+func TestRegistryDiscoversHTTPAgentForCapabilityRoute(t *testing.T) {
+	ctx := context.Background()
+	agent := FakeAgent{
+		CardValue: AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review"},
+		},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			return Result{TaskID: task.ID, Output: "reviewed: " + task.Input}, nil
+		},
+	}
+	server := httptest.NewServer(NewHTTPHandler(agent))
+	defer server.Close()
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+	registry := NewRegistry()
+	if _, err := registry.Discover(ctx, remote, DiscoveryQuery{URL: server.URL}); err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+
+	result, err := registry.Route(ctx, RouteQuery{
+		Require: []string{"code.review"},
+		Task:    Task{ID: "task-1", Input: "diff"},
+	})
+	if err != nil {
+		t.Fatalf("Route() after discovery error = %v", err)
+	}
+	if result.Output != "reviewed: diff" {
+		t.Fatalf("Route() after discovery = %+v, want remote output", result)
 	}
 }
 
@@ -215,5 +632,20 @@ func TestHTTPHandlerRejectsInvalidRequests(t *testing.T) {
 	}()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("POST invalid json status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+
+	resp, err = server.Client().Post(
+		server.URL+"/a2a/task/send",
+		"application/json",
+		strings.NewReader(`{"id":"task-1"} {"id":"task-2"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST trailing json error = %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST trailing json status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
 }
