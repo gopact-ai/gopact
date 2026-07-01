@@ -210,6 +210,9 @@ func checkExpectedCard(card a2a.AgentCard, expected a2a.AgentCard) error {
 	if !containsAllStrings(card.Capabilities, expected.Capabilities) {
 		return fmt.Errorf("card capabilities = %v, want at least %v", card.Capabilities, expected.Capabilities)
 	}
+	if !containsAllStrings(card.Tags, expected.Tags) {
+		return fmt.Errorf("card tags = %v, want at least %v", card.Tags, expected.Tags)
+	}
 	for key, expectedValue := range expected.Metadata {
 		if !reflect.DeepEqual(card.Metadata[key], expectedValue) {
 			return fmt.Errorf("card metadata %q = %v, want %v", key, card.Metadata[key], expectedValue)
@@ -239,6 +242,9 @@ func mutateCard(card *a2a.AgentCard) {
 	if len(card.Capabilities) > 0 {
 		card.Capabilities[0] = "gopact-conformance-mutated"
 	}
+	if len(card.Tags) > 0 {
+		card.Tags[0] = "gopact-conformance-mutated"
+	}
 }
 
 func cardHasMutation(card a2a.AgentCard) bool {
@@ -247,6 +253,11 @@ func cardHasMutation(card a2a.AgentCard) bool {
 	}
 	for _, capability := range card.Capabilities {
 		if capability == "gopact-conformance-mutated" {
+			return true
+		}
+	}
+	for _, tag := range card.Tags {
+		if tag == "gopact-conformance-mutated" {
 			return true
 		}
 	}
@@ -268,6 +279,7 @@ func failedDiscovererConformance(name string, err error) DiscovererConformanceRe
 func copyDiscoveryQuery(query a2a.DiscoveryQuery) a2a.DiscoveryQuery {
 	out := query
 	out.Require = append([]string(nil), query.Require...)
+	out.Tags = append([]string(nil), query.Tags...)
 	out.Metadata = copyAnyMap(query.Metadata)
 	return out
 }

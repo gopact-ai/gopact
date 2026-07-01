@@ -216,7 +216,7 @@ func TestHTTPRegistryBootstrapsMultipleAgentCards(t *testing.T) {
 		writeHTTPJSON(w, http.StatusOK, map[string]any{
 			"agents": []AgentCard{
 				{Name: "planner", Capabilities: []string{"planning"}, Metadata: map[string]any{"domain": "work"}},
-				{Name: "reviewer", Capabilities: []string{"code.review"}, Metadata: map[string]any{"domain": "code"}},
+				{Name: "reviewer", Capabilities: []string{"code.review"}, Tags: []string{"code", "local"}, Metadata: map[string]any{"domain": "code"}},
 			},
 		})
 	}))
@@ -249,6 +249,14 @@ func TestHTTPRegistryBootstrapsMultipleAgentCards(t *testing.T) {
 	}
 	if result.Card.Name != "reviewer" || result.Metadata["source"] != "http_registry" {
 		t.Fatalf("Discover() = %+v, want reviewer from http registry", result)
+	}
+
+	result, err = registry.Discover(ctx, DiscoveryQuery{Tags: []string{"code", "local"}})
+	if err != nil {
+		t.Fatalf("Discover(tags) error = %v", err)
+	}
+	if result.Card.Name != "reviewer" {
+		t.Fatalf("Discover(tags) = %+v, want reviewer from http registry", result)
 	}
 }
 

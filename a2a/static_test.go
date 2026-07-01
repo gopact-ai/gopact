@@ -121,6 +121,31 @@ func TestStaticDiscovererFindsAgentCardByCapability(t *testing.T) {
 	}
 }
 
+func TestStaticDiscovererFindsAgentCardByTags(t *testing.T) {
+	discoverer := NewStaticDiscoverer(
+		AgentCard{Name: "researcher", Tags: []string{"research", "local"}},
+		AgentCard{Name: "reviewer", Tags: []string{"code", "local"}},
+	)
+
+	result, err := discoverer.Discover(context.Background(), DiscoveryQuery{
+		Tags: []string{"code", "local"},
+	})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if result.Card.Name != "reviewer" {
+		t.Fatalf("Discover() = %+v, want reviewer card", result.Card)
+	}
+
+	_, err = discoverer.Discover(context.Background(), DiscoveryQuery{
+		Name: "reviewer",
+		Tags: []string{"research"},
+	})
+	if !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Discover() mismatched tag error = %v, want %v", err, ErrAgentNotFound)
+	}
+}
+
 func TestStaticDiscovererReturnsDefensiveCopies(t *testing.T) {
 	discoverer := NewStaticDiscoverer(AgentCard{
 		Name:         "planner",
