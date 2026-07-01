@@ -170,6 +170,23 @@ func TestCheckAgentMeshConformanceRequiresMeshBootstrap(t *testing.T) {
 	requireConformanceCasePassed(t, results, "mesh-bootstraps-cards")
 }
 
+func TestCheckAgentMeshConformanceRequiresMeshBootstrapMultipleSources(t *testing.T) {
+	agent := meshAgent{
+		card: a2a.AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review"},
+		},
+	}
+
+	results := CheckAgentMeshConformance(context.Background(), AgentMeshConformanceHarness{
+		Agent:        agent,
+		ExpectedCard: agent.card,
+		Task:         a2a.Task{ID: "task-1", Input: "review this diff"},
+	})
+
+	requireConformanceCasePassed(t, results, "mesh-bootstrap-multiple-sources")
+}
+
 func TestCheckAgentMeshConformanceRequiresBootstrapHTTPAgentOptions(t *testing.T) {
 	agent := meshAgent{
 		card: a2a.AgentCard{

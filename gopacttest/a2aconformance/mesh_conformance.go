@@ -55,6 +55,7 @@ func CheckAgentMeshConformance(ctx context.Context, harness AgentMeshConformance
 		checkMeshRegistryCachesDefensiveCard(ctx, harness.Agent, query, harness.ExpectedCard),
 		checkMeshFacadeCachesCards(ctx, harness.Agent, query, harness.ExpectedCard),
 		checkMeshFacadeBootstrapsCards(ctx, harness.ExpectedCard),
+		checkMeshFacadeBootstrapsMultipleSources(ctx),
 		checkMeshFacadeBootstrapHTTPAgentOptions(ctx, task),
 		checkMeshFacadeBootstrapJSONRPCAgentOptions(ctx, task),
 		checkMeshFacadeCallsByName(ctx, harness.Agent, query, harness.ExpectedCard, task),
@@ -240,6 +241,39 @@ func checkMeshFacadeBootstrapsCards(ctx context.Context, expected a2a.AgentCard)
 		return failedAgentMeshConformance("mesh-bootstraps-cards", err)
 	}
 	return passedAgentMeshConformance("mesh-bootstraps-cards")
+}
+
+func checkMeshFacadeBootstrapsMultipleSources(ctx context.Context) AgentMeshConformanceResult {
+	const caseName = "mesh-bootstrap-multiple-sources"
+	first := a2a.AgentCard{Name: "gopact-a2a-bootstrap-source-one", Tags: []string{"one"}}
+	second := a2a.AgentCard{Name: "gopact-a2a-bootstrap-source-two", Tags: []string{"two"}}
+	third := a2a.AgentCard{Name: "gopact-a2a-bootstrap-source-three", Tags: []string{"three"}}
+
+	mesh, err := a2a.NewMesh()
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	result, err := mesh.Bootstrap(ctx,
+		a2a.NewStaticDiscoverer(first, second),
+		a2a.NewStaticDiscoverer(third),
+	)
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if err := checkCardNames(result.Cards, []string{first.Name, second.Name, third.Name}); err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	cards, err := mesh.ListCards(ctx)
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if err := checkCardNames(cards, []string{first.Name, second.Name, third.Name}); err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if err := checkBootstrapSourceIndexes(result.Events, [][2]int{{0, 0}, {0, 1}, {1, 0}}); err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	return passedAgentMeshConformance(caseName)
 }
 
 func checkMeshFacadeBootstrapHTTPAgentOptions(ctx context.Context, task a2a.Task) AgentMeshConformanceResult {
@@ -1367,6 +1401,36 @@ func hasEventType(events []gopact.Event, typ gopact.EventType) bool {
 		}
 	}
 	return false
+}
+
+func checkCardNames(cards []a2a.AgentCard, want []string) error {
+	if len(cards) != len(want) {
+		return fmt.Errorf("card count = %d, want %d", len(cards), len(want))
+	}
+	for i := range want {
+		if cards[i].Name != want[i] {
+			return fmt.Errorf("card[%d].name = %q, want %q", i, cards[i].Name, want[i])
+		}
+	}
+	return nil
+}
+
+func checkBootstrapSourceIndexes(events []gopact.Event, want [][2]int) error {
+	if len(events) != len(want) {
+		return fmt.Errorf("event count = %d, want %d", len(events), len(want))
+	}
+	for i, event := range events {
+		if event.Type != gopact.EventA2AAgentCardFetched {
+			return fmt.Errorf("event[%d].type = %s, want %s", i, event.Type, gopact.EventA2AAgentCardFetched)
+		}
+		if event.Metadata["source_index"] != want[i][0] {
+			return fmt.Errorf("event[%d].source_index = %v, want %d", i, event.Metadata["source_index"], want[i][0])
+		}
+		if event.Metadata["source_card_index"] != want[i][1] {
+			return fmt.Errorf("event[%d].source_card_index = %v, want %d", i, event.Metadata["source_card_index"], want[i][1])
+		}
+	}
+	return nil
 }
 
 func requireHTTPHeader(next http.Handler, key string, value string) http.Handler {
