@@ -24,7 +24,7 @@ const (
 	exitError = 1
 	exitUsage = 2
 
-	fallbackSDKVersion = "v0.0.15"
+	fallbackSDKVersion = "v0.0.19"
 	scaffoldGoVersion  = "1.25"
 )
 
@@ -309,13 +309,19 @@ import (
 
 const agentName = {{ .AgentNameLiteral }}
 
+const (
+	agentAddrEnv = "GOPACT_AGENT_ADDR"
+	agentURLEnv  = "GOPACT_AGENT_URL"
+	defaultURL   = "http://localhost:8080"
+)
+
 type scaffoldAgent struct{}
 
 func (scaffoldAgent) Card() a2a.AgentCard {
 	return a2a.AgentCard{
 		Name:         agentName,
 		Description:  "Generated gopact A2A agent scaffold.",
-		URL:          "http://localhost:8080",
+		URL:          scaffoldAgentURL(),
 		Protocols: []a2a.ProtocolBinding{
 			{Name: "a2a", Transport: "http"},
 		},
@@ -326,6 +332,13 @@ func (scaffoldAgent) Card() a2a.AgentCard {
 			ReadinessPath: "/readyz",
 		},
 	}
+}
+
+func scaffoldAgentURL() string {
+	if url := os.Getenv(agentURLEnv); url != "" {
+		return url
+	}
+	return defaultURL
 }
 
 func (scaffoldAgent) Send(ctx context.Context, task a2a.Task) (a2a.Result, error) {
@@ -369,14 +382,33 @@ func (scaffoldAgent) Cancel(ctx context.Context, taskID string) error {
 	return nil
 }
 
+type scaffoldRegistry struct {
+	agent scaffoldAgent
+}
+
+func (r scaffoldRegistry) ListCards(ctx context.Context) ([]a2a.AgentCard, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []a2a.AgentCard{r.agent.Card()}, nil
+}
+
+func newScaffoldHTTPHandler() http.Handler {
+	agent := scaffoldAgent{}
+	mux := http.NewServeMux()
+	mux.Handle("/", a2a.NewHTTPHandler(agent))
+	mux.Handle("/agents.json", a2a.NewHTTPRegistryHandler(scaffoldRegistry{agent: agent}))
+	return mux
+}
+
 func main() {
-	addr := os.Getenv("GOPACT_AGENT_ADDR")
+	addr := os.Getenv(agentAddrEnv)
 	if addr == "" {
 		addr = ":8080"
 	}
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           a2a.NewHTTPHandler(scaffoldAgent{}),
+		Handler:           newScaffoldHTTPHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("serving %s on %s", agentName, addr)
@@ -401,8 +433,9 @@ import (
 
 func TestScaffoldAgentServesA2A(t *testing.T) {
 	ctx := context.Background()
-	server := httptest.NewServer(a2a.NewHTTPHandler(scaffoldAgent{}))
+	server := httptest.NewServer(newScaffoldHTTPHandler())
 	defer server.Close()
+	t.Setenv(agentURLEnv, server.URL)
 
 	remote, err := a2a.NewHTTPAgent(server.URL, a2a.WithHTTPClient(server.Client()))
 	if err != nil {
@@ -415,6 +448,9 @@ func TestScaffoldAgentServesA2A(t *testing.T) {
 	if discovered.Card.Name != agentName || !discovered.Card.Streaming {
 		t.Fatalf("Discover() card = %+v, want streaming %s", discovered.Card, agentName)
 	}
+	if discovered.Card.URL != server.URL {
+		t.Fatalf("Discover() card url = %q, want %q", discovered.Card.URL, server.URL)
+	}
 
 	result, err := remote.Send(ctx, a2a.Task{ID: "task-1", Input: "hello"})
 	if err != nil {
@@ -422,6 +458,43 @@ func TestScaffoldAgentServesA2A(t *testing.T) {
 	}
 	if result.TaskID != "task-1" || result.Output != agentName+" handled: hello" {
 		t.Fatalf("Send() = %+v, want scaffold response", result)
+	}
+}
+
+func TestScaffoldAgentServesHTTPRegistry(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(newScaffoldHTTPHandler())
+	defer server.Close()
+	t.Setenv(agentURLEnv, server.URL)
+
+	registry, err := a2a.NewHTTPRegistry(server.URL+"/agents.json", a2a.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+	cards, err := registry.ListCards(ctx)
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if len(cards) != 1 || cards[0].Name != agentName || cards[0].URL != server.URL || !cards[0].Streaming {
+		t.Fatalf("ListCards() = %+v, want generated agent card", cards)
+	}
+
+	mesh, err := a2a.NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	if _, err := mesh.Bootstrap(ctx, registry); err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	result, err := mesh.Route(ctx, a2a.RouteQuery{
+		Require: []string{"chat"},
+		Task:    a2a.Task{ID: "task-2", Input: "registry hello"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != agentName+" handled: registry hello" {
+		t.Fatalf("Route() = %+v, want scaffold response", result)
 	}
 }
 
@@ -458,5 +531,5 @@ go test ./...
 GOPACT_AGENT_ADDR=:8080 go run .
 ` + "```" + `
 
-The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The scaffold does not generate a ` + "`.env`" + ` file; keep local secrets in your own ignored environment file.
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Set ` + "`GOPACT_AGENT_URL`" + ` when the public endpoint differs from ` + "`http://localhost:8080`" + `. The scaffold does not generate a ` + "`.env`" + ` file; keep local secrets in your own ignored environment file.
 `
