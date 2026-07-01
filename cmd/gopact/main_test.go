@@ -52,6 +52,7 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "README.md"),
 		"# support-agent",
+		"gopact agent run .",
 		"GOPACT_AGENT_ADDR",
 	)
 	assertFileContains(t, filepath.Join(out, ".env.example"),
@@ -92,6 +93,35 @@ func TestRunAgentInitRejectsMissingModule(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "-module is required") {
 		t.Fatalf("stderr missing module error:\n%s", stderr.String())
+	}
+}
+
+func TestRunAgentRunExecutesGoModule(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/agent-run\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("agent run ok")
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"agent", "run", dir}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "agent run ok" {
+		t.Fatalf("stdout = %q, want agent output", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 }
 
