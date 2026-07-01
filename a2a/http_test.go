@@ -202,6 +202,56 @@ func TestNewHTTPCardListersBootstrapMultipleEndpoints(t *testing.T) {
 	}
 }
 
+func TestHTTPRegistryBootstrapsMultipleAgentCards(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/registry/agents.json" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("X-Cluster") != "dev" {
+			http.Error(w, "missing cluster header", http.StatusUnauthorized)
+			return
+		}
+		writeHTTPJSON(w, http.StatusOK, map[string]any{
+			"agents": []AgentCard{
+				{Name: "planner", Capabilities: []string{"planning"}, Metadata: map[string]any{"domain": "work"}},
+				{Name: "reviewer", Capabilities: []string{"code.review"}, Metadata: map[string]any{"domain": "code"}},
+			},
+		})
+	}))
+	defer server.Close()
+	registry, err := NewHTTPRegistry(server.URL+"/registry/agents.json",
+		WithHTTPClient(server.Client()),
+		WithHTTPHeader("X-Cluster", "dev"),
+	)
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	bootstrap, err := mesh.Bootstrap(ctx, registry)
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if len(bootstrap.Cards) != 2 ||
+		bootstrap.Cards[0].Name != "planner" ||
+		bootstrap.Cards[1].Name != "reviewer" {
+		t.Fatalf("Bootstrap() cards = %+v, want registry order", bootstrap.Cards)
+	}
+
+	result, err := registry.Discover(ctx, DiscoveryQuery{Metadata: map[string]any{"domain": "code"}})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if result.Card.Name != "reviewer" || result.Metadata["source"] != "http_registry" {
+		t.Fatalf("Discover() = %+v, want reviewer from http registry", result)
+	}
+}
+
 func TestHTTPAgentDiscoverMatchesNameAndMetadata(t *testing.T) {
 	ctx := context.Background()
 	agent := FakeAgent{
