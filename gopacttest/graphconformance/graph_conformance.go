@@ -32,6 +32,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkBranchRejectsMissingTarget(ctx),
 		checkBranchResumeUsesCheckpointQueue(ctx),
 		checkDAGFanInRunsJoinAfterParents(ctx),
+		checkDAGFanInStopsWhenParentFails(ctx),
 		checkDynamicFanOutResumesIncompleteTargets(ctx),
 		checkDynamicFanOutRunsAllTargets(ctx),
 		checkDynamicFanOutEmptyCompletes(ctx),
@@ -204,6 +205,42 @@ func checkDAGFanInRunsJoinAfterParents(ctx context.Context) GraphConformanceResu
 		return failedGraphConformance(name, err)
 	}
 	return requireTrace(name, got, []string{"left", "right", "join"})
+}
+
+func checkDAGFanInStopsWhenParentFails(ctx context.Context) GraphConformanceResult {
+	const name = "dag-fan-in-stops-when-parent-fails"
+	wantErr := errors.New("right failed")
+	joinRan := false
+	g := graph.New[traceState]()
+	g.AddNode("left", appendTrace("left"))
+	g.AddNode("right", func(context.Context, traceState) (traceState, error) {
+		return traceState{}, wantErr
+	})
+	g.AddNode("join", func(context.Context, traceState) (traceState, error) {
+		joinRan = true
+		return traceState{}, nil
+	})
+	g.AddEdge(graph.Start, "left")
+	g.AddEdge(graph.Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}))
+	if !errors.Is(err, wantErr) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want %v", err, wantErr))
+	}
+	if joinRan {
+		return failedGraphConformance(name, errors.New("join ran after a fan-in parent failed"))
+	}
+	if len(events) == 0 || events[len(events)-1].Type != gopact.EventRunFailed {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want final run_failed", eventTypes(events)))
+	}
+	return passedGraphConformance(name)
 }
 
 func checkDynamicFanOutResumesIncompleteTargets(ctx context.Context) GraphConformanceResult {
