@@ -21,6 +21,8 @@ template, adapter-boundary, and release-process changes.
 - External repository readiness evidence export and remote CI gate evidence for
   `gopact-ai` extension repositories.
 - Core feature coverage matrix in `FEATURES.md`.
+- Provider-neutral `ToolChoice` request contract with options for auto,
+  required, named, and disabled tool selection.
 
 ### Changed
 
