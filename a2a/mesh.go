@@ -20,12 +20,19 @@ type Mesh struct {
 	metadata       map[string]any
 	sink           gopact.EventSubscriber
 	timeout        time.Duration
+	retry          MeshRetryPolicy
 	httpOptions    []HTTPAgentOption
 	jsonrpcOptions []JSONRPCAgentOption
 }
 
 // MeshOption configures an A2A Mesh.
 type MeshOption func(*Mesh) error
+
+// MeshRetryPolicy configures explicit A2A mesh call retries.
+type MeshRetryPolicy struct {
+	MaxAttempts int
+	Backoff     time.Duration
+}
 
 // NewMesh creates an A2A Mesh backed by a registry.
 func NewMesh(opts ...MeshOption) (*Mesh, error) {
@@ -108,6 +115,17 @@ func WithMeshOperationTimeout(timeout time.Duration) MeshOption {
 			return errors.New("a2a: mesh operation timeout must be positive")
 		}
 		mesh.timeout = timeout
+		return nil
+	}
+}
+
+// WithMeshRetryPolicy retries failed Call and Route operations with the same stable task id.
+func WithMeshRetryPolicy(policy MeshRetryPolicy) MeshOption {
+	return func(mesh *Mesh) error {
+		if policy.Backoff < 0 {
+			policy.Backoff = 0
+		}
+		mesh.retry = policy
 		return nil
 	}
 }
@@ -252,7 +270,9 @@ func (m *Mesh) Call(ctx context.Context, name string, task Task) (Result, error)
 	ctx, cancel := m.operationContext(ctx)
 	defer cancel()
 	ctx, task = m.taskContext(ctx, task)
-	result, callErr := registry.Send(ctx, name, task)
+	result, callErr := m.runWithRetry(ctx, task, func() (Result, error) {
+		return registry.Send(ctx, name, task)
+	})
 	if publishErr := m.publishOperationEvents(ctx, result.Events); publishErr != nil && callErr == nil {
 		return result, publishErr
 	}
@@ -268,7 +288,9 @@ func (m *Mesh) Route(ctx context.Context, query RouteQuery) (Result, error) {
 	ctx, cancel := m.operationContext(ctx)
 	defer cancel()
 	ctx, query = m.routeQueryContext(ctx, query)
-	result, routeErr := registry.Route(ctx, query)
+	result, routeErr := m.runWithRetry(ctx, query.Task, func() (Result, error) {
+		return registry.Route(ctx, query)
+	})
 	if publishErr := m.publishOperationEvents(ctx, result.Events); publishErr != nil && routeErr == nil {
 		return result, publishErr
 	}
@@ -504,6 +526,80 @@ func (m *Mesh) registerBootstrapJSONRPCAgents(ctx context.Context, registry *Reg
 		events = append(events, registration.Events...)
 	}
 	return events, nil
+}
+
+func (m *Mesh) runWithRetry(ctx context.Context, task Task, run func() (Result, error)) (Result, error) {
+	if m == nil || m.retry.MaxAttempts <= 1 {
+		return run()
+	}
+	if task.ID == "" {
+		return Result{}, ErrMeshRetryTaskIDRequired
+	}
+	var allEvents []gopact.Event
+	var last Result
+	var lastErr error
+	for attempt := 1; attempt <= m.retry.MaxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			last.Events = copyEvents(allEvents)
+			return last, err
+		}
+		result, err := run()
+		result.Events = markMeshRetryAttempt(result.Events, attempt)
+		allEvents = append(allEvents, copyEvents(result.Events)...)
+		result.Events = copyEvents(allEvents)
+		last = result
+		lastErr = err
+		if err == nil {
+			return result, nil
+		}
+		if !m.shouldRetry(ctx, attempt, err) {
+			return result, err
+		}
+		if err := waitMeshRetryDelay(ctx, m.retry.Backoff); err != nil {
+			last.Events = copyEvents(allEvents)
+			return last, err
+		}
+	}
+	return last, lastErr
+}
+
+func (m *Mesh) shouldRetry(ctx context.Context, attempt int, err error) bool {
+	if err == nil || attempt >= m.retry.MaxAttempts {
+		return false
+	}
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if isLocalPolicyBlock(err) || errors.Is(err, ErrAgentNotFound) {
+		return false
+	}
+	return true
+}
+
+func waitMeshRetryDelay(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func markMeshRetryAttempt(events []gopact.Event, attempt int) []gopact.Event {
+	out := copyEvents(events)
+	for i := range out {
+		out[i].Metadata = copyAnyMap(out[i].Metadata)
+		if out[i].Metadata == nil {
+			out[i].Metadata = make(map[string]any)
+		}
+		out[i].Metadata["a2a_attempt"] = attempt
+	}
+	return out
 }
 
 func httpCardURL(card AgentCard) string {

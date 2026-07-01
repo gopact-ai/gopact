@@ -27,6 +27,8 @@ var (
 	ErrStreamNotSupported = errors.New("a2a: streaming is not supported")
 	// ErrTaskIDRequired is returned when cancellation has no task id.
 	ErrTaskIDRequired = errors.New("a2a: task id is required")
+	// ErrMeshRetryTaskIDRequired is returned when retry is enabled for a task without a stable id.
+	ErrMeshRetryTaskIDRequired = errors.New("a2a: mesh retry requires task id")
 )
 
 // TaskStatus identifies the current state of a remote task.
