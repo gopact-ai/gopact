@@ -90,6 +90,7 @@ type ModelRequest struct {
 	Model           string         `json:"model,omitempty"`
 	Messages        []Message      `json:"messages"`
 	Tools           []ToolSpec     `json:"tools,omitempty"`
+	ToolChoice      ToolChoice     `json:"tool_choice,omitempty"`
 	ResponseSchema  JSONSchema     `json:"response_schema,omitempty"`
 	RouteHint       string         `json:"route_hint,omitempty"`
 	Capabilities    []Capability   `json:"capabilities,omitempty"`
@@ -141,6 +142,31 @@ func WithTools(tools ...ToolSpec) ModelRequestOption {
 	return ModelRequestOptionFunc(func(request *ModelRequest) {
 		request.Tools = copyToolSpecs(tools)
 	})
+}
+
+func WithToolChoice(choice ToolChoice) ModelRequestOption {
+	return ModelRequestOptionFunc(func(request *ModelRequest) {
+		request.ToolChoice = choice
+		if choice.Mode != "" && choice.Mode != ToolChoiceModeNone {
+			addCapability(request, CapabilityToolCalling)
+		}
+	})
+}
+
+func WithAutoToolChoice() ModelRequestOption {
+	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeAuto})
+}
+
+func RequireToolCall() ModelRequestOption {
+	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeRequired})
+}
+
+func RequireTool(name string) ModelRequestOption {
+	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeNamed, Name: name})
+}
+
+func DisableToolCalls() ModelRequestOption {
+	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeNone})
 }
 
 func WithModelRequestIDs(ids RuntimeIDs) ModelRequestOption {
@@ -223,12 +249,7 @@ func WithCapabilities(capabilities ...Capability) ModelRequestOption {
 
 func EnableCapability(capability Capability) ModelRequestOption {
 	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		for _, existing := range request.Capabilities {
-			if existing == capability {
-				return
-			}
-		}
-		request.Capabilities = append(request.Capabilities, capability)
+		addCapability(request, capability)
 	})
 }
 
@@ -273,6 +294,31 @@ const (
 	CapabilityReasoning        Capability = "reasoning"
 	CapabilityStructuredOutput Capability = "structured_output"
 )
+
+// ToolChoice controls whether and how a provider should select tools.
+type ToolChoice struct {
+	Mode ToolChoiceMode `json:"mode,omitempty"`
+	Name string         `json:"name,omitempty"`
+}
+
+// ToolChoiceMode is provider-neutral; adapters translate it to native API shapes.
+type ToolChoiceMode string
+
+const (
+	ToolChoiceModeAuto     ToolChoiceMode = "auto"
+	ToolChoiceModeRequired ToolChoiceMode = "required"
+	ToolChoiceModeNone     ToolChoiceMode = "none"
+	ToolChoiceModeNamed    ToolChoiceMode = "named"
+)
+
+func addCapability(request *ModelRequest, capability Capability) {
+	for _, existing := range request.Capabilities {
+		if existing == capability {
+			return
+		}
+	}
+	request.Capabilities = append(request.Capabilities, capability)
+}
 
 // Budget carries model-call budget hints.
 type Budget struct {

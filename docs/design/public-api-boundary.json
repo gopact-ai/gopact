@@ -1192,6 +1192,10 @@
           "kind": "type"
         },
         {
+          "name": "DisableToolCalls",
+          "kind": "func"
+        },
+        {
           "name": "EnableCapability",
           "kind": "func"
         },
@@ -1244,6 +1248,14 @@
           "kind": "func"
         },
         {
+          "name": "RequireTool",
+          "kind": "func"
+        },
+        {
+          "name": "RequireToolCall",
+          "kind": "func"
+        },
+        {
           "name": "ResponseModel",
           "kind": "type"
         },
@@ -1254,6 +1266,30 @@
         {
           "name": "StreamingResponseModel",
           "kind": "type"
+        },
+        {
+          "name": "ToolChoice",
+          "kind": "type"
+        },
+        {
+          "name": "ToolChoiceMode",
+          "kind": "type"
+        },
+        {
+          "name": "ToolChoiceModeAuto",
+          "kind": "const"
+        },
+        {
+          "name": "ToolChoiceModeNamed",
+          "kind": "const"
+        },
+        {
+          "name": "ToolChoiceModeNone",
+          "kind": "const"
+        },
+        {
+          "name": "ToolChoiceModeRequired",
+          "kind": "const"
         },
         {
           "name": "Usage",
@@ -1316,11 +1352,19 @@
           "kind": "func"
         },
         {
+          "name": "WithToolChoice",
+          "kind": "func"
+        },
+        {
           "name": "WithTools",
           "kind": "func"
         },
         {
           "name": "WithTopP",
+          "kind": "func"
+        },
+        {
+          "name": "WithAutoToolChoice",
           "kind": "func"
         }
       ]

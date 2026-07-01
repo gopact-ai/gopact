@@ -101,6 +101,7 @@ func TestNewModelRequestAppliesOptionsWithoutAliasingMutableFields(t *testing.T)
 		WithTopP(0.9),
 		WithThinkingType("enabled"),
 		WithReasoningEffort("high"),
+		RequireTool("lookup"),
 		EnableToolCalling(),
 		EnableToolCalling(),
 		WithMetadata(metadata),
@@ -125,8 +126,36 @@ func TestNewModelRequestAppliesOptionsWithoutAliasingMutableFields(t *testing.T)
 	if request.ThinkingType != "enabled" || request.ReasoningEffort != "high" {
 		t.Fatalf("reasoning = %q/%q, want enabled/high", request.ThinkingType, request.ReasoningEffort)
 	}
+	if request.ToolChoice.Mode != ToolChoiceModeNamed || request.ToolChoice.Name != "lookup" {
+		t.Fatalf("tool choice = %+v, want named lookup", request.ToolChoice)
+	}
 	if len(request.Capabilities) != 1 || request.Capabilities[0] != CapabilityToolCalling {
 		t.Fatalf("capabilities = %+v, want one tool calling capability", request.Capabilities)
+	}
+}
+
+func TestModelRequestToolChoiceOptions(t *testing.T) {
+	tests := []struct {
+		name string
+		opt  ModelRequestOption
+		want ToolChoice
+	}{
+		{name: "auto", opt: WithAutoToolChoice(), want: ToolChoice{Mode: ToolChoiceModeAuto}},
+		{name: "required", opt: RequireToolCall(), want: ToolChoice{Mode: ToolChoiceModeRequired}},
+		{name: "none", opt: DisableToolCalls(), want: ToolChoice{Mode: ToolChoiceModeNone}},
+		{name: "named", opt: RequireTool("lookup"), want: ToolChoice{Mode: ToolChoiceModeNamed, Name: "lookup"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := NewModelRequest(tt.opt)
+			if request.ToolChoice != tt.want {
+				t.Fatalf("tool choice = %+v, want %+v", request.ToolChoice, tt.want)
+			}
+			if tt.want.Mode != ToolChoiceModeNone && (len(request.Capabilities) != 1 || request.Capabilities[0] != CapabilityToolCalling) {
+				t.Fatalf("capabilities = %+v, want tool calling capability", request.Capabilities)
+			}
+		})
 	}
 }
 
