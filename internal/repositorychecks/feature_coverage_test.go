@@ -27,6 +27,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 		capability string
 		path       string
 		command    string
+		boundary   string
 	}{
 		{
 			capability: "workflow graph execution",
@@ -57,6 +58,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			capability: "A2A agent mesh",
 			path:       "a2a",
 			command:    "go test -count=1 ./a2a ./gopacttest/a2aconformance",
+			boundary:   "stable task-id retry",
 		},
 		{
 			capability: "A2A HTTP registry discovery",
@@ -92,7 +94,10 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.capability, func(t *testing.T) {
-			for _, want := range []string{tt.capability, tt.path, tt.command} {
+			for _, want := range []string{tt.capability, tt.path, tt.command, tt.boundary} {
+				if want == "" {
+					continue
+				}
 				if !strings.Contains(matrix, want) {
 					t.Fatalf("FEATURES.md missing %q", want)
 				}

@@ -155,6 +155,134 @@ func TestMeshCallUsesOperationTimeout(t *testing.T) {
 	}
 }
 
+func TestMeshCallRetriesFailedStableTask(t *testing.T) {
+	ctx := context.Background()
+	attempts := 0
+	var events []gopact.Event
+	mesh, err := NewMesh(
+		WithMeshRetryPolicy(MeshRetryPolicy{MaxAttempts: 2}),
+		WithMeshEventSink(func(ctx context.Context, event gopact.Event) error {
+			events = append(events, event)
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	wantErr := errors.New("temporary remote failure")
+	if _, err := mesh.Register(ctx, FakeAgent{
+		CardValue: AgentCard{Name: "reviewer"},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			attempts++
+			if attempts == 1 {
+				return Result{TaskID: task.ID}, wantErr
+			}
+			return Result{TaskID: task.ID, Output: "reviewed"}, nil
+		},
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	events = nil
+
+	result, err := mesh.Call(ctx, "reviewer", Task{ID: "task-1", Input: "diff"})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if result.Output != "reviewed" {
+		t.Fatalf("Call() result = %+v, want retried output", result)
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventA2ATaskSent,
+		gopact.EventA2ATaskFailed,
+		gopact.EventA2ATaskSent,
+		gopact.EventA2ATaskCompleted,
+	}
+	if got := eventTypes(result.Events); !reflect.DeepEqual(got, wantTypes) {
+		t.Fatalf("result events = %v, want %v", got, wantTypes)
+	}
+	if got := eventTypes(events); !reflect.DeepEqual(got, wantTypes) {
+		t.Fatalf("published events = %v, want %v", got, wantTypes)
+	}
+	for i, event := range result.Events {
+		wantAttempt := 1
+		if i >= 2 {
+			wantAttempt = 2
+		}
+		if event.Metadata["a2a_attempt"] != wantAttempt {
+			t.Fatalf("event %d metadata = %+v, want a2a_attempt %d", i, event.Metadata, wantAttempt)
+		}
+	}
+}
+
+func TestMeshCallRetryRequiresStableTaskID(t *testing.T) {
+	ctx := context.Background()
+	called := false
+	mesh, err := NewMesh(WithMeshRetryPolicy(MeshRetryPolicy{MaxAttempts: 2}))
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	if _, err := mesh.Register(ctx, FakeAgent{
+		CardValue: AgentCard{Name: "reviewer"},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			called = true
+			return Result{TaskID: task.ID}, errors.New("should not run")
+		},
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	_, err = mesh.Call(ctx, "reviewer", Task{Input: "diff"})
+	if !errors.Is(err, ErrMeshRetryTaskIDRequired) {
+		t.Fatalf("Call() error = %v, want ErrMeshRetryTaskIDRequired", err)
+	}
+	if called {
+		t.Fatal("remote agent should not run without stable task id")
+	}
+}
+
+func TestMeshRouteRetriesFailedStableTask(t *testing.T) {
+	ctx := context.Background()
+	attempts := 0
+	mesh, err := NewMesh(WithMeshRetryPolicy(MeshRetryPolicy{MaxAttempts: 2}))
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	if _, err := mesh.Register(ctx, FakeAgent{
+		CardValue: AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			attempts++
+			if attempts == 1 {
+				return Result{TaskID: task.ID}, errors.New("temporary route failure")
+			}
+			return Result{TaskID: task.ID, Output: "routed"}, nil
+		},
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	result, err := mesh.Route(ctx, RouteQuery{
+		Require: []string{"code.review"},
+		Task:    Task{ID: "task-1", Input: "diff"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if attempts != 2 || result.Output != "routed" {
+		t.Fatalf("attempts/result = %d/%+v, want retried routed result", attempts, result)
+	}
+	if got := eventTypes(result.Events); !reflect.DeepEqual(got, []gopact.EventType{
+		gopact.EventA2ATaskSent,
+		gopact.EventA2ATaskFailed,
+		gopact.EventA2ATaskSent,
+		gopact.EventA2ATaskCompleted,
+	}) {
+		t.Fatalf("Route() event types = %v, want retry evidence", got)
+	}
+}
+
 func TestMeshDiscoverRegistersCallablePolicyWrappedAgent(t *testing.T) {
 	ctx := context.Background()
 	policyCalls := 0
