@@ -164,6 +164,39 @@ func TestRegistryInvokeReturnsToolCallEffect(t *testing.T) {
 	}
 }
 
+func TestRegistryInvokePreservesToolResultOnError(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	toolErr := errors.New("tool failed after evidence")
+	if err := registry.Register(ctx, gopact.ToolFunc{
+		SpecValue: gopact.ToolSpec{Name: "delegate", Description: "delegates work"},
+		InvokeFunc: func(context.Context, json.RawMessage) (gopact.ToolResult, error) {
+			return gopact.ToolResult{
+				Content: "partial evidence",
+				Events: []gopact.Event{{
+					Type: gopact.EventA2ATaskFailed,
+					Metadata: map[string]any{
+						"a2a_task_id": "child-task-1",
+					},
+				}},
+			}, toolErr
+		},
+	}, RegisterOptions{Namespace: "local", Visibility: VisibleTool}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	result, err := registry.InvokeVisible(ctx, "local.delegate", json.RawMessage(`{}`), Scope{})
+	if !errors.Is(err, toolErr) {
+		t.Fatalf("InvokeVisible() error = %v, want %v", err, toolErr)
+	}
+	if result.Content != "partial evidence" {
+		t.Fatalf("result content = %q, want partial evidence", result.Content)
+	}
+	if len(result.Events) != 1 || result.Events[0].Type != gopact.EventA2ATaskFailed {
+		t.Fatalf("result events = %+v, want preserved failed A2A event", result.Events)
+	}
+}
+
 func TestRegistryInvokeUsesToolCommitForReplayableToolCallEffect(t *testing.T) {
 	ctx := context.Background()
 	registry := NewRegistry()
