@@ -17,16 +17,33 @@ func TestSelfBootstrapReleaseGateRequirementsPassCompleteReport(t *testing.T) {
 	RequireSelfBootstrapReleaseGate(t, report)
 }
 
+func TestBuildSelfBootstrapReleaseGateBundleEmbedsReport(t *testing.T) {
+	export := selfBootstrapRunExport(gopact.RunCompleted)
+	bundle, err := BuildSelfBootstrapReleaseGateBundle(export)
+	if err != nil {
+		t.Fatalf("BuildSelfBootstrapReleaseGateBundle() error = %v", err)
+	}
+	if len(bundle.RunExport.VerificationReports) != 1 {
+		t.Fatalf("VerificationReports = %+v, want one embedded report", bundle.RunExport.VerificationReports)
+	}
+	if bundle.RunExport.VerificationReports[0].Status != gopact.VerificationStatusPassed {
+		t.Fatalf("embedded report status = %q, want passed", bundle.RunExport.VerificationReports[0].Status)
+	}
+	RequireSelfBootstrapReleaseGateForExport(t, bundle.RunExport, bundle.Report)
+}
+
 func TestCheckSelfBootstrapReleaseGatePassesCompleteExportAndReport(t *testing.T) {
 	export := selfBootstrapRunExport(gopact.RunCompleted)
-	report := selfBootstrapReleaseGateReportForExport(t, export, selfBootstrapReleaseGateGates())
-	export.VerificationReports = []gopact.VerificationReport{report}
+	bundle, err := BuildSelfBootstrapReleaseGateBundle(export)
+	if err != nil {
+		t.Fatalf("BuildSelfBootstrapReleaseGateBundle() error = %v", err)
+	}
 
-	results := CheckSelfBootstrapReleaseGate(context.Background(), export, report)
+	results := CheckSelfBootstrapReleaseGate(context.Background(), bundle.RunExport, bundle.Report)
 	if failed := failedVerificationEvidenceConformanceCases(results); len(failed) > 0 {
 		t.Fatalf("CheckSelfBootstrapReleaseGate() failed cases: %v", failed)
 	}
-	RequireSelfBootstrapReleaseGateForExport(t, export, report)
+	RequireSelfBootstrapReleaseGateForExport(t, bundle.RunExport, bundle.Report)
 }
 
 func TestCheckSelfBootstrapReleaseGateRejectsFailureAttributions(t *testing.T) {
@@ -414,99 +431,9 @@ func selfBootstrapReleaseGateReportForExport(
 	gates []string,
 ) gopact.VerificationReport {
 	t.Helper()
-	checks := []gopact.VerificationCheck{
-		{
-			ID:     gopact.VerificationCheckRunExport + ":run-self-bootstrap",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: gopact.VerificationEvidenceTypeRunExport, Ref: "run-self-bootstrap", Summary: "run export captured"},
-			},
-		},
-		selfBootstrapCICheck(gates),
-		{
-			ID:     "diff:worktree",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: VerificationEvidenceTypeDiff, Ref: "worktree", Summary: "diff captured"},
-			},
-		},
-		{
-			ID:     "file-snapshot:go.mod",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: VerificationEvidenceTypeFileSnapshot, Ref: "go.mod", Summary: "file snapshot captured"},
-			},
-		},
-		{
-			ID:     SelfBootstrapCheckExternalRepositories,
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: SelfBootstrapEvidenceTypeExternalRepositoryReadiness, Ref: "gopact-ai", Summary: "external repositories ready"},
-			},
-		},
-		selfBootstrapExternalCICheck(selfBootstrapExternalRepositoryCIGates()),
-		{
-			ID:     "command:go-test",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: VerificationEvidenceTypeCommand, Ref: "go test -count=1 ./...", Summary: "command passed"},
-			},
-		},
-		selfBootstrapCommandCheck("go test -run '^Example' ./..."),
-		selfBootstrapCommandCheck("go test -count=1 ./gopacttest/graphconformance"),
-		{
-			ID:     "checkpoint:thread-self-bootstrap:1:1",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: "checkpoint", Ref: "thread-self-bootstrap:1:1", Summary: "checkpoint captured"},
-			},
-		},
-		{
-			ID:     "artifact-integrity:self-bootstrap",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: "artifact", Ref: "artifact:self-bootstrap", Summary: "artifact verified"},
-			},
-		},
-		{
-			ID:     gopact.VerificationCheckRunEffectReplay + ":run-self-bootstrap",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: gopact.VerificationEvidenceTypeRunEffectReplay, Ref: "run-self-bootstrap", Summary: "run effect replay verified"},
-			},
-		},
-		{
-			ID:     VerificationCheckTrajectoryGolden,
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: VerificationEvidenceTypeTrajectoryGolden, Ref: "testdata/self-bootstrap.golden.json", Summary: "golden matched"},
-			},
-		},
-		{
-			ID:     "review:release",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: VerificationEvidenceTypeReview, Ref: "review:self-bootstrap", Summary: "review approved"},
-			},
-		},
-		{
-			ID:     SelfBootstrapCheckReleaseBundle,
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: SelfBootstrapEvidenceTypeReleaseBundle, Ref: "self-bootstrap", Summary: "release bundle captured"},
-			},
-		},
-		{
-			ID:     gopact.VerificationCheckPolicyDecision + ":run-self-bootstrap:tool:execute",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: gopact.VerificationEvidenceTypePolicyDecision, Ref: "run-self-bootstrap:tool:execute", Summary: "policy allowed"},
-			},
-		},
-	}
-	report, err := gopact.BuildVerificationReport(export, checks)
+	report, err := BuildSelfBootstrapReleaseGateReport(export, WithSelfBootstrapCIGates(gates...))
 	if err != nil {
-		t.Fatalf("BuildVerificationReport() error = %v", err)
+		t.Fatalf("BuildSelfBootstrapReleaseGateReport() error = %v", err)
 	}
 	return report
 }
@@ -570,48 +497,6 @@ func selfBootstrapReleaseGateGates() []string {
 		SelfBootstrapCIGateExtMock,
 		SelfBootstrapCIGateExamplesMock,
 		SelfBootstrapCIGateAgnesIntegration,
-	}
-}
-
-func selfBootstrapCICheck(gates []string) gopact.VerificationCheck {
-	evidence := make([]gopact.VerificationEvidence, 0, len(gates))
-	for _, gate := range gates {
-		evidence = append(evidence, ciGateVerificationEvidence(gate, gopact.VerificationStatusPassed))
-	}
-	return gopact.VerificationCheck{
-		ID:       VerificationCheckCIGates,
-		Status:   gopact.VerificationStatusPassed,
-		Summary:  "self-bootstrap CI gates passed",
-		Evidence: evidence,
-	}
-}
-
-func selfBootstrapFileSnapshotCheck(path string) gopact.VerificationCheck {
-	return gopact.VerificationCheck{
-		ID:     "file-snapshot:" + path,
-		Status: gopact.VerificationStatusPassed,
-		Evidence: []gopact.VerificationEvidence{
-			{Type: VerificationEvidenceTypeFileSnapshot, Ref: path, Summary: path + " snapshot captured"},
-		},
-	}
-}
-
-func selfBootstrapCommandCheck(command string) gopact.VerificationCheck {
-	return gopact.VerificationCheck{
-		ID:     "command:" + command,
-		Status: gopact.VerificationStatusPassed,
-		Evidence: []gopact.VerificationEvidence{
-			{Type: VerificationEvidenceTypeCommand, Ref: command, Summary: command + " passed"},
-		},
-	}
-}
-
-func selfBootstrapExternalRepositoryCIGates() []string {
-	return []string{
-		SelfBootstrapCIGateWhitespace,
-		SelfBootstrapCIGateModuleTidiness,
-		SelfBootstrapCIGateUnit,
-		SelfBootstrapCIGateVet,
 	}
 }
 
