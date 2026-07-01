@@ -11,6 +11,8 @@ template, adapter-boundary, and release-process changes.
 
 - `a2a.NewHTTPCardListers` for bootstrapping a mesh from multiple HTTP agent
   card endpoints.
+- `gopact agent init` for generating a standalone, testable A2A HTTP agent
+  scaffold.
 - MIT license in `LICENSE`.
 - Model reviewer governance field requirements through
   `adapters/devagent/modelreview.WithRequiredGovernanceFields`.

@@ -10,6 +10,7 @@ This matrix is the core repository contract for expected SDK capabilities. Comma
 | tool registry and replay | `tools` | `go test -count=1 ./tools ./gopacttest/toolconformance` | Visible/deferred tools, tool result effects, replay commit store conformance |
 | MCP client/server contracts | `mcp` | `go test -count=1 ./mcp` | JSON-RPC, streamable HTTP/SSE, capability server, policy hooks |
 | A2A agent mesh | `a2a` | `go test -count=1 ./a2a ./gopacttest/a2aconformance` | Agent card discovery, auth context, HTTP/JSON-RPC/SSE task transport |
+| agent scaffold generator | `cmd/gopact` | `go test -count=1 ./cmd/gopact` | `gopact agent init` emits a standalone, testable A2A HTTP agent module |
 | channel and surface transfer | `channel_policy.go` | `go test -count=1 -run Channel . ./gopacttest` | Surface messages, transfer, channel policy, event evidence |
 | policy, redaction, and safety contracts | `policy.go` | `go test -count=1 . ./sandbox ./gopacttest/secretconformance ./gopacttest/promptinjectionconformance` | Policy gates, redaction, sandbox profiles, secret and prompt-injection conformance |
 | verification evidence and release gate | `gopacttest` | `go test -count=1 ./gopacttest` | Verification reports, evidence bridges, CI gates, file snapshots, review evidence |
