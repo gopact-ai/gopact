@@ -1,6 +1,7 @@
 package a2a
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -96,6 +97,14 @@ func (d *FileDiscoverer) readDocument(ctx context.Context) (fileDiscoveryDocumen
 	}
 	if err := ctx.Err(); err != nil {
 		return fileDiscoveryDocument{}, err
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) > 0 && raw[0] == '[' {
+		var cards []AgentCard
+		if err := json.Unmarshal(raw, &cards); err != nil {
+			return fileDiscoveryDocument{}, fmt.Errorf("a2a: decode discovery file: %w", err)
+		}
+		return fileDiscoveryDocument{Agents: cards}, nil
 	}
 	var doc fileDiscoveryDocument
 	if err := json.Unmarshal(raw, &doc); err != nil {

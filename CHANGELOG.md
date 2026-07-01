@@ -23,6 +23,8 @@ template, adapter-boundary, and release-process changes.
 
 ### Changed
 
+- `a2a.FileDiscoverer` now accepts either `{"agents":[...]}` documents or a
+  bare agent-card JSON array for lower-friction local mesh registries.
 - v1 migration release gate now consumes explicit core and external CI gate
   requirements.
 - Self-bootstrap release gate now requires the core feature coverage snapshot.
