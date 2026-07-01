@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "lifecycle": "migration-history",
+  "superseded_by": "docs/design/ecosystem-topology.json",
   "source_manifests": [
     "docs/design/external-repositories.json",
     "docs/design/extension-conformance.json",

@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "lifecycle": "migration-history",
+  "superseded_by": "docs/design/ecosystem-topology.json",
   "organization": "gopact-ai",
   "default_visibility": "private",
   "module_path_prefix": "github.com/gopact-ai/",

@@ -54,7 +54,7 @@ go test -run Example_graphRun .
 - [docs/design/migration-guide.md](docs/design/migration-guide.md)：v1 前后的 public API、adapter split、checkpoint/resume 和 verification 迁移要求。
 - [docs/design/core-ci-gates.json](docs/design/core-ci-gates.json)：core repo CI gate 清单；`gopacttest.RecordCIGateSuiteCheck` 可把已观察 gate suite 记录为 `ci_gate` evidence。
 - [docs/design/external-integration-roadmap.json](docs/design/external-integration-roadmap.json)：生产 adapter/plugin/template 的外部仓库路线。
-- [docs/design/extension-scaffold-spec.json](docs/design/extension-scaffold-spec.json)：外部仓库 scaffold 蓝图；实现入口在 `internal/extensionscaffold`、`LoadRepositoriesFromDesign`、`WriteRepositoriesFromDesign`、`RenderSyncPlanFromDesign` 和 `cmd/gopact-extscaffold`，并在外部仓库文档中渲染 `V1 Migration Ownership`；维护命令会生成 `go.work` / `sync-plan.json`，支持 `-verify`、`-plan-json` 和 `-remote-status-json`。
+- [docs/design/extension-scaffold-spec.json](docs/design/extension-scaffold-spec.json)：旧外部仓库 scaffold 蓝图，保留为 migration evidence；当前官方拓扑以 `ecosystem-topology.json` 为准。实现入口仍在 `internal/extensionscaffold`、`LoadRepositoriesFromDesign`、`WriteRepositoriesFromDesign`、`RenderSyncPlanFromDesign` 和 `cmd/gopact-extscaffold`，并在外部仓库文档中渲染 `V1 Migration Ownership`；维护命令会生成 `go.work` / `sync-plan.json`，支持 `-verify`、`-plan-json` 和 `-remote-status-json`。
 
 调研记录见 [docs/research/agent-sdk-landscape.md](docs/research/agent-sdk-landscape.md) 和 [docs/research/harness-loop-engineering.md](docs/research/harness-loop-engineering.md)。
 

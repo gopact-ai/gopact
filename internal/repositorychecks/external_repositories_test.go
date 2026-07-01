@@ -119,6 +119,29 @@ func TestExternalRepositoryManifestDefinesBootstrapSequence(t *testing.T) {
 	}
 }
 
+func TestLegacyExternalScaffoldManifestsPointToOfficialTopology(t *testing.T) {
+	topology := loadEcosystemTopology(t)
+	repositories := loadExternalRepositoryManifest(t)
+	spec := loadExtensionScaffoldSpec(t)
+
+	for name, got := range map[string]string{
+		"external-repositories lifecycle":   repositories.Lifecycle,
+		"extension-scaffold-spec lifecycle": spec.Lifecycle,
+	} {
+		if got != topology.Policy.LegacyExternalScaffoldStatus {
+			t.Fatalf("%s = %q, want %q", name, got, topology.Policy.LegacyExternalScaffoldStatus)
+		}
+	}
+	for name, got := range map[string]string{
+		"external-repositories superseded_by":   repositories.SupersededBy,
+		"extension-scaffold-spec superseded_by": spec.SupersededBy,
+	} {
+		if got != "docs/design/ecosystem-topology.json" {
+			t.Fatalf("%s = %q, want docs/design/ecosystem-topology.json", name, got)
+		}
+	}
+}
+
 func TestExtensionScaffoldSpecCoversExternalRepositories(t *testing.T) {
 	repositories := loadExternalRepositoryManifest(t)
 	conformance := loadExtensionConformanceManifest(t)
@@ -271,6 +294,8 @@ func TestExtensionScaffoldMaterializerIsDocumented(t *testing.T) {
 
 type externalRepositoryManifest struct {
 	Version           int                  `json:"version"`
+	Lifecycle         string               `json:"lifecycle"`
+	SupersededBy      string               `json:"superseded_by"`
 	Organization      string               `json:"organization"`
 	DefaultVisibility string               `json:"default_visibility"`
 	ModulePathPrefix  string               `json:"module_path_prefix"`
@@ -292,6 +317,8 @@ type externalRepository struct {
 
 type extensionScaffoldSpec struct {
 	Version         int                           `json:"version"`
+	Lifecycle       string                        `json:"lifecycle"`
+	SupersededBy    string                        `json:"superseded_by"`
 	SourceManifests []string                      `json:"source_manifests"`
 	FileTemplates   []extensionScaffoldFile       `json:"file_templates"`
 	Repositories    []extensionScaffoldRepository `json:"repositories"`
