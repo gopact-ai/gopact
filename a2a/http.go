@@ -116,6 +116,25 @@ func NewHTTPRegistry(url string, opts ...HTTPAgentOption) (*HTTPRegistry, error)
 	return &HTTPRegistry{url: url, client: client}, nil
 }
 
+// NewHTTPRegistryHandler exposes any CardLister as an HTTP agent-card registry.
+func NewHTTPRegistryHandler(lister CardLister) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		if lister == nil {
+			writeHTTPError(w, http.StatusInternalServerError, ErrDiscovererRequired)
+			return
+		}
+		cards, err := lister.ListCards(r.Context())
+		if err != nil {
+			writeHTTPError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeHTTPJSON(w, http.StatusOK, fileDiscoveryDocument{Agents: cards})
+	})
+}
+
 // WithHTTPClient sets the HTTP client used by an HTTP A2A agent.
 func WithHTTPClient(client *http.Client) HTTPAgentOption {
 	return func(agent *HTTPAgent) error {

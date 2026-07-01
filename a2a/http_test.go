@@ -252,6 +252,33 @@ func TestHTTPRegistryBootstrapsMultipleAgentCards(t *testing.T) {
 	}
 }
 
+func TestHTTPRegistryHandlerServesCardsForBootstrap(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(NewHTTPRegistryHandler(NewStaticDiscoverer(
+		AgentCard{Name: "planner", Capabilities: []string{"planning"}},
+		AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}},
+	)))
+	defer server.Close()
+	registry, err := NewHTTPRegistry(server.URL, WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	bootstrap, err := mesh.Bootstrap(ctx, registry)
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if len(bootstrap.Cards) != 2 ||
+		bootstrap.Cards[0].Name != "planner" ||
+		bootstrap.Cards[1].Name != "reviewer" {
+		t.Fatalf("Bootstrap() cards = %+v, want handler registry order", bootstrap.Cards)
+	}
+}
+
 func TestHTTPAgentDiscoverMatchesNameAndMetadata(t *testing.T) {
 	ctx := context.Background()
 	agent := FakeAgent{
