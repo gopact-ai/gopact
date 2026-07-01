@@ -37,6 +37,7 @@ template, adapter-boundary, and release-process changes.
   command evidence for provider, agent template, and example coverage.
 - Development docs now distinguish core SDK readiness from external
   adapter/plugin/template readiness.
+- `gopact agent init` development-build fallback now targets `gopact v0.0.21`.
 
 ### Known Blockers
 
