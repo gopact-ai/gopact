@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "policy": {
+    "official_repository_count": 3,
+    "extension_layout": "single-ext-repository-with-go-submodules",
+    "examples_layout": "single-examples-repository",
+    "legacy_external_scaffold_status": "migration-history"
+  },
+  "repositories": [
+    {
+      "name": "gopact",
+      "role": "core",
+      "module_path": "github.com/gopact-ai/gopact",
+      "ci_mode": "mock-only",
+      "description": "Core SDK contracts, graph runtime, evidence, checkpoint/resume, A2A and release-gate primitives."
+    },
+    {
+      "name": "gopact-ext",
+      "role": "extensions",
+      "module_path_prefix": "github.com/gopact-ai/gopact-ext/",
+      "ci_mode": "mock-only",
+      "local_integration": "Agnes provider via .env and -tags=integration",
+      "description": "Official provider and agent template extensions as Go submodules."
+    },
+    {
+      "name": "gopact-examples",
+      "role": "examples",
+      "module_path": "github.com/gopact-ai/gopact-examples",
+      "ci_mode": "mock-only",
+      "local_integration": "Agnes quickstart via .env and -tags=integration",
+      "description": "Runnable examples and smoke coverage for core plus official extensions."
+    }
+  ]
+}

@@ -45,6 +45,7 @@ go test -run Example_graphRun .
 - [docs/design/public-api-examples.json](docs/design/public-api-examples.json)：root public API executable example 契约。
 - [docs/design/deprecation-policy.md](docs/design/deprecation-policy.md)：root public API 的废弃、迁移和移除策略。
 - [docs/design/versioning-policy.md](docs/design/versioning-policy.md)：core SDK、schema 和外部 extension 的版本策略。
+- [docs/design/ecosystem-topology.json](docs/design/ecosystem-topology.json)：官方仓库拓扑；当前为 `gopact`、`gopact-ext`、`gopact-examples` 三仓，extension 统一放在 ext 的 Go submodules。
 - [docs/design/repository-boundary.json](docs/design/repository-boundary.json)：主仓、reference adapter 和外部仓库归属边界。
 - [docs/design/v1-migration-plan.json](docs/design/v1-migration-plan.json)：v1 前 core 边界收敛和 `release_gate_checks` 计划；每个 gate 会声明 `required_check_ids`。
 - [docs/design/modules.md](docs/design/modules.md)：provider、tool、sandbox、memory、skill、MCP、A2A 等运行时模块设计。
