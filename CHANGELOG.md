@@ -39,6 +39,7 @@ template, adapter-boundary, and release-process changes.
 - Development docs now distinguish core SDK readiness from external
   adapter/plugin/template readiness.
 - `gopact agent init` development-build fallback now targets `gopact v0.0.21`.
+- Generated A2A agent scaffolds now handle interrupt/terminate signals with graceful HTTP shutdown.
 
 ### Known Blockers
 
