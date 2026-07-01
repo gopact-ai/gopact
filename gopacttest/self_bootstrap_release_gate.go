@@ -129,9 +129,8 @@ func BuildSelfBootstrapReleaseGateBundle(
 		return SelfBootstrapReleaseGateBundle{}, err
 	}
 
-	bundled := export
-	bundled.VerificationReports = append(append([]gopact.VerificationReport(nil), export.VerificationReports...), report)
-	if err := bundled.Validate(); err != nil {
+	bundled, err := gopact.EmbedVerificationReport(export, report)
+	if err != nil {
 		return SelfBootstrapReleaseGateBundle{}, fmt.Errorf("gopacttest: build self-bootstrap release gate bundle: %w", err)
 	}
 	return SelfBootstrapReleaseGateBundle{RunExport: bundled, Report: report}, nil

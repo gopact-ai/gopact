@@ -96,6 +96,29 @@ func BuildVerificationReport(export RunExport, checks []VerificationCheck) (Veri
 	return report, nil
 }
 
+// EmbedVerificationReport returns a copy of export with report embedded.
+func EmbedVerificationReport(export RunExport, report VerificationReport) (RunExport, error) {
+	if err := export.Validate(); err != nil {
+		return RunExport{}, fmt.Errorf("gopact: embed verification report: %w", err)
+	}
+	if err := report.Validate(); err != nil {
+		return RunExport{}, fmt.Errorf("gopact: embed verification report: %w", err)
+	}
+	if err := validateRunRecorderRuntimeIDs(export.IDs, report.IDs); err != nil {
+		return RunExport{}, fmt.Errorf("gopact: embed verification report: %w", err)
+	}
+	if report.Outcome != export.Outcome {
+		return RunExport{}, fmt.Errorf("gopact: embed verification report outcome %q does not match run export outcome %q", report.Outcome, export.Outcome)
+	}
+
+	bundled := export
+	bundled.VerificationReports = append(copyVerificationReports(export.VerificationReports), copyVerificationReport(report))
+	if err := bundled.Validate(); err != nil {
+		return RunExport{}, fmt.Errorf("gopact: embed verification report: %w", err)
+	}
+	return bundled, nil
+}
+
 // Record appends one already-completed verification check.
 func (r *VerificationRecorder) Record(check VerificationCheck) error {
 	if r == nil {

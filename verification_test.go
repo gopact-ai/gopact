@@ -232,3 +232,60 @@ func TestVerificationRecorderReportRejectsNilRecorder(t *testing.T) {
 		t.Fatal("Report() error = nil, want nil recorder error")
 	}
 }
+
+func TestEmbedVerificationReportEmbedsCopiedReport(t *testing.T) {
+	export := RunExport{
+		Version: RunExportVersion,
+		IDs:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Outcome: RunCompleted,
+		Events:  []Event{{Type: EventRunStarted, IDs: RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"}}},
+	}
+	report, err := BuildVerificationReport(export, []VerificationCheck{{
+		ID:       "review",
+		Status:   VerificationStatusPassed,
+		Evidence: []VerificationEvidence{{Type: "review", Ref: "review-1"}},
+	}})
+	if err != nil {
+		t.Fatalf("BuildVerificationReport() error = %v", err)
+	}
+
+	bundled, err := EmbedVerificationReport(export, report)
+	if err != nil {
+		t.Fatalf("EmbedVerificationReport() error = %v", err)
+	}
+	if len(export.VerificationReports) != 0 {
+		t.Fatalf("original export reports = %+v, want unchanged", export.VerificationReports)
+	}
+	if len(bundled.VerificationReports) != 1 || bundled.VerificationReports[0].Status != VerificationStatusPassed {
+		t.Fatalf("bundled reports = %+v, want embedded passed report", bundled.VerificationReports)
+	}
+
+	report.Checks[0].Evidence[0].Ref = "mutated"
+	if bundled.VerificationReports[0].Checks[0].Evidence[0].Ref != "review-1" {
+		t.Fatalf("bundled report = %+v, want copied report", bundled.VerificationReports[0])
+	}
+}
+
+func TestEmbedVerificationReportRejectsMismatchedReport(t *testing.T) {
+	export := RunExport{
+		Version: RunExportVersion,
+		IDs:     RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Outcome: RunCompleted,
+	}
+	report, err := BuildVerificationReport(RunExport{
+		Version: RunExportVersion,
+		IDs:     RuntimeIDs{RunID: "other-run", ThreadID: "thread-1"},
+		Outcome: RunCompleted,
+	}, []VerificationCheck{{
+		ID:       "review",
+		Status:   VerificationStatusPassed,
+		Evidence: []VerificationEvidence{{Type: "review", Ref: "review-1"}},
+	}})
+	if err != nil {
+		t.Fatalf("BuildVerificationReport() error = %v", err)
+	}
+
+	if _, err := EmbedVerificationReport(export, report); err == nil {
+		t.Fatal("EmbedVerificationReport() error = nil, want mismatch error")
+	}
+}

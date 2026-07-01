@@ -3212,6 +3212,10 @@
           "kind": "func"
         },
         {
+          "name": "EmbedVerificationReport",
+          "kind": "func"
+        },
+        {
           "name": "EventMetadataVerificationReport",
           "kind": "const"
         },
