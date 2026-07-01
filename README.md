@@ -39,6 +39,7 @@ go test -run Example_graphRun .
 
 ## 文档地图
 
+- [FEATURES.md](FEATURES.md)：core SDK 可执行能力覆盖矩阵；ext/examples 仓库各自维护对应矩阵。
 - [docs/design/index.md](docs/design/index.md)：总体设计入口、模块关系和路线图。
 - [docs/design/development-plan.md](docs/design/development-plan.md)：研发计划、自举门槛和开源化发布手册。
 - [docs/design/public-api-boundary.json](docs/design/public-api-boundary.json)：root public API 边界清单。
@@ -64,7 +65,7 @@ go test -run Example_graphRun .
 
 运行时优先于 agent 模式：ReAct、plan-execute、supervisor、多 agent 流程都应该是建立在同一套执行、事件、检查点和中断原语之上的 graph template。
 
-完整能力清单、包状态、template 过程记录、Dev Agent release evidence 和外部仓库 scaffold 细节都放在 design docs 中维护。README 只保留 SDK 用户入口，避免把研发流水账当成公开文档。
+[FEATURES.md](FEATURES.md) 提供 core SDK 的可执行能力矩阵；包状态、template 过程记录、Dev Agent release evidence 和外部仓库 scaffold 细节都放在 design docs 中维护。README 只保留 SDK 用户入口，避免把研发流水账当成公开文档。
 
 ## 贡献与安全
 

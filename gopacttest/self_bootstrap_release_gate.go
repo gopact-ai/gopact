@@ -43,6 +43,8 @@ const (
 	SelfBootstrapCheckPublicAPIExamples = "file-snapshot:docs/design/public-api-examples.json"
 	// SelfBootstrapCheckPublicAPIExamplesCommand is the standard executable public API examples check.
 	SelfBootstrapCheckPublicAPIExamplesCommand = "command:go test -run '^Example' ./..."
+	// SelfBootstrapCheckFeatureCoverage is the standard feature coverage snapshot check.
+	SelfBootstrapCheckFeatureCoverage = "file-snapshot:FEATURES.md"
 	// SelfBootstrapCheckGraphConformanceCommand is the standard graph workflow conformance check.
 	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./gopacttest/graphconformance"
 	// SelfBootstrapCheckDeprecationPolicy is the standard deprecation policy snapshot check.
@@ -182,6 +184,11 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 			},
 		},
 		{
+			Name:                  "self-bootstrap-feature-coverage",
+			RequiredCheckIDs:      []string{SelfBootstrapCheckFeatureCoverage},
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeFileSnapshot},
+		},
+		{
 			Name:                  "self-bootstrap-repository-boundary",
 			RequiredCheckIDs:      []string{SelfBootstrapCheckRepositoryBoundary},
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeFileSnapshot},
@@ -293,6 +300,7 @@ func selfBootstrapReleaseGateChecks(
 		},
 		selfBootstrapSnapshotCheck("docs/design/public-api-boundary.json"),
 		selfBootstrapSnapshotCheck("docs/design/public-api-examples.json"),
+		selfBootstrapSnapshotCheck("FEATURES.md"),
 		selfBootstrapSnapshotCheck("docs/design/deprecation-policy.md"),
 		selfBootstrapSnapshotCheck("docs/design/api-ergonomics.md"),
 		selfBootstrapSnapshotCheck("docs/design/repository-boundary.json"),
