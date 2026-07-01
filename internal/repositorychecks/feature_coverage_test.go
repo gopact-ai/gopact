@@ -59,6 +59,11 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			command:    "go test -count=1 ./a2a ./gopacttest/a2aconformance",
 		},
 		{
+			capability: "A2A HTTP registry discovery",
+			path:       "a2a/http_example_test.go",
+			command:    "go test -count=1 -run ExampleNewHTTPRegistryHandler ./a2a",
+		},
+		{
 			capability: "agent scaffold generator",
 			path:       "cmd/gopact",
 			command:    "go test -count=1 ./cmd/gopact",
