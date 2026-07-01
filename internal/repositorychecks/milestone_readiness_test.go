@@ -195,6 +195,35 @@ func TestMilestoneReadinessM5OpenItemsTrackOnlyRemainingWork(t *testing.T) {
 	}
 }
 
+func TestMilestoneReadinessOpenItemsStayConcise(t *testing.T) {
+	manifest := loadMilestoneReadinessManifest(t)
+	completedWorkMarkers := []string{
+		"[done:",
+		"已覆盖",
+		"已具备",
+		"已落地",
+		"已完成",
+		"已把",
+		"已真实",
+		"已进入",
+		"已记录",
+		"已解除",
+	}
+
+	for _, milestone := range manifest.Milestones {
+		for _, item := range milestone.OpenItems {
+			if len([]rune(item)) > 500 {
+				t.Fatalf("milestone readiness %q open item is too long: %d runes", milestone.ID, len([]rune(item)))
+			}
+			for _, marker := range completedWorkMarkers {
+				if strings.Contains(item, marker) {
+					t.Fatalf("milestone readiness %q open item describes completed work marker %q: %q", milestone.ID, marker, item)
+				}
+			}
+		}
+	}
+}
+
 type milestoneReadinessManifest struct {
 	Version               int                  `json:"version"`
 	OverallStatus         string               `json:"overall_status"`
