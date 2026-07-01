@@ -39,6 +39,7 @@ template, adapter-boundary, and release-process changes.
   adapter/plugin/template readiness.
 - `gopact agent init` development-build fallback now targets `gopact v0.0.21`.
 - Generated A2A agent scaffolds now handle interrupt/terminate signals with graceful HTTP shutdown.
+- Generated A2A agent scaffold tests now verify the advertised health and readiness endpoints.
 
 ### Known Blockers
 
