@@ -24,7 +24,7 @@
 | 阶段 | 目标 | 完成标准 |
 | --- | --- | --- |
 | S0 | 定位与标准冻结 | `why-gopact`、`agent-mesh`、self-bootstrap roadmap 和测试策略进入设计入口；所有目标有验收标准 |
-| S1 | 编排地基 | graph 支持 branch、DAG fan-in、dynamic fan-out、subgraph / runnable node，并有 conformance tests |
+| S1 | 编排地基 | graph 支持 branch、DAG fan-in、dynamic fan-out、loop/step limit、subgraph / runnable node，并有 conformance tests |
 | S2 | Scaffold 地基 | 提供低门槛 agent scaffold，覆盖 chat、ReAct、Plan-Execute、checkpoint/resume、human approval |
 | S3 | Provider 双轨 | ext 中 OpenAI-compatible、Agnes、Ark provider 示例可本地真实跑通；CI 使用 mock provider 固化行为 |
 | S4 | Agent Mesh | 支持 agent card、discovery、A2A call/stream/cancel、RPC-like router、cross-agent evidence |
@@ -111,6 +111,7 @@ go vet ./...
 | Graph branch | 单分支、多分支、无目标、错误、checkpoint 后恢复 |
 | DAG fan-in | 多前驱等待、部分失败、merge 顺序、deterministic reducer |
 | Dynamic fan-out | 空 fan-out、N 个任务、部分失败、恢复只重跑未完成任务 |
+| Graph loop | 条件退出、无限循环 step limit |
 | Subgraph | nested run events、runtime ids、checkpoint 继承和隔离 |
 | ReAct | direct final、tool call、multi-tool、tool error、approval interrupt/resume、max iterations |
 | Plan-Execute | plan、execute、replan、cancel、approval、summary |
