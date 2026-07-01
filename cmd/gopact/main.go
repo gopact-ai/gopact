@@ -24,7 +24,7 @@ const (
 	exitError = 1
 	exitUsage = 2
 
-	fallbackSDKVersion = "v0.0.19"
+	fallbackSDKVersion = "v0.0.20"
 	scaffoldGoVersion  = "1.25"
 )
 
@@ -209,6 +209,7 @@ func renderAgentScaffold(data agentScaffoldData) (map[string][]byte, error) {
 		return nil, err
 	}
 	files["README.md"] = []byte(readme)
+	files[".env.example"] = []byte(envExampleTemplate)
 	files[".gitignore"] = []byte(".env\n.env.*\n!.env.example\n")
 	return files, nil
 }
@@ -520,6 +521,10 @@ func TestScaffoldRegistryFile(t *testing.T) {
 }
 `
 
+const envExampleTemplate = `GOPACT_AGENT_ADDR=:8080
+GOPACT_AGENT_URL=http://localhost:8080
+`
+
 const readmeTemplate = `# {{ .AgentName }}
 
 Generated gopact A2A HTTP agent scaffold.
@@ -531,5 +536,5 @@ go test ./...
 GOPACT_AGENT_ADDR=:8080 go run .
 ` + "```" + `
 
-The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Set ` + "`GOPACT_AGENT_URL`" + ` when the public endpoint differs from ` + "`http://localhost:8080`" + `. The scaffold does not generate a ` + "`.env`" + ` file; keep local secrets in your own ignored environment file.
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed.
 `

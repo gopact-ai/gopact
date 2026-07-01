@@ -50,6 +50,10 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 		"# support-agent",
 		"GOPACT_AGENT_ADDR",
 	)
+	assertFileContains(t, filepath.Join(out, ".env.example"),
+		"GOPACT_AGENT_ADDR=:8080",
+		"GOPACT_AGENT_URL=http://localhost:8080",
+	)
 
 	registry := readFile(t, filepath.Join(out, "agents.json"))
 	if !strings.HasPrefix(strings.TrimSpace(registry), "[") {
@@ -84,6 +88,12 @@ func TestRunAgentInitRejectsMissingModule(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "-module is required") {
 		t.Fatalf("stderr missing module error:\n%s", stderr.String())
+	}
+}
+
+func TestDefaultSDKVersionFallbackTracksLatestTag(t *testing.T) {
+	if got := defaultSDKVersion(); got != "v0.0.20" {
+		t.Fatalf("defaultSDKVersion() = %q, want v0.0.20", got)
 	}
 }
 
