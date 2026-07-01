@@ -9,6 +9,8 @@ template, adapter-boundary, and release-process changes.
 
 ### Added
 
+- `a2a.NewHTTPCardListers` for bootstrapping a mesh from multiple HTTP agent
+  card endpoints.
 - MIT license in `LICENSE`.
 - Open-source release checklist in `docs/design/development-plan.md`.
 - Model reviewer governance field requirements through
