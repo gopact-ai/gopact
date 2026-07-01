@@ -410,6 +410,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingRunEffectReplayEvidenc
 	}
 }
 
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingA2ATaskEvidence(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheck(t, &report, "a2a-task:self-bootstrap-agent-cluster")
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-evidence-types") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing A2A task evidence: %+v", results)
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingReleaseBundleEvidence(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckReleaseBundle)
