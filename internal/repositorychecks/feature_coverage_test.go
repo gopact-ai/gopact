@@ -59,6 +59,11 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			command:    "go test -count=1 ./a2a ./gopacttest/a2aconformance",
 		},
 		{
+			capability: "agent scaffold generator",
+			path:       "cmd/gopact",
+			command:    "go test -count=1 ./cmd/gopact",
+		},
+		{
 			capability: "channel and surface transfer",
 			path:       "channel_policy.go",
 			command:    "go test -count=1 -run Channel . ./gopacttest",

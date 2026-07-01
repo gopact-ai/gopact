@@ -22,6 +22,15 @@ go test -run Example_graphRun .
 
 这个 example 覆盖 `graph.New`、`graph.WithRuntimeIDs`、`graph.WithCheckpointer`、事件流和 checkpoint 写入。更多 root facade 示例由 [docs/design/public-api-examples.json](docs/design/public-api-examples.json) 约束，并通过 `go test -run '^Example' ./...` 持续验证。
 
+从零启动一个可测试的 A2A HTTP agent scaffold：
+
+```bash
+go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
+cd /tmp/support-agent
+go test ./...
+GOPACT_AGENT_ADDR=:8080 go run .
+```
+
 ## 核心概念
 
 - `Setup` / `Defaults`：SDK 级默认值入口，支持宿主注入 logger、log level 和 runtime identity defaults。
