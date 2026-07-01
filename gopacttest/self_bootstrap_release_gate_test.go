@@ -266,6 +266,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingPublicAPIExamplesComma
 	}
 }
 
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingFeatureCoverage(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckFeatureCoverage)
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-feature-coverage/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing feature coverage: %+v", results)
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingGraphConformanceCommand(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheckIfPresent(&report, SelfBootstrapCheckGraphConformanceCommand)
