@@ -41,6 +41,28 @@ func TestFileDiscovererFindsAgentCardByName(t *testing.T) {
 	}
 }
 
+func TestFileDiscovererAcceptsBareAgentCardArray(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agents.json")
+	if err := os.WriteFile(path, []byte(`[
+		{"name": "planner", "capabilities": ["planning"]},
+		{"name": "reviewer", "capabilities": ["code.review"]}
+	]`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	discoverer, err := NewFileDiscoverer(path)
+	if err != nil {
+		t.Fatalf("NewFileDiscoverer() error = %v", err)
+	}
+
+	cards, err := discoverer.ListCards(context.Background())
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if len(cards) != 2 || cards[0].Name != "planner" || cards[1].Name != "reviewer" {
+		t.Fatalf("ListCards() = %+v, want bare array order", cards)
+	}
+}
+
 func TestFileDiscovererListCardsReturnsOrderedDefensiveCopies(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agents.json")
 	if err := os.WriteFile(path, []byte(`{
