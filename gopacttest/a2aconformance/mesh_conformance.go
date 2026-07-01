@@ -1301,7 +1301,7 @@ func discoverMeshAgent(ctx context.Context, agent a2a.Agent, query a2a.Discovery
 
 func meshDiscoveryQuery(query a2a.DiscoveryQuery, expected a2a.AgentCard) a2a.DiscoveryQuery {
 	query = copyDiscoveryQuery(query)
-	if query.Name == "" && query.URL == "" && len(query.Require) == 0 && len(query.Metadata) == 0 {
+	if query.Name == "" && query.URL == "" && len(query.Require) == 0 && len(query.Tags) == 0 && len(query.Metadata) == 0 {
 		query.Name = expected.Name
 	}
 	return query
@@ -1312,11 +1312,14 @@ func routeQueryForCard(card a2a.AgentCard, task a2a.Task) (a2a.RouteQuery, error
 	if len(card.Capabilities) > 0 {
 		route.Require = append([]string(nil), card.Capabilities...)
 	}
+	if len(card.Tags) > 0 {
+		route.Tags = append([]string(nil), card.Tags...)
+	}
 	if len(card.Metadata) > 0 {
 		route.Metadata = copyAnyMap(card.Metadata)
 	}
-	if len(route.Require) == 0 && len(route.Metadata) == 0 {
-		return a2a.RouteQuery{}, errors.New("expected card must include routeable capabilities or metadata")
+	if len(route.Require) == 0 && len(route.Tags) == 0 && len(route.Metadata) == 0 {
+		return a2a.RouteQuery{}, errors.New("expected card must include routeable capabilities, tags, or metadata")
 	}
 	return route, nil
 }

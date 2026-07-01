@@ -119,6 +119,7 @@ type AgentCard struct {
 	Protocols    []ProtocolBinding `json:"protocols,omitempty"`
 	Skills       []AgentSkill      `json:"skills,omitempty"`
 	Capabilities []string          `json:"capabilities,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
 	InputSchema  gopact.JSONSchema `json:"input_schema,omitempty"`
 	OutputSchema gopact.JSONSchema `json:"output_schema,omitempty"`
 	Streaming    bool              `json:"streaming,omitempty"`
@@ -166,6 +167,7 @@ type DiscoveryQuery struct {
 	URL      string            `json:"url,omitempty"`
 	IDs      gopact.RuntimeIDs `json:"ids,omitempty"`
 	Require  []string          `json:"require,omitempty"`
+	Tags     []string          `json:"tags,omitempty"`
 	Metadata map[string]any    `json:"metadata,omitempty"`
 }
 
@@ -176,9 +178,10 @@ type DiscoveryResult struct {
 	Events   []gopact.Event `json:"events,omitempty"`
 }
 
-// RouteQuery selects a registered agent by card capabilities and metadata.
+// RouteQuery selects a registered agent by card capabilities, tags, and metadata.
 type RouteQuery struct {
 	Require  []string       `json:"require,omitempty"`
+	Tags     []string       `json:"tags,omitempty"`
 	Metadata map[string]any `json:"metadata,omitempty"`
 	Fallback bool           `json:"fallback,omitempty"`
 	Task     Task           `json:"task"`
@@ -689,7 +692,7 @@ func (r *Registry) resolveRoutes(ctx context.Context, query RouteQuery) ([]Agent
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if r == nil || (len(query.Require) == 0 && len(query.Metadata) == 0) {
+	if r == nil || (len(query.Require) == 0 && len(query.Tags) == 0 && len(query.Metadata) == 0) {
 		return nil, ErrAgentNotFound
 	}
 
@@ -703,7 +706,7 @@ func (r *Registry) resolveRoutes(ctx context.Context, query RouteQuery) ([]Agent
 		if agent == nil {
 			continue
 		}
-		if hasCapabilities(card.Capabilities, query.Require) && hasMetadata(card.Metadata, query.Metadata) {
+		if hasCapabilities(card.Capabilities, query.Require) && hasCapabilities(card.Tags, query.Tags) && hasMetadata(card.Metadata, query.Metadata) {
 			agents = append(agents, agent)
 		}
 	}
@@ -751,7 +754,7 @@ func listImportCards(ctx context.Context, lister CardLister) ([]AgentCard, error
 }
 
 func hasDiscoveryCriteria(query DiscoveryQuery) bool {
-	return query.Name != "" || query.URL != "" || len(query.Require) > 0 || len(query.Metadata) > 0
+	return query.Name != "" || query.URL != "" || len(query.Require) > 0 || len(query.Tags) > 0 || len(query.Metadata) > 0
 }
 
 func matchesRemoteDiscoveryQuery(card AgentCard, query DiscoveryQuery) bool {
@@ -759,6 +762,9 @@ func matchesRemoteDiscoveryQuery(card AgentCard, query DiscoveryQuery) bool {
 		return false
 	}
 	if !hasCapabilities(card.Capabilities, query.Require) {
+		return false
+	}
+	if !hasCapabilities(card.Tags, query.Tags) {
 		return false
 	}
 	return hasMetadata(card.Metadata, query.Metadata)
@@ -1078,6 +1084,7 @@ func agentCardFetchedEvent(query DiscoveryQuery, result DiscoveryResult) gopact.
 
 func copyDiscoveryQuery(query DiscoveryQuery) DiscoveryQuery {
 	query.Require = append([]string(nil), query.Require...)
+	query.Tags = append([]string(nil), query.Tags...)
 	query.Metadata = copyAnyMap(query.Metadata)
 	return query
 }
@@ -1086,6 +1093,7 @@ func copyAgentCard(card AgentCard) AgentCard {
 	card.Protocols = append([]ProtocolBinding(nil), card.Protocols...)
 	card.Skills = copyAgentSkills(card.Skills)
 	card.Capabilities = append([]string(nil), card.Capabilities...)
+	card.Tags = append([]string(nil), card.Tags...)
 	card.InputSchema = copyA2AJSONSchema(card.InputSchema)
 	card.OutputSchema = copyA2AJSONSchema(card.OutputSchema)
 	card.Auth = copyAuthRequirement(card.Auth)

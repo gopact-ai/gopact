@@ -131,6 +131,9 @@ func matchesDiscoveryQuery(card AgentCard, query DiscoveryQuery) bool {
 	if !hasCapabilities(card.Capabilities, query.Require) {
 		return false
 	}
+	if !hasCapabilities(card.Tags, query.Tags) {
+		return false
+	}
 	if !hasMetadata(card.Metadata, query.Metadata) {
 		return false
 	}

@@ -1066,6 +1066,49 @@ func TestRegistryRouteByMetadata(t *testing.T) {
 	}
 }
 
+func TestRegistryRouteByTags(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	researcher := FakeAgent{
+		CardValue: AgentCard{Name: "researcher", Tags: []string{"research", "local"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			return Result{TaskID: task.ID, Output: "researcher"}, nil
+		},
+	}
+	reviewer := FakeAgent{
+		CardValue: AgentCard{Name: "reviewer", Tags: []string{"code", "local"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			return Result{TaskID: task.ID, Output: "reviewer"}, nil
+		},
+	}
+
+	if err := registry.Register(ctx, researcher); err != nil {
+		t.Fatalf("Register(researcher) error = %v", err)
+	}
+	if err := registry.Register(ctx, reviewer); err != nil {
+		t.Fatalf("Register(reviewer) error = %v", err)
+	}
+
+	result, err := registry.Route(ctx, RouteQuery{
+		Tags: []string{"code", "local"},
+		Task: Task{ID: "task-1"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != "reviewer" {
+		t.Fatalf("Route() output = %q, want reviewer", result.Output)
+	}
+
+	_, err = registry.Route(ctx, RouteQuery{
+		Tags: []string{"security"},
+		Task: Task{ID: "task-2"},
+	})
+	if !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Route() missing tag error = %v, want ErrAgentNotFound", err)
+	}
+}
+
 func TestRegistryRouteRequiresCapabilitiesAndMetadata(t *testing.T) {
 	ctx := context.Background()
 	registry := NewRegistry()

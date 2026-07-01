@@ -46,6 +46,25 @@ func TestCheckAgentMeshConformanceUsesMeshFacade(t *testing.T) {
 	requireConformanceCasePassed(t, results, "mesh-discovers-and-routes")
 }
 
+func TestCheckAgentMeshConformanceRoutesByTags(t *testing.T) {
+	agent := meshAgent{
+		card: a2a.AgentCard{
+			Name: "reviewer",
+			Tags: []string{"code", "local"},
+		},
+	}
+
+	results := CheckAgentMeshConformance(context.Background(), AgentMeshConformanceHarness{
+		Agent:        agent,
+		Query:        a2a.DiscoveryQuery{Tags: []string{"code", "local"}},
+		ExpectedCard: agent.card,
+		Task:         a2a.Task{ID: "task-1", Input: "review this diff"},
+	})
+
+	requireConformanceCasePassed(t, results, "registry-routes-by-card")
+	requireConformanceCasePassed(t, results, "mesh-discovers-and-routes")
+}
+
 func TestCheckAgentMeshConformanceUsesMeshCallFacade(t *testing.T) {
 	agent := meshAgent{
 		card: a2a.AgentCard{

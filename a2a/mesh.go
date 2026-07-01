@@ -440,6 +440,7 @@ func (m *Mesh) taskContext(ctx context.Context, task Task) (context.Context, Tas
 
 func (m *Mesh) routeQueryContext(ctx context.Context, query RouteQuery) (context.Context, RouteQuery) {
 	query.Require = append([]string(nil), query.Require...)
+	query.Tags = append([]string(nil), query.Tags...)
 	query.Metadata = copyAnyMap(query.Metadata)
 	ctx, query.Task = m.taskContext(ctx, query.Task)
 	return ctx, query
