@@ -52,6 +52,11 @@ func TestCoreCIGatesDocumentedAndConfigured(t *testing.T) {
 			t.Fatalf("core CI workflow missing required command %q", command)
 		}
 	}
+	for _, action := range []string{"actions/checkout@v7", "actions/setup-go@v6"} {
+		if !strings.Contains(workflow, action) {
+			t.Fatalf("core CI workflow missing current GitHub Action %q", action)
+		}
+	}
 	if !strings.Contains(workflow, "golangci-lint@"+manifest.ToolVersions.GolangCILint) {
 		t.Fatalf("core CI workflow does not pin golangci-lint %s", manifest.ToolVersions.GolangCILint)
 	}

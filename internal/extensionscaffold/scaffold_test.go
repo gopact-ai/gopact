@@ -43,6 +43,8 @@ func TestRenderRepositoryProducesConformantScaffoldFiles(t *testing.T) {
 	}
 	workflow := byPath[".github/workflows/ci.yml"]
 	for _, want := range []string{
+		"actions/checkout@v7",
+		"actions/setup-go@v6",
 		"Configure private SDK access",
 		"GOPACT_GITHUB_TOKEN: ${{ secrets.GOPACT_GITHUB_TOKEN || github.token }}",
 		"go env -w GOPRIVATE='github.com/gopact-ai/*'",

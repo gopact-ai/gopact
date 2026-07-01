@@ -125,6 +125,11 @@ func TestExtensionScaffoldContractDocumentsExternalRepoCI(t *testing.T) {
 	if !strings.Contains(ciWorkflow, "go-version") {
 		t.Fatal("extension CI workflow template must pin go-version")
 	}
+	for _, action := range []string{"actions/checkout@v7", "actions/setup-go@v6"} {
+		if !strings.Contains(ciWorkflow, action) {
+			t.Fatalf("extension CI workflow template missing current GitHub Action %q", action)
+		}
+	}
 
 	conformanceTemplate := readExtensionConformanceFile(t, manifest.Scaffold.ConformanceTemplatePath)
 	for _, section := range []string{
