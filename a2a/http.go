@@ -27,6 +27,8 @@ const (
 var (
 	// ErrHTTPEndpointRequired is returned when an HTTP A2A agent has no endpoint.
 	ErrHTTPEndpointRequired = errors.New("a2a: http endpoint is required")
+	// ErrHTTPRegistryURLRequired is returned when an HTTP A2A registry has no URL.
+	ErrHTTPRegistryURLRequired = errors.New("a2a: http registry url is required")
 	// ErrHTTPStatus wraps non-success HTTP responses from an A2A endpoint.
 	ErrHTTPStatus = errors.New("a2a: http status error")
 )
@@ -43,11 +45,19 @@ type HTTPAgent struct {
 	maxResponseBytes int64
 }
 
+// HTTPRegistry fetches agent cards from one HTTP JSON registry document.
+type HTTPRegistry struct {
+	url    string
+	client *HTTPAgent
+}
+
 var (
 	_ Agent          = (*HTTPAgent)(nil)
 	_ StreamingAgent = (*HTTPAgent)(nil)
 	_ Discoverer     = (*HTTPAgent)(nil)
 	_ CardLister     = (*HTTPAgent)(nil)
+	_ Discoverer     = (*HTTPRegistry)(nil)
+	_ CardLister     = (*HTTPRegistry)(nil)
 )
 
 // NewHTTPAgent creates an HTTP A2A agent client.
@@ -91,6 +101,19 @@ func NewHTTPCardListers(endpoints []string, opts ...HTTPAgentOption) ([]CardList
 		listers = append(listers, agent)
 	}
 	return listers, nil
+}
+
+// NewHTTPRegistry creates a registry backed by one HTTP JSON agent-card document.
+func NewHTTPRegistry(url string, opts ...HTTPAgentOption) (*HTTPRegistry, error) {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return nil, ErrHTTPRegistryURLRequired
+	}
+	client, err := NewHTTPAgent(url, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &HTTPRegistry{url: url, client: client}, nil
 }
 
 // WithHTTPClient sets the HTTP client used by an HTTP A2A agent.
@@ -187,6 +210,55 @@ func (a *HTTPAgent) ListCards(ctx context.Context) ([]AgentCard, error) {
 	return []AgentCard{copyAgentCard(result.Card)}, nil
 }
 
+// ListCards returns all cards from the HTTP registry document in document order.
+func (r *HTTPRegistry) ListCards(ctx context.Context) ([]AgentCard, error) {
+	doc, err := r.readDocument(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cards := make([]AgentCard, 0, len(doc.Agents))
+	for _, card := range doc.Agents {
+		if card.Name == "" {
+			return nil, ErrCardNameRequired
+		}
+		cards = append(cards, copyAgentCard(card))
+	}
+	return cards, nil
+}
+
+// Discover returns the first registry card matching the discovery query.
+func (r *HTTPRegistry) Discover(ctx context.Context, query DiscoveryQuery) (DiscoveryResult, error) {
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+	if err := ctx.Err(); err != nil {
+		return DiscoveryResult{}, err
+	}
+	if r == nil || r.url == "" || r.client == nil {
+		return DiscoveryResult{}, ErrHTTPRegistryURLRequired
+	}
+	if !hasDiscoveryCriteria(query) {
+		return DiscoveryResult{}, ErrDiscoveryRequired
+	}
+	doc, err := r.readDocument(ctx)
+	if err != nil {
+		return DiscoveryResult{}, err
+	}
+	for _, card := range doc.Agents {
+		if !matchesDiscoveryQuery(card, query) {
+			continue
+		}
+		if card.Name == "" {
+			return DiscoveryResult{}, ErrCardNameRequired
+		}
+		return DiscoveryResult{
+			Card:     copyAgentCard(card),
+			Metadata: map[string]any{"source": "http_registry"},
+		}, nil
+	}
+	return DiscoveryResult{}, ErrAgentNotFound
+}
+
 // Send posts one task to the HTTP endpoint.
 func (a *HTTPAgent) Send(ctx context.Context, task Task) (Result, error) {
 	if ctx == nil {
@@ -276,6 +348,36 @@ func (a *HTTPAgent) Cancel(ctx context.Context, taskID string) error {
 	}
 	var out struct{}
 	return a.doJSON(ctx, http.MethodPost, a.endpoint+httpPathTaskCancel, httpCancelRequest{TaskID: taskID}, &out)
+}
+
+func (r *HTTPRegistry) readDocument(ctx context.Context) (fileDiscoveryDocument, error) {
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+	if err := ctx.Err(); err != nil {
+		return fileDiscoveryDocument{}, err
+	}
+	if r == nil || r.url == "" || r.client == nil {
+		return fileDiscoveryDocument{}, ErrHTTPRegistryURLRequired
+	}
+	resp, err := r.client.do(ctx, http.MethodGet, r.url, nil)
+	if err != nil {
+		return fileDiscoveryDocument{}, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if err := r.client.checkStatus(resp); err != nil {
+		return fileDiscoveryDocument{}, err
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, r.client.maxResponseBytes+1))
+	if err != nil {
+		return fileDiscoveryDocument{}, fmt.Errorf("a2a: read http registry: %w", err)
+	}
+	if int64(len(raw)) > r.client.maxResponseBytes {
+		return fileDiscoveryDocument{}, errors.New("a2a: http response too large")
+	}
+	return decodeDiscoveryDocument(raw, "http registry")
 }
 
 func (a *HTTPAgent) doJSON(ctx context.Context, method string, url string, input any, output any) error {

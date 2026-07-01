@@ -98,17 +98,21 @@ func (d *FileDiscoverer) readDocument(ctx context.Context) (fileDiscoveryDocumen
 	if err := ctx.Err(); err != nil {
 		return fileDiscoveryDocument{}, err
 	}
+	return decodeDiscoveryDocument(raw, "discovery file")
+}
+
+func decodeDiscoveryDocument(raw []byte, source string) (fileDiscoveryDocument, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) > 0 && raw[0] == '[' {
 		var cards []AgentCard
 		if err := json.Unmarshal(raw, &cards); err != nil {
-			return fileDiscoveryDocument{}, fmt.Errorf("a2a: decode discovery file: %w", err)
+			return fileDiscoveryDocument{}, fmt.Errorf("a2a: decode %s: %w", source, err)
 		}
 		return fileDiscoveryDocument{Agents: cards}, nil
 	}
 	var doc fileDiscoveryDocument
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return fileDiscoveryDocument{}, fmt.Errorf("a2a: decode discovery file: %w", err)
+		return fileDiscoveryDocument{}, fmt.Errorf("a2a: decode %s: %w", source, err)
 	}
 	return doc, nil
 }
