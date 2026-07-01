@@ -282,10 +282,10 @@ func (r *Registry) invoke(ctx context.Context, name string, args json.RawMessage
 	})
 	final := func(c *gopact.ToolContext) error {
 		result, err := entry.tool.Invoke(gopact.ContextWithRuntimeIDs(c.Context, c.IDs), c.Args)
+		c.Result = result
 		if err != nil {
 			return err
 		}
-		c.Result = result
 		return nil
 	}
 	handler := gopact.ComposeToolHandler(final, middlewares...)
