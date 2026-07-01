@@ -37,6 +37,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkDynamicFanOutResumesIncompleteTargets(ctx),
 		checkDynamicFanOutRunsAllTargets(ctx),
 		checkDynamicFanOutEmptyCompletes(ctx),
+		checkDynamicFanOutStopsOnTargetFailure(ctx),
 		checkLoopBranchExits(ctx),
 		checkLoopStepLimitFails(ctx),
 		checkRunnableNodeRunsSubgraph(ctx),
@@ -383,6 +384,45 @@ func checkDynamicFanOutEmptyCompletes(ctx context.Context) GraphConformanceResul
 		return failedGraphConformance(name, err)
 	}
 	return requireTrace(name, got, []string{"split"})
+}
+
+func checkDynamicFanOutStopsOnTargetFailure(ctx context.Context) GraphConformanceResult {
+	const name = "dynamic-fan-out-stops-on-target-failure"
+	wantErr := errors.New("middle failed")
+	rightRan := false
+	g := graph.New[traceState]()
+	g.AddNode("split", appendTrace("split"))
+	g.AddNode("left", appendTrace("left"))
+	g.AddNode("middle", func(context.Context, traceState) (traceState, error) {
+		return traceState{}, wantErr
+	})
+	g.AddNode("right", func(context.Context, traceState) (traceState, error) {
+		rightRan = true
+		return traceState{}, nil
+	})
+	g.AddEdge(graph.Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "middle", "right"}, nil
+	})
+	g.AddEdge("left", graph.End)
+	g.AddEdge("middle", graph.End)
+	g.AddEdge("right", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}))
+	if !errors.Is(err, wantErr) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want %v", err, wantErr))
+	}
+	if rightRan {
+		return failedGraphConformance(name, errors.New("fan-out target ran after sibling target failed"))
+	}
+	if len(events) < 2 || events[len(events)-1].Type != gopact.EventRunFailed {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want final run_failed", eventTypes(events)))
+	}
+	return passedGraphConformance(name)
 }
 
 func checkLoopBranchExits(ctx context.Context) GraphConformanceResult {
