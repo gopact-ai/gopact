@@ -38,11 +38,13 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "main.go"),
 		`agentName = "support-agent"`,
-		"a2a.NewHTTPHandler(scaffoldAgent{})",
+		"a2a.NewHTTPHandler(agent)",
+		"a2a.NewHTTPRegistryHandler",
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
 		"a2a.NewHTTPAgent",
+		"a2a.NewHTTPRegistry",
 	)
 	assertFileContains(t, filepath.Join(out, "README.md"),
 		"# support-agent",
