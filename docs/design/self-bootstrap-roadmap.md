@@ -133,7 +133,7 @@ go vet ./...
 - golden trajectory 未漂移；
 - run export schema validation 通过；
 - verification report status 必须为 passed；
-- release bundle 包含 run export、run effect replay、verification report、diff、test、policy、checkpoint、artifact 和 review evidence；
+- release bundle 包含 run export、run effect replay、verification report、diff、test、policy、A2A task、checkpoint、artifact 和 review evidence；
 - secret scan 通过，不存在敏感信息泄漏；
 - public API boundary、public API examples、repository boundary、v1 migration 和 external repository readiness 检查通过。
 
@@ -141,7 +141,7 @@ go vet ./...
 `RequireSelfBootstrapReleaseGateForExport` 提供最小可自举 release gate 的可复用校验入口，覆盖
 core mock CI、ext mock CI、examples mock CI、Agnes integration、run export、run effect replay、
 graph conformance、release bundle、public API boundary、public API examples、repository boundary、v1 migration、external
-repository readiness、external repository CI、secret scan、diff、file snapshot、command、checkpoint、
+repository readiness、external repository CI、secret scan、diff、file snapshot、command、A2A task、checkpoint、
 artifact、golden trajectory、policy 和 review evidence，并要求 release export 已 completed、无
 failure attribution、已封存同一份 verification report，verification report 已 passed 且与 run export
 对齐。

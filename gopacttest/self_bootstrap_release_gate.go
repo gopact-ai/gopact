@@ -65,6 +65,8 @@ const (
 	SelfBootstrapEvidenceTypeExternalRepositoryReadiness = "external_repository_readiness"
 	// SelfBootstrapEvidenceTypeReleaseBundle is the external Dev Agent release bundle evidence type.
 	SelfBootstrapEvidenceTypeReleaseBundle = "release_bundle"
+	// SelfBootstrapEvidenceTypeA2ATask is the cross-agent task evidence type.
+	SelfBootstrapEvidenceTypeA2ATask = "a2a_task"
 )
 
 // SelfBootstrapReleaseGateBundle carries a run export with its embedded self-bootstrap release report.
@@ -234,6 +236,7 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 				gopact.VerificationEvidenceTypeRunEffectReplay,
 				"checkpoint",
 				"artifact",
+				SelfBootstrapEvidenceTypeA2ATask,
 				VerificationEvidenceTypeCommand,
 				VerificationEvidenceTypeTrajectoryGolden,
 			},
@@ -332,6 +335,13 @@ func selfBootstrapReleaseGateChecks(
 			Status: gopact.VerificationStatusPassed,
 			Evidence: []gopact.VerificationEvidence{
 				{Type: gopact.VerificationEvidenceTypeRunEffectReplay, Ref: export.IDs.RunID, Summary: "run effect replay verified"},
+			},
+		},
+		{
+			ID:     "a2a-task:self-bootstrap-agent-cluster",
+			Status: gopact.VerificationStatusPassed,
+			Evidence: []gopact.VerificationEvidence{
+				{Type: SelfBootstrapEvidenceTypeA2ATask, Ref: "self-bootstrap-agent-cluster", Summary: "agent mesh task completed"},
 			},
 		},
 		{
