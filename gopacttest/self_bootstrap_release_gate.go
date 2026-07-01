@@ -49,6 +49,18 @@ const (
 	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./gopacttest/graphconformance"
 	// SelfBootstrapCheckA2AConformanceCommand is the standard A2A mesh conformance check.
 	SelfBootstrapCheckA2AConformanceCommand = "command:go test -count=1 ./a2a ./gopacttest/a2aconformance"
+	// SelfBootstrapCommandAgnesProviderIntegration is the standard local Agnes provider integration command.
+	SelfBootstrapCommandAgnesProviderIntegration = "(cd gopact-ext/models/agnes && go test -tags=integration -count=1 ./...)"
+	// SelfBootstrapCheckAgnesProviderIntegrationCommand is the standard local Agnes provider integration check.
+	SelfBootstrapCheckAgnesProviderIntegrationCommand = "command:" + SelfBootstrapCommandAgnesProviderIntegration
+	// SelfBootstrapCommandAgnesAgentTemplatesIntegration is the standard local Agnes-backed agent template command.
+	SelfBootstrapCommandAgnesAgentTemplatesIntegration = "(cd gopact-ext/tests/agents && go test -tags=integration -count=1 ./...)"
+	// SelfBootstrapCheckAgnesAgentTemplatesIntegrationCommand is the standard local Agnes-backed agent template check.
+	SelfBootstrapCheckAgnesAgentTemplatesIntegrationCommand = "command:" + SelfBootstrapCommandAgnesAgentTemplatesIntegration
+	// SelfBootstrapCommandAgnesExamplesIntegration is the standard local Agnes examples integration command.
+	SelfBootstrapCommandAgnesExamplesIntegration = "(cd gopact-examples && go test -tags=integration -count=1 ./quickstart/agnes-chat)"
+	// SelfBootstrapCheckAgnesExamplesIntegrationCommand is the standard local Agnes examples integration check.
+	SelfBootstrapCheckAgnesExamplesIntegrationCommand = "command:" + SelfBootstrapCommandAgnesExamplesIntegration
 	// SelfBootstrapCheckDeprecationPolicy is the standard deprecation policy snapshot check.
 	SelfBootstrapCheckDeprecationPolicy = "file-snapshot:docs/design/deprecation-policy.md"
 	// SelfBootstrapCheckAPIErgonomics is the standard API ergonomics snapshot check.
@@ -235,6 +247,15 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 			},
 		},
 		{
+			Name: "self-bootstrap-local-agnes-integration",
+			RequiredCheckIDs: []string{
+				SelfBootstrapCheckAgnesProviderIntegrationCommand,
+				SelfBootstrapCheckAgnesAgentTemplatesIntegrationCommand,
+				SelfBootstrapCheckAgnesExamplesIntegrationCommand,
+			},
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCommand},
+		},
+		{
 			Name: "self-bootstrap-behavior-evidence",
 			RequiredCheckIDs: []string{
 				SelfBootstrapCheckGraphConformanceCommand,
@@ -327,6 +348,9 @@ func selfBootstrapReleaseGateChecks(
 		selfBootstrapCommandEvidenceCheck("go test -run '^Example' ./..."),
 		selfBootstrapCommandEvidenceCheck("go test -count=1 ./gopacttest/graphconformance"),
 		selfBootstrapCommandEvidenceCheck("go test -count=1 ./a2a ./gopacttest/a2aconformance"),
+		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesProviderIntegration),
+		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesAgentTemplatesIntegration),
+		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExamplesIntegration),
 		{
 			ID:     "checkpoint:" + checkpointRef,
 			Status: gopact.VerificationStatusPassed,
