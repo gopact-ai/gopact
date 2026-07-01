@@ -45,6 +45,7 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
+		"TestScaffoldAgentServesHealthEndpoints",
 		"TestScaffoldServerStopsOnContextCancel",
 		"a2a.NewHTTPAgent",
 		"a2a.NewHTTPRegistry",

@@ -461,6 +461,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -496,6 +497,24 @@ func TestScaffoldAgentServesA2A(t *testing.T) {
 	}
 	if result.TaskID != "task-1" || result.Output != agentName+" handled: hello" {
 		t.Fatalf("Send() = %+v, want scaffold response", result)
+	}
+}
+
+func TestScaffoldAgentServesHealthEndpoints(t *testing.T) {
+	server := httptest.NewServer(newScaffoldHTTPHandler())
+	defer server.Close()
+
+	for _, path := range []string{"/healthz", "/readyz"} {
+		resp, err := server.Client().Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s error = %v", path, err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, resp.StatusCode, http.StatusOK)
+		}
 	}
 }
 
