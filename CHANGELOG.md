@@ -25,6 +25,8 @@ template, adapter-boundary, and release-process changes.
 - Self-bootstrap release gate now requires the core feature coverage snapshot.
 - Self-bootstrap release gate now requires A2A mesh conformance command
   evidence.
+- Self-bootstrap release gate now requires explicit local Agnes integration
+  command evidence for provider, agent template, and example coverage.
 - Development docs now distinguish core SDK readiness from external
   adapter/plugin/template readiness.
 
