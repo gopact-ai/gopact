@@ -26,9 +26,8 @@ go test -run Example_graphRun .
 
 ```bash
 go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
-cd /tmp/support-agent
-go test ./...
-GOPACT_AGENT_ADDR=:8080 go run .
+(cd /tmp/support-agent && go test ./...)
+go run ./cmd/gopact agent run /tmp/support-agent
 ```
 
 ## 核心概念

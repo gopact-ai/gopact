@@ -11,6 +11,7 @@ import (
 	"go/format"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
@@ -79,6 +80,8 @@ func runAgent(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	switch args[0] {
 	case "init":
 		return runAgentInit(ctx, args[1:], stdout, stderr)
+	case "run":
+		return runAgentRun(ctx, args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		printAgentUsage(stdout)
 		return exitOK
@@ -145,6 +148,33 @@ func runAgentInit(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		return exitError
 	}
 	_, _ = fmt.Fprintf(stdout, "created agent scaffold %s in %s\n", name, out)
+	return exitOK
+}
+
+func runAgentRun(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("gopact agent run", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() > 1 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %s\n", strings.Join(fs.Args()[1:], " "))
+		return exitUsage
+	}
+	dir := "."
+	if fs.NArg() == 1 {
+		dir = fs.Arg(0)
+	}
+
+	cmd := exec.CommandContext(ctx, "go", "run", ".")
+	cmd.Dir = dir
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Env = os.Environ()
+	if err := cmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(stderr, "agent run: %v\n", err)
+		return exitError
+	}
 	return exitOK
 }
 
@@ -275,15 +305,18 @@ func writeAgentScaffold(ctx context.Context, out string, files map[string][]byte
 func printUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
   gopact agent init <name> -module <module> [-out <dir>] [-sdk-version <version>]
+  gopact agent run [dir]
 
 Commands:
   agent init   Create a runnable A2A HTTP agent scaffold.
+  agent run    Run an agent module with go run.
 `)
 }
 
 func printAgentUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
   gopact agent init <name> -module <module> [-out <dir>] [-sdk-version <version>]
+  gopact agent run [dir]
 `)
 }
 
@@ -607,7 +640,7 @@ Generated gopact A2A HTTP agent scaffold.
 
 ` + "```bash" + `
 go test ./...
-GOPACT_AGENT_ADDR=:8080 go run .
+GOPACT_AGENT_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
 The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed.
