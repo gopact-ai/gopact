@@ -301,8 +301,11 @@ import (
 	"errors"
 	"iter"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gopact-ai/gopact/a2a"
@@ -403,18 +406,51 @@ func newScaffoldHTTPHandler() http.Handler {
 }
 
 func main() {
-	addr := os.Getenv(agentAddrEnv)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := serve(ctx, os.Getenv(agentAddrEnv)); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func serve(ctx context.Context, addr string) error {
 	if addr == "" {
 		addr = ":8080"
 	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           newScaffoldHTTPHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	log.Printf("serving %s on %s", agentName, addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	errs := make(chan error, 1)
+	go func() {
+		log.Printf("serving %s on %s", agentName, listener.Addr())
+		errs <- server.Serve(listener)
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		err := <-errs
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case err := <-errs:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
 	}
 }
 `
@@ -428,6 +464,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact/a2a"
 )
@@ -503,6 +540,24 @@ func TestScaffoldAgentRejectsEmptyCancelID(t *testing.T) {
 	err := scaffoldAgent{}.Cancel(context.Background(), "")
 	if !errors.Is(err, a2a.ErrTaskIDRequired) {
 		t.Fatalf("Cancel() error = %v, want ErrTaskIDRequired", err)
+	}
+}
+
+func TestScaffoldServerStopsOnContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	errs := make(chan error, 1)
+	go func() {
+		errs <- serve(ctx, "127.0.0.1:0")
+	}()
+	cancel()
+
+	select {
+	case err := <-errs:
+		if err != nil {
+			t.Fatalf("serve() error = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve() did not stop after context cancel")
 	}
 }
 

@@ -38,11 +38,14 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "main.go"),
 		`agentName = "support-agent"`,
+		"signal.NotifyContext",
+		"server.Shutdown",
 		"a2a.NewHTTPHandler(agent)",
 		"a2a.NewHTTPRegistryHandler",
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
+		"TestScaffoldServerStopsOnContextCancel",
 		"a2a.NewHTTPAgent",
 		"a2a.NewHTTPRegistry",
 	)
