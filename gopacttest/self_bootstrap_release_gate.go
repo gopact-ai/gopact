@@ -47,6 +47,8 @@ const (
 	SelfBootstrapCheckFeatureCoverage = "file-snapshot:FEATURES.md"
 	// SelfBootstrapCheckGraphConformanceCommand is the standard graph workflow conformance check.
 	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./gopacttest/graphconformance"
+	// SelfBootstrapCheckA2AConformanceCommand is the standard A2A mesh conformance check.
+	SelfBootstrapCheckA2AConformanceCommand = "command:go test -count=1 ./a2a ./gopacttest/a2aconformance"
 	// SelfBootstrapCheckDeprecationPolicy is the standard deprecation policy snapshot check.
 	SelfBootstrapCheckDeprecationPolicy = "file-snapshot:docs/design/deprecation-policy.md"
 	// SelfBootstrapCheckAPIErgonomics is the standard API ergonomics snapshot check.
@@ -236,6 +238,7 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 			Name: "self-bootstrap-behavior-evidence",
 			RequiredCheckIDs: []string{
 				SelfBootstrapCheckGraphConformanceCommand,
+				SelfBootstrapCheckA2AConformanceCommand,
 			},
 			RequiredEvidenceTypes: []string{
 				gopact.VerificationEvidenceTypeRunExport,
@@ -323,6 +326,7 @@ func selfBootstrapReleaseGateChecks(
 		},
 		selfBootstrapCommandEvidenceCheck("go test -run '^Example' ./..."),
 		selfBootstrapCommandEvidenceCheck("go test -count=1 ./gopacttest/graphconformance"),
+		selfBootstrapCommandEvidenceCheck("go test -count=1 ./a2a ./gopacttest/a2aconformance"),
 		{
 			ID:     "checkpoint:" + checkpointRef,
 			Status: gopact.VerificationStatusPassed,

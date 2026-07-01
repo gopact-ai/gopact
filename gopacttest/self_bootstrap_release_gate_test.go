@@ -286,6 +286,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingGraphConformanceComman
 	}
 }
 
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingA2AConformanceCommand(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckA2AConformanceCommand)
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing A2A conformance command: %+v", results)
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingRepositoryBoundary(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckRepositoryBoundary)
