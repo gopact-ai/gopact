@@ -37,6 +37,8 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkDynamicFanOutResumesIncompleteTargets(ctx),
 		checkDynamicFanOutRunsAllTargets(ctx),
 		checkDynamicFanOutEmptyCompletes(ctx),
+		checkLoopBranchExits(ctx),
+		checkLoopStepLimitFails(ctx),
 		checkRunnableNodeRunsSubgraph(ctx),
 		checkRunnableNodeStreamsNestedEvents(ctx),
 		checkRunnableNodeInheritsRuntimeIDs(ctx),
@@ -381,6 +383,47 @@ func checkDynamicFanOutEmptyCompletes(ctx context.Context) GraphConformanceResul
 		return failedGraphConformance(name, err)
 	}
 	return requireTrace(name, got, []string{"split"})
+}
+
+func checkLoopBranchExits(ctx context.Context) GraphConformanceResult {
+	const name = "loop-branch-exits"
+	g := graph.New[traceState]()
+	g.AddNode("loop", appendTrace("loop"))
+	g.AddEdge(graph.Start, "loop")
+	g.AddBranch("loop", func(_ context.Context, state traceState) ([]string, error) {
+		if len(state.Trace) < 3 {
+			return []string{"loop"}, nil
+		}
+		return []string{graph.End}, nil
+	})
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	return requireTrace(name, got, []string{"loop", "loop", "loop"})
+}
+
+func checkLoopStepLimitFails(ctx context.Context) GraphConformanceResult {
+	const name = "loop-step-limit-fails"
+	g := graph.New[traceState]()
+	g.AddNode("loop", appendTrace("loop"))
+	g.AddEdge(graph.Start, "loop")
+	g.AddEdge("loop", "loop")
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	got, err := run.Invoke(ctx, traceState{}, graph.WithMaxSteps(2))
+	if err == nil || !strings.Contains(err.Error(), "exceeded max steps 2") {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want max steps error", err))
+	}
+	return requireTrace(name, got, []string{"loop", "loop"})
 }
 
 func checkRunnableNodeRunsSubgraph(ctx context.Context) GraphConformanceResult {

@@ -24,6 +24,8 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"dynamic-fan-out-resumes-incomplete-targets",
 		"dynamic-fan-out-runs-all-targets",
 		"dynamic-fan-out-empty-completes",
+		"loop-branch-exits",
+		"loop-step-limit-fails",
 		"runnable-node-runs-subgraph",
 		"runnable-node-streams-nested-events",
 		"runnable-node-inherits-runtime-ids",
