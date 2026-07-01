@@ -33,6 +33,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkBranchResumeUsesCheckpointQueue(ctx),
 		checkDAGFanInRunsJoinAfterParents(ctx),
 		checkDAGFanInStopsWhenParentFails(ctx),
+		checkDAGFanInPreservesEdgeOrder(ctx),
 		checkDynamicFanOutResumesIncompleteTargets(ctx),
 		checkDynamicFanOutRunsAllTargets(ctx),
 		checkDynamicFanOutEmptyCompletes(ctx),
@@ -241,6 +242,37 @@ func checkDAGFanInStopsWhenParentFails(ctx context.Context) GraphConformanceResu
 		return failedGraphConformance(name, fmt.Errorf("events = %v, want final run_failed", eventTypes(events)))
 	}
 	return passedGraphConformance(name)
+}
+
+func checkDAGFanInPreservesEdgeOrder(ctx context.Context) GraphConformanceResult {
+	const name = "dag-fan-in-preserves-edge-order"
+	joinRuns := 0
+	g := graph.New[traceState]()
+	g.AddNode("left", appendTrace("left"))
+	g.AddNode("right", appendTrace("right"))
+	g.AddNode("join", func(_ context.Context, state traceState) (traceState, error) {
+		joinRuns++
+		state.Trace = append(state.Trace, "join")
+		return state, nil
+	})
+	g.AddEdge(graph.Start, "right")
+	g.AddEdge(graph.Start, "left")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	got, err := run.Invoke(ctx, traceState{})
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	if joinRuns != 1 {
+		return failedGraphConformance(name, fmt.Errorf("join runs = %d, want 1", joinRuns))
+	}
+	return requireTrace(name, got, []string{"right", "left", "join"})
 }
 
 func checkDynamicFanOutResumesIncompleteTargets(ctx context.Context) GraphConformanceResult {
