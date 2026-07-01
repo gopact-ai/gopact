@@ -23,6 +23,8 @@ template, adapter-boundary, and release-process changes.
 - v1 migration release gate now consumes explicit core and external CI gate
   requirements.
 - Self-bootstrap release gate now requires the core feature coverage snapshot.
+- Self-bootstrap release gate now requires A2A mesh conformance command
+  evidence.
 - Development docs now distinguish core SDK readiness from external
   adapter/plugin/template readiness.
 
