@@ -80,6 +80,19 @@ func NewHTTPAgent(endpoint string, opts ...HTTPAgentOption) (*HTTPAgent, error) 
 	return agent, nil
 }
 
+// NewHTTPCardListers creates HTTP card listers for mesh bootstrap.
+func NewHTTPCardListers(endpoints []string, opts ...HTTPAgentOption) ([]CardLister, error) {
+	listers := make([]CardLister, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		agent, err := NewHTTPAgent(endpoint, opts...)
+		if err != nil {
+			return nil, err
+		}
+		listers = append(listers, agent)
+	}
+	return listers, nil
+}
+
 // WithHTTPClient sets the HTTP client used by an HTTP A2A agent.
 func WithHTTPClient(client *http.Client) HTTPAgentOption {
 	return func(agent *HTTPAgent) error {

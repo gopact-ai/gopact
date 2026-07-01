@@ -163,6 +163,45 @@ func TestHTTPAgentListCardsReturnsWellKnownAgentCard(t *testing.T) {
 	}
 }
 
+func TestNewHTTPCardListersBootstrapMultipleEndpoints(t *testing.T) {
+	ctx := context.Background()
+	newServer := func(card AgentCard) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/.well-known/agent-card.json" {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Header.Get("X-Cluster") != "dev" {
+				http.Error(w, "missing cluster header", http.StatusUnauthorized)
+				return
+			}
+			writeHTTPJSON(w, http.StatusOK, card)
+		}))
+	}
+	planner := newServer(AgentCard{Name: "planner", Capabilities: []string{"planning"}})
+	defer planner.Close()
+	reviewer := newServer(AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}})
+	defer reviewer.Close()
+
+	listers, err := NewHTTPCardListers([]string{planner.URL, reviewer.URL}, WithHTTPHeader("X-Cluster", "dev"))
+	if err != nil {
+		t.Fatalf("NewHTTPCardListers() error = %v", err)
+	}
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	bootstrap, err := mesh.Bootstrap(ctx, listers...)
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if len(bootstrap.Cards) != 2 ||
+		bootstrap.Cards[0].Name != "planner" ||
+		bootstrap.Cards[1].Name != "reviewer" {
+		t.Fatalf("Bootstrap() cards = %+v, want planner then reviewer", bootstrap.Cards)
+	}
+}
+
 func TestHTTPAgentDiscoverMatchesNameAndMetadata(t *testing.T) {
 	ctx := context.Background()
 	agent := FakeAgent{
