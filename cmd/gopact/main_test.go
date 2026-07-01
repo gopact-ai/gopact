@@ -96,8 +96,8 @@ func TestRunAgentInitRejectsMissingModule(t *testing.T) {
 }
 
 func TestDefaultSDKVersionFallbackTracksLatestTag(t *testing.T) {
-	if got := defaultSDKVersion(); got != "v0.0.21" {
-		t.Fatalf("defaultSDKVersion() = %q, want v0.0.21", got)
+	if got := defaultSDKVersion(); got != "v0.0.25" {
+		t.Fatalf("defaultSDKVersion() = %q, want v0.0.25", got)
 	}
 }
 
