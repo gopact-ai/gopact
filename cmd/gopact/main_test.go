@@ -55,6 +55,7 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 		"# support-agent",
 		"gopact agent run .",
 		"GOPACT_AGENT_ADDR",
+		"loads `.env`",
 	)
 	assertFileContains(t, filepath.Join(out, ".env.example"),
 		"GOPACT_AGENT_ADDR=:8080",
@@ -123,6 +124,75 @@ func main() {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunAgentRunLoadsDotEnvFileWithoutOverridingEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/agent-run-dotenv\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Println(os.Getenv("GOPACT_DOTENV_VALUE"))
+	fmt.Println(os.Getenv("GOPACT_DOTENV_EXISTING"))
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(`
+# local agent settings
+GOPACT_DOTENV_VALUE=from-dotenv
+GOPACT_DOTENV_EXISTING=from-dotenv
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOPACT_DOTENV_EXISTING", "from-env")
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"agent", "run", dir}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if got, want := strings.TrimSpace(stdout.String()), "from-dotenv\nfrom-env"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestAgentRunEnvSupportsExportAndRejectsInvalidDotEnv(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(`
+export GOPACT_EXPORTED=from-dotenv
+GOPACT_EXISTING=from-dotenv
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env, err := agentRunEnv(dir, []string{"GOPACT_EXISTING=from-env"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(env, "\n")
+	if !strings.Contains(got, "GOPACT_EXPORTED=from-dotenv") {
+		t.Fatalf("env missing exported value:\n%s", got)
+	}
+	if strings.Contains(got, "GOPACT_EXISTING=from-dotenv") {
+		t.Fatalf("env must not override existing values:\n%s", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("GOPACT_BROKEN\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agentRunEnv(dir, nil); err == nil || !strings.Contains(err.Error(), "missing =") {
+		t.Fatalf("agentRunEnv() err = %v, want missing = parse error", err)
 	}
 }
 
