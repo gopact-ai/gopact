@@ -4,31 +4,41 @@
 [![License](https://img.shields.io/github/license/gopact-ai/gopact)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/gopact-ai/gopact.svg)](https://pkg.go.dev/github.com/gopact-ai/gopact)
 
+Go SDK contracts for typed, observable, and resumable agent workflows.
+
 <!-- gopact:doc-language: zh,en -->
 
 ## 中文
 
-`gopact` 是一个 Go-first、provider-neutral 的 agent SDK 骨架，重点放在显式契约、类型化 workflow/graph 执行、可观察事件流，以及任意稳定 step 边界的 export/import/resume。
+`gopact` 是一个面向 Go 应用的 Agent SDK core。它不绑定具体模型厂商、存储后端或 UI 渠道，而是提供可测试的运行时契约：typed graph、event stream、checkpoint/resume、tool/MCP/A2A 边界、policy/redaction，以及 release evidence。
 
-当前仓库保存 core SDK：公共契约、运行时 facade、轻量参考实现、conformance helper 和 release gate evidence。生产 provider、存储、channel、observability 与常用 agent template 由 [gopact-ext](https://github.com/gopact-ai/gopact-ext) 提供；可运行示例由 [gopact-examples](https://github.com/gopact-ai/gopact-examples) 提供。
+官方仓库分工：
+
+| 仓库 | 职责 |
+| --- | --- |
+| [`gopact`](https://github.com/gopact-ai/gopact) | core SDK、公共契约、参考实现、conformance helper |
+| [`gopact-ext`](https://github.com/gopact-ai/gopact-ext) | 官方 provider、agent template、dev-agent helper 等扩展模块 |
+| [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) | 可运行 quickstart、provider 示例、workflow 示例 |
 
 ## 安装
+
+需要 Go 1.25 或更新版本：
 
 ```bash
 go get github.com/gopact-ai/gopact
 ```
 
-SDK 自身不读取配置文件、环境变量或本地 secret；provider、backend、channel、plugin 的配置都应由宿主应用通过 Go options、接口或 typed snapshot 注入。
+SDK 不读取 `.env`、配置文件或本地 secret。模型、工具、存储、channel 和安全策略都由宿主应用通过 Go options 或接口显式注入。
 
 ## 快速开始
 
-最短可执行路径是 `example_test.go` 里的 `Example_graphRun`：它创建 typed graph，运行单个 node，读取事件流，并通过内存 checkpoint store 持久化 step 边界。
+运行 core 中最小 graph 示例：
 
 ```bash
 go test -run Example_graphRun .
 ```
 
-从零启动一个可测试的 A2A HTTP agent scaffold：
+生成一个可测试的 A2A HTTP agent scaffold：
 
 ```bash
 go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
@@ -36,42 +46,51 @@ go run ./cmd/gopact agent init support-agent -module example.com/support-agent -
 go run ./cmd/gopact agent run /tmp/support-agent
 ```
 
+需要模型 provider 或完整 agent template 时，从 [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) 开始；core 仓库只保留 provider-neutral 契约和离线可测实现。
+
 ## 核心概念
 
-- `Setup` / `Defaults`：SDK 级默认值入口，支持宿主注入 logger、log level 和 runtime identity defaults。
-- `Runner` / `TurnLoop`：`Runner` 执行一次 run；`TurnLoop` 处理多轮输入、抢占、取消和恢复。
-- `graph`：类型化 workflow 执行层，负责 node、edge、middleware、event stream 和 step 边界。
-- `RunExport` / `StepExport`：过程导出和恢复契约，目标是在任意稳定 step 边界中断后可以 import/resume。
-- `VerificationRecorder`：记录已观察证据，不替宿主执行隐藏命令，也不保存 raw prompt、raw response 或 secret。
-- adapter / plugin / template：生产 provider、backend、channel、observability 和业务 agent 组装通过外部 extension 表达。
+| 概念 | 说明 |
+| --- | --- |
+| `graph` | 类型化 workflow runtime，负责 node、edge、middleware、event 和 step 边界 |
+| `checkpoint` | checkpoint store、codec、resume payload 校验和稳定恢复点 |
+| `ModelRequest` / provider | provider-neutral 模型请求、响应、tool call、streaming 和 conformance 契约 |
+| `tools` / `mcp` / `a2a` | 本地工具、MCP server、远程 agent 的统一能力边界 |
+| `Policy` / redaction | 外部动作、secret、prompt/tool payload 和 artifact 的安全边界 |
+| `VerificationRecorder` | 记录已经观察到的测试、CI、文件快照、review 和 release evidence |
 
 ## 当前稳定性
 
-`gopact` 仍是 pre-v1 SDK。当前适合 SDK API 评审、template/conformance 开发、外部 adapter scaffold 和自举实验，不应被包装成成熟的完整 agent 平台。
+`gopact` 仍处于 pre-v1。当前适合：
+
+- 评审和收敛 Agent SDK public API；
+- 编写可恢复 workflow、A2A mesh、MCP/tool 边界和 conformance 测试；
+- 为 `gopact-ext` 和业务应用开发 provider、backend、channel、agent template。
+
+当前不承诺：
+
+- v1 前 public API 完全稳定；
+- core 直接内置生产模型厂商、云存储、向量库或外部 UI 渠道；
+- 不经过宿主应用配置就自动读取环境变量、secret 或远端配置。
 
 ## 文档地图
 
-- [doc/README.md](doc/README.md)：完整文档索引。
-- [doc/FEATURES.md](doc/FEATURES.md)：core SDK 可执行能力覆盖矩阵；ext/examples 仓库各自维护对应矩阵。
-- [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md)：公开仓库的 PR、CI、自动合并和发布前检查规则。
+| 文档 | 用途 |
+| --- | --- |
+| [doc/README.md](doc/README.md) | 完整文档索引 |
+| [doc/FEATURES.md](doc/FEATURES.md) | core 能力矩阵和离线验收命令 |
+| [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md) | PR、CI、自动合并和公开仓库治理 |
 
 ## 贡献与安全
 
-贡献入口见 [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md)，安全策略见 [doc/SECURITY.md](doc/SECURITY.md)，变更记录见 [doc/CHANGELOG.md](doc/CHANGELOG.md)。本仓库采用 [MIT 协议](LICENSE)。
-
-## 开发
-
-```bash
-make fmt
-make test
-make vet
-```
+- 贡献流程：[doc/CONTRIBUTING.md](doc/CONTRIBUTING.md)
+- 安全策略：[doc/SECURITY.md](doc/SECURITY.md)
+- 变更记录：[doc/CHANGELOG.md](doc/CHANGELOG.md)
+- 许可证：[MIT](LICENSE)
 
 ## English
 
-`gopact` is a Go-first, provider-neutral agent SDK skeleton for explicit contracts, typed workflow/graph execution, observable event streams, and export/import/resume at stable step boundaries.
-
-This repository contains the core SDK: public contracts, runtime facades, lightweight reference implementations, conformance helpers, and release-gate evidence. Production providers, storage backends, channels, observability adapters, and reusable agent templates live in [gopact-ext](https://github.com/gopact-ai/gopact-ext). Runnable examples live in [gopact-examples](https://github.com/gopact-ai/gopact-examples).
+`gopact` is the core Go SDK for typed, observable, and resumable agent workflows. It keeps model providers, storage backends, UI channels, and production adapters outside the core package so applications can own configuration, secrets, policy, and deployment choices.
 
 Install:
 
@@ -79,10 +98,12 @@ Install:
 go get github.com/gopact-ai/gopact
 ```
 
-Start with `Example_graphRun`:
+Run the smallest executable graph example:
 
 ```bash
 go test -run Example_graphRun .
 ```
 
-The main documentation index is [doc/README.md](doc/README.md). The capability matrix is [doc/FEATURES.md](doc/FEATURES.md). Contribution, security, and changelog documents are under [doc/](doc/).
+Use this repository for core contracts, graph execution, checkpoint/resume, tool/MCP/A2A boundaries, policy/redaction, and conformance helpers. Use [`gopact-ext`](https://github.com/gopact-ai/gopact-ext) for official extensions and [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) for runnable examples.
+
+The main documentation index is [doc/README.md](doc/README.md). Feature coverage is tracked in [doc/FEATURES.md](doc/FEATURES.md). Contribution, security, changelog, and maintainer governance documents are under [doc/](doc/).
