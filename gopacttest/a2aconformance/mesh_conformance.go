@@ -64,6 +64,7 @@ func CheckAgentMeshConformance(ctx context.Context, harness AgentMeshConformance
 		checkMeshFacadeAuthenticatesCall(ctx, task),
 		checkMeshFacadeDiscoversAndRoutes(ctx, harness.Agent, query, harness.ExpectedCard, task),
 		checkMeshFacadePublishesEvidence(ctx, harness.Agent, query, harness.ExpectedCard, task),
+		checkMeshFacadeHeartbeatPublishesEvidence(ctx, harness.Agent, harness.ExpectedCard),
 		checkMeshFacadeRoutesWithFallback(ctx, harness.Agent, query, harness.ExpectedCard, task),
 		checkMeshFacadePolicyDenyFailClosed(ctx, harness.Agent, query, harness.ExpectedCard, task),
 		checkMeshFacadePolicyReviewInterrupts(ctx, harness.Agent, query, harness.ExpectedCard, task),
@@ -832,6 +833,62 @@ func checkMeshFacadePublishesEvidence(ctx context.Context, agent a2a.Agent, quer
 		}
 	}
 	return passedAgentMeshConformance("mesh-publishes-evidence")
+}
+
+func checkMeshFacadeHeartbeatPublishesEvidence(ctx context.Context, agent a2a.Agent, expected a2a.AgentCard) AgentMeshConformanceResult {
+	const caseName = "mesh-heartbeat-publishes-evidence"
+	if agent == nil {
+		return failedAgentMeshConformance(caseName, errors.New("agent is nil"))
+	}
+	card := expected
+	if card.Name == "" {
+		card = agent.Card()
+	}
+	if card.Name == "" {
+		return failedAgentMeshConformance(caseName, errors.New("agent card name is empty"))
+	}
+	ctx, meshIDs, ctxIDs := meshRuntimeIDProbeContext(ctx)
+	wantIDs := ctxIDs.WithDefaults(meshIDs)
+	events := []gopact.Event{}
+	mesh, err := a2a.NewMesh(
+		a2a.WithMeshRuntimeIDs(meshIDs),
+		a2a.WithMeshEventSink(func(_ context.Context, event gopact.Event) error {
+			events = append(events, event)
+			return nil
+		}),
+	)
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	registration, err := mesh.RegisterWithLease(context.Background(), a2a.FakeAgent{CardValue: card}, time.Minute)
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if expected.Name != "" && registration.Card.Name != expected.Name {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("registered card name = %q, want %q", registration.Card.Name, expected.Name))
+	}
+	events = nil
+
+	renewed, err := mesh.Heartbeat(ctx, registration.Card.Name, 2*time.Minute)
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if !renewed.ExpiresAt.After(registration.Card.ExpiresAt) {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("renewed expiry = %v, want after %v", renewed.ExpiresAt, registration.Card.ExpiresAt))
+	}
+	if len(events) != 1 || events[0].Type != gopact.EventA2AAgentHeartbeat {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("heartbeat events = %+v, want one heartbeat event", events))
+	}
+	if err := checkMeshRuntimeEventIDs(events, wantIDs); err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if events[0].Metadata["agent_name"] != registration.Card.Name {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("heartbeat agent_name = %v, want %q", events[0].Metadata["agent_name"], registration.Card.Name))
+	}
+	if events[0].Metadata["lease_expires_at"] == "" {
+		return failedAgentMeshConformance(caseName, errors.New("heartbeat missing lease expiry metadata"))
+	}
+	return passedAgentMeshConformance(caseName)
 }
 
 func checkMeshFacadeRoutesWithFallback(ctx context.Context, agent a2a.Agent, query a2a.DiscoveryQuery, expected a2a.AgentCard, task a2a.Task) AgentMeshConformanceResult {
