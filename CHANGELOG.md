@@ -36,6 +36,9 @@ template, adapter-boundary, and release-process changes.
   bare agent-card JSON array for lower-friction local mesh registries.
 - v1 migration release gate now consumes explicit core and external CI gate
   requirements.
+- CI now runs independent hygiene, unit, race, static-analysis, coverage,
+  conformance, and security gates in parallel while preserving `ci/test` as the
+  required aggregate status check.
 - Self-bootstrap release gate now requires the core feature coverage snapshot.
 - Self-bootstrap release gate now requires A2A mesh conformance command
   evidence.

@@ -224,6 +224,28 @@ func TestRepositoryPublicReadinessAndPRGovernanceAreConfigured(t *testing.T) {
 	}
 }
 
+func TestCoreCIWorkflowOptimizesIndependentGatesForParallelFeedback(t *testing.T) {
+	workflow := readTextFile(t, ".github/workflows/ci.yml")
+
+	for _, want := range []string{
+		"concurrency:",
+		"group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
+		"cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+		"hygiene:",
+		"unit:",
+		"race:",
+		"static:",
+		"coverage:",
+		"conformance:",
+		"security:",
+		"needs: [hygiene, unit, race, static, coverage, conformance, security]",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("core CI workflow missing parallel feedback control %q", want)
+		}
+	}
+}
+
 func TestSelfBootstrapReleaseGateTracksCoreCIGates(t *testing.T) {
 	manifest := loadCoreCIGatesManifest(t)
 	var selfBootstrapGates []string
