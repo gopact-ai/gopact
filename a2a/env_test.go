@@ -7,7 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/gopact-ai/gopact"
 )
 
 func TestNewEnvCardListersBootstrapsConfiguredSources(t *testing.T) {
@@ -113,6 +116,145 @@ func TestMeshBootstrapEnvReturnsEmptyResultForEmptyEnv(t *testing.T) {
 	}
 }
 
+func TestMeshBootstrapEnvAppliesHTTPOptionsToRegisteredAgents(t *testing.T) {
+	ctx := context.Background()
+	server := newHeaderProtectedSyncEnvAgent(t)
+	defer server.Close()
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	if _, _, err := mesh.BootstrapEnv(ctx, func(key string) string {
+		if key == EnvA2AEndpoints {
+			return server.URL
+		}
+		return ""
+	}, WithHTTPHeader("X-Cluster", "dev")); err != nil {
+		t.Fatalf("BootstrapEnv() error = %v", err)
+	}
+
+	result, err := mesh.Call(ctx, "header-agent", Task{ID: "task-1", Input: "task"})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if result.Output != "synced: task" {
+		t.Fatalf("Call() output = %q, want synced task", result.Output)
+	}
+}
+
+func TestMeshSyncEnvBootstrapsSourcesAndPrunesUnreadyHTTPAgents(t *testing.T) {
+	ctx := context.Background()
+	stale := newSyncEnvHTTPAgent(t, AgentCard{Name: "stale-agent"}, false)
+	defer stale.Close()
+	ready := newSyncEnvHTTPAgent(t, AgentCard{Name: "ready-agent", Capabilities: []string{"planning"}}, true)
+	defer ready.Close()
+	filePath := filepath.Join(t.TempDir(), "agents.json")
+	raw, err := json.Marshal([]AgentCard{{Name: "stale-agent", URL: stale.URL}})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(filePath, raw, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	var events []gopact.Event
+	mesh, err := NewMesh(WithMeshEventSink(func(ctx context.Context, event gopact.Event) error {
+		events = append(events, event)
+		return nil
+	}))
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+
+	result, err := mesh.SyncEnv(ctx, func(key string) string {
+		switch key {
+		case EnvA2ARegistryFile:
+			return filePath
+		case EnvA2AEndpoints:
+			return ready.URL
+		default:
+			return ""
+		}
+	}, WithHTTPReadinessCheck())
+	if err != nil {
+		t.Fatalf("SyncEnv() error = %v", err)
+	}
+
+	if got, want := result.Sources, []string{"file registry", "HTTP endpoints"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("SyncEnv() sources = %v, want %v", got, want)
+	}
+	if got, want := cardNames(result.Bootstrap.Cards), []string{"stale-agent", "ready-agent"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("SyncEnv() bootstrap cards = %v, want %v", got, want)
+	}
+	if got, want := cardNames(result.Eviction.Cards), []string{"stale-agent"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("SyncEnv() evicted cards = %v, want %v", got, want)
+	}
+	if got, want := cardNames(result.Cards), []string{"ready-agent"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("SyncEnv() final cards = %v, want %v", got, want)
+	}
+	wantEvents := []gopact.EventType{
+		gopact.EventA2AAgentCardFetched,
+		gopact.EventA2AAgentCardFetched,
+		gopact.EventA2AAgentRegistered,
+		gopact.EventA2AAgentRegistered,
+		gopact.EventA2AAgentEvicted,
+	}
+	if got := eventTypes(result.Events); !reflect.DeepEqual(got, wantEvents) {
+		t.Fatalf("SyncEnv() events = %v, want %v", got, wantEvents)
+	}
+	if got := eventTypes(events); !reflect.DeepEqual(got, wantEvents) {
+		t.Fatalf("published events = %v, want %v", got, wantEvents)
+	}
+	if result.Eviction.Events[0].Metadata["eviction_reason"] != "readiness_failed" {
+		t.Fatalf("eviction metadata = %+v, want readiness_failed", result.Eviction.Events[0].Metadata)
+	}
+}
+
+func TestMeshSyncEnvAppliesHTTPOptionsToRegisteredAgents(t *testing.T) {
+	ctx := context.Background()
+	server := newHeaderProtectedSyncEnvAgent(t)
+	defer server.Close()
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	if _, err := mesh.SyncEnv(ctx, func(key string) string {
+		if key == EnvA2AEndpoints {
+			return server.URL
+		}
+		return ""
+	}, WithHTTPHeader("X-Cluster", "dev"), WithHTTPReadinessCheck()); err != nil {
+		t.Fatalf("SyncEnv() error = %v", err)
+	}
+
+	result, err := mesh.Call(ctx, "header-agent", Task{ID: "task-1", Input: "task"})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if result.Output != "synced: task" {
+		t.Fatalf("Call() output = %q, want synced task", result.Output)
+	}
+}
+
+func TestMeshSyncEnvReturnsSourcesOnSyncError(t *testing.T) {
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+
+	result, err := mesh.SyncEnv(context.Background(), func(key string) string {
+		if key == EnvA2ARegistryFile {
+			return filepath.Join(t.TempDir(), "missing-agents.json")
+		}
+		return ""
+	})
+	if err == nil {
+		t.Fatal("SyncEnv() error = nil, want missing file error")
+	}
+	if got, want := result.Sources, []string{"file registry"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("SyncEnv() sources on error = %v, want %v", got, want)
+	}
+}
+
 func TestNewEnvCardListersReturnsNoSourcesForEmptyEnv(t *testing.T) {
 	listers, sources, err := NewEnvCardListers(func(string) string { return " " })
 	if err != nil {
@@ -133,4 +275,49 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func newSyncEnvHTTPAgent(t *testing.T, card AgentCard, ready bool) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case httpPathCard:
+			card.URL = "http://" + r.Host
+			writeHTTPJSON(w, http.StatusOK, card)
+		case httpPathReady:
+			if ready {
+				writeHTTPJSON(w, http.StatusOK, httpStatusResponse{Status: "ready"})
+				return
+			}
+			writeHTTPJSON(w, http.StatusServiceUnavailable, httpStatusResponse{Status: "not_ready"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	return server
+}
+
+func newHeaderProtectedSyncEnvAgent(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Cluster") != "dev" {
+			http.Error(w, "missing cluster header", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case httpPathCard:
+			writeHTTPJSON(w, http.StatusOK, AgentCard{Name: "header-agent", URL: "http://" + r.Host})
+		case httpPathReady:
+			writeHTTPJSON(w, http.StatusOK, httpStatusResponse{Status: "ready"})
+		case httpPathTaskSend:
+			var task Task
+			if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+				writeHTTPError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeHTTPJSON(w, http.StatusOK, Result{TaskID: task.ID, Output: "synced: " + task.Input})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
 }
