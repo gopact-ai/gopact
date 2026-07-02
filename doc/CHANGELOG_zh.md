@@ -23,10 +23,11 @@
 - Public repository governance: PR-only `main`, required CI gates, admin auto-merge, non-admin admin-approval gate, and public readiness checks.
 - MIT license.
 - Provider-neutral tool choice contract for automatic, required, named, and disabled tool selection.
+- `graph.EmitNodeEvent` and `graph.ErrNodeEventYieldStopped` for adapter nodes that need to publish child runtime events into the parent graph stream.
 
 ### Changed
 
-- Feature coverage now names the tested graph orchestration surface: branch routing, DAG fan-in, dynamic fan-out, loop step limits, and runnable subgraphs.
+- Feature coverage now names the tested graph orchestration surface: branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, and node-emitted nested events.
 - README and `doc/` structure now separate first-reader documentation, design records, maintainer process, and historical execution plans.
 - CI runs hygiene, unit, race, static analysis, coverage, conformance, and security gates in parallel while preserving a required aggregate `test` job.
 - A2A file discovery accepts both `{"agents":[...]}` documents and bare agent-card arrays.
