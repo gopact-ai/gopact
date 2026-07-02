@@ -346,6 +346,23 @@ func TestCheckAgentMeshConformanceRequiresMeshEvidence(t *testing.T) {
 	requireConformanceCasePassed(t, results, "mesh-publishes-evidence")
 }
 
+func TestCheckAgentMeshConformanceRequiresHeartbeatEvidence(t *testing.T) {
+	agent := meshAgent{
+		card: a2a.AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review"},
+		},
+	}
+
+	results := CheckAgentMeshConformance(context.Background(), AgentMeshConformanceHarness{
+		Agent:        agent,
+		ExpectedCard: agent.card,
+		Task:         a2a.Task{ID: "task-1", Input: "review this diff"},
+	})
+
+	requireConformanceCasePassed(t, results, "mesh-heartbeat-publishes-evidence")
+}
+
 func TestCheckAgentMeshConformanceRequiresRouteStreamEvidence(t *testing.T) {
 	agent := meshAgent{
 		card: a2a.AgentCard{
