@@ -288,7 +288,7 @@ func ProjectSurfaceMessages(event Event) []SurfaceMessage {
 		EventCheckpointLoaded, EventStepImported, EventResumeReceived,
 		EventRunCompleted, EventTurnCompleted, EventNodeCompleted,
 		EventRunCanceled, EventTurnCanceled,
-		EventA2AAgentRegistered, EventA2AAgentCardFetched, EventA2AAgentHeartbeat,
+		EventA2AAgentRegistered, EventA2AAgentCardFetched, EventA2AAgentHeartbeat, EventA2AAgentEvicted,
 		EventA2ATaskSent, EventA2AMessageReceived, EventA2ATaskStatusUpdated, EventA2ATaskCompleted, EventA2ATaskCanceled:
 		return []SurfaceMessage{surfaceStatus(event)}
 	case EventA2AArtifactUpdated:
