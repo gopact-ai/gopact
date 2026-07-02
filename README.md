@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/gopact-ai/gopact)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/gopact-ai/gopact)](https://goreportcard.com/report/github.com/gopact-ai/gopact)
 [![Go Reference](https://pkg.go.dev/badge/github.com/gopact-ai/gopact.svg)](https://pkg.go.dev/github.com/gopact-ai/gopact)
 
 <!-- gopact:doc-language: zh,en -->
