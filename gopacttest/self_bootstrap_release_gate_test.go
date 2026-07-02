@@ -189,7 +189,7 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingExternalMockCI(t *test
 	})
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-external-ci/required-ci-gates") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ci/required-ci-gates") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing ext mock CI gate: %+v", results)
 	}
 }
@@ -210,7 +210,7 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingExamplesMockCI(t *test
 	})
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-external-ci/required-ci-gates") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ci/required-ci-gates") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing examples mock CI gate: %+v", results)
 	}
 }
@@ -231,7 +231,7 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingAgnesIntegration(t *te
 	})
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-external-ci/required-ci-gates") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ci/required-ci-gates") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing Agnes integration gate: %+v", results)
 	}
 }
@@ -378,27 +378,25 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingMigrationGuide(t *test
 	}
 }
 
-func TestSelfBootstrapReleaseGateRequirementsRejectMissingExternalRepositoryReadiness(t *testing.T) {
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingExtensionEcosystemReadiness(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
-	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckExternalRepositories)
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckExtensionIntegrationRoadmap)
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-external-repository-readiness/required-check-ids") {
-		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing external repository readiness: %+v", results)
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ecosystem-readiness/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing extension ecosystem readiness: %+v", results)
 	}
 }
 
-func TestSelfBootstrapReleaseGateRequirementsRejectMissingExternalRepositoryCIGate(t *testing.T) {
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingExtensionEcosystemCIGate(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
-	replaceSelfBootstrapReleaseGateCheck(t, &report, selfBootstrapExternalCICheck([]string{
-		SelfBootstrapCIGateWhitespace,
-		SelfBootstrapCIGateUnit,
-		SelfBootstrapCIGateVet,
+	replaceSelfBootstrapReleaseGateCheck(t, &report, selfBootstrapExtensionEcosystemCICheck([]string{
+		SelfBootstrapCIGateExtMock,
 	}))
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-external-repository-readiness/required-ci-gates") {
-		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing external repository CI gate: %+v", results)
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ecosystem-readiness/required-ci-gates") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing extension ecosystem CI gate: %+v", results)
 	}
 }
 
@@ -413,7 +411,7 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingRunExportEvidence(t *t
 	}
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-evidence-types") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-run-export/required-evidence-types") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing run export evidence: %+v", results)
 	}
 }
@@ -436,58 +434,40 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingPolicyEvidence(t *test
 
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingCheckpointEvidence(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
-	for i, check := range report.Checks {
-		if check.ID == "checkpoint:thread-self-bootstrap:1:1" {
-			report.Checks = append(report.Checks[:i], report.Checks[i+1:]...)
-			report.PassedCount--
-			break
-		}
-	}
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckCheckpoint)
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-evidence-types") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-check-ids") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing checkpoint evidence: %+v", results)
 	}
 }
 
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingArtifactEvidence(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
-	for i, check := range report.Checks {
-		if check.ID == "artifact-integrity:self-bootstrap" {
-			report.Checks = append(report.Checks[:i], report.Checks[i+1:]...)
-			report.PassedCount--
-			break
-		}
-	}
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckArtifactIntegrity)
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-evidence-types") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-check-ids") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing artifact evidence: %+v", results)
 	}
 }
 
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingRunEffectReplayEvidence(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
-	for i, check := range report.Checks {
-		if check.ID == gopact.VerificationCheckRunEffectReplay+":run-self-bootstrap" {
-			report.Checks = append(report.Checks[:i], report.Checks[i+1:]...)
-			report.PassedCount--
-			break
-		}
-	}
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckRunEffectReplay)
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-evidence-types") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-check-ids") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing run effect replay evidence: %+v", results)
 	}
 }
 
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingA2ATaskEvidence(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
-	removeSelfBootstrapReleaseGateCheck(t, &report, "a2a-task:self-bootstrap-agent-cluster")
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckA2ATask)
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
-	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-evidence-types") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-check-ids") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing A2A task evidence: %+v", results)
 	}
 }
@@ -582,15 +562,15 @@ func selfBootstrapReleaseGateGates() []string {
 	}
 }
 
-func selfBootstrapExternalCICheck(gates []string) gopact.VerificationCheck {
+func selfBootstrapExtensionEcosystemCICheck(gates []string) gopact.VerificationCheck {
 	evidence := make([]gopact.VerificationEvidence, 0, len(gates))
 	for _, gate := range gates {
 		evidence = append(evidence, ciGateVerificationEvidence(gate, gopact.VerificationStatusPassed))
 	}
 	return gopact.VerificationCheck{
-		ID:       SelfBootstrapCheckExternalCI,
+		ID:       SelfBootstrapCheckExtensionEcosystemCI,
 		Status:   gopact.VerificationStatusPassed,
-		Summary:  "external repository CI gates passed",
+		Summary:  "extension ecosystem CI gates passed",
 		Evidence: evidence,
 	}
 }
