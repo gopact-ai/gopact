@@ -588,6 +588,47 @@ func TestScaffoldAgentServesHTTPRegistry(t *testing.T) {
 	}
 }
 
+func TestScaffoldAgentRegistryMeshStreamsAndCancels(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(newScaffoldHTTPHandler())
+	defer server.Close()
+	t.Setenv(agentURLEnv, server.URL)
+
+	registry, err := a2a.NewHTTPRegistry(server.URL+"/agents.json", a2a.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+	mesh, err := a2a.NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	if _, err := mesh.Bootstrap(ctx, registry); err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+
+	var streamed a2a.TaskEvent
+	for event, streamErr := range mesh.RouteStream(ctx, a2a.RouteQuery{
+		Require: []string{"chat"},
+		Task:    a2a.Task{ID: "task-stream", Input: "stream hello"},
+	}) {
+		if streamErr != nil {
+			t.Fatalf("RouteStream() error = %v", streamErr)
+		}
+		streamed = event
+	}
+	if streamed.Status != a2a.TaskStatusCompleted || streamed.Result == nil || streamed.Result.Output != agentName+" handled: stream hello" {
+		t.Fatalf("RouteStream() event = %+v, want completed scaffold response", streamed)
+	}
+
+	canceled, err := mesh.Cancel(ctx, agentName, "task-cancel")
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+	if canceled.TaskID != "task-cancel" {
+		t.Fatalf("Cancel() = %+v, want task-cancel", canceled)
+	}
+}
+
 func TestScaffoldAgentRejectsEmptyCancelID(t *testing.T) {
 	err := scaffoldAgent{}.Cancel(context.Background(), "")
 	if !errors.Is(err, a2a.ErrTaskIDRequired) {
