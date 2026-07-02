@@ -63,6 +63,7 @@ func TestM3EventTypeStrings(t *testing.T) {
 		EventSkillActivated:           "skill_activated",
 		EventMCPServerConnected:       "mcp_server_connected",
 		EventA2AAgentHeartbeat:        "a2a_agent_heartbeat",
+		EventA2AAgentEvicted:          "a2a_agent_evicted",
 		EventA2AAgentCardFetched:      "a2a_agent_card_fetched",
 		EventA2AMessageReceived:       "a2a_message_received",
 		EventA2AArtifactUpdated:       "a2a_artifact_updated",

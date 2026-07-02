@@ -11,6 +11,7 @@ This file records user-visible changes to `gopact` core. Internal reshuffling, p
 ### Added
 
 - A2A registry and mesh lease registration plus heartbeat renewal for long-running agent discovery.
+- A2A mesh health-driven eviction with `a2a_agent_evicted` evidence for unready HTTP-backed agents.
 - A2A HTTP agent-card discovery with readiness checks for mesh bootstrap.
 - `gopact agent init` and `gopact agent run` for generating and running a standalone A2A HTTP agent scaffold.
 - Core feature coverage matrix in [FEATURES.md](FEATURES.md).

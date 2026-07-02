@@ -62,7 +62,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			capability: "A2A agent mesh",
 			path:       "a2a",
 			command:    "go test -count=1 ./a2a ./gopacttest/a2aconformance",
-			boundary:   "lease registration, heartbeat renewal",
+			boundary:   "lease registration, heartbeat renewal, health-driven eviction",
 		},
 		{
 			capability: "A2A HTTP registry discovery",

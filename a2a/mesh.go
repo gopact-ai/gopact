@@ -308,6 +308,55 @@ func (m *Mesh) Heartbeat(ctx context.Context, name string, ttl time.Duration) (A
 	return card, nil
 }
 
+// PruneUnready evicts HTTP-backed cards whose readiness endpoint no longer returns success.
+func (m *Mesh) PruneUnready(ctx context.Context) (EvictionResult, error) {
+	registry, err := m.requireRegistry()
+	if err != nil {
+		return EvictionResult{}, err
+	}
+	ctx, cancel := m.operationContext(ctx)
+	defer cancel()
+	ids := m.idsWithContext(ctx)
+	ctx = contextWithRuntimeIDs(ctx, ids)
+	cards, err := registry.ListCards(ctx)
+	if err != nil {
+		return EvictionResult{}, err
+	}
+
+	result := EvictionResult{}
+	for _, card := range cards {
+		endpoint := readinessCardURL(card)
+		if endpoint == "" {
+			continue
+		}
+		agent, err := m.newReadinessHTTPAgent(endpoint, card)
+		if err != nil {
+			return result, err
+		}
+		if err := agent.checkReadiness(ctx, endpoint, card); err == nil {
+			continue
+		} else if ctxErr := ctx.Err(); ctxErr != nil {
+			return result, ctxErr
+		}
+		evicted, err := registry.Evict(ctx, card.Name)
+		if errors.Is(err, ErrAgentNotFound) {
+			continue
+		}
+		if err != nil {
+			return result, err
+		}
+		event := agentEvictedEvent(evicted, ids, "readiness_failed")
+		result.Cards = append(result.Cards, evicted)
+		result.Events = append(result.Events, event)
+	}
+	if err := m.publishEvents(ctx, result.Events); err != nil {
+		return result, err
+	}
+	result.Cards = copyAgentCards(result.Cards)
+	result.Events = copyEvents(result.Events)
+	return result, nil
+}
+
 // Call sends one task to an agent by name and publishes call evidence.
 func (m *Mesh) Call(ctx context.Context, name string, task Task) (Result, error) {
 	registry, err := m.requireRegistry()
@@ -668,6 +717,22 @@ func jsonRPCCardURL(card AgentCard) string {
 		}
 	}
 	return ""
+}
+
+func readinessCardURL(card AgentCard) string {
+	if endpoint := httpCardURL(card); endpoint != "" {
+		return endpoint
+	}
+	return jsonRPCCardURL(card)
+}
+
+func (m *Mesh) newReadinessHTTPAgent(endpoint string, card AgentCard) (*HTTPAgent, error) {
+	opts := []HTTPAgentOption(nil)
+	if m != nil {
+		opts = append(opts, m.httpOptions...)
+	}
+	opts = append(opts, WithHTTPAgentCard(card))
+	return NewHTTPAgent(endpoint, opts...)
 }
 
 func isHTTPURL(raw string) bool {
