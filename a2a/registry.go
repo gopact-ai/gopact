@@ -295,6 +295,15 @@ type BootstrapResult struct {
 	Events []gopact.Event `json:"events,omitempty"`
 }
 
+// SyncResult records one mesh discovery sync: imported cards, evicted cards, final cards, and evidence.
+type SyncResult struct {
+	Sources   []string        `json:"sources,omitempty"`
+	Bootstrap BootstrapResult `json:"bootstrap,omitzero"`
+	Eviction  EvictionResult  `json:"eviction,omitzero"`
+	Cards     []AgentCard     `json:"cards,omitempty"`
+	Events    []gopact.Event  `json:"events,omitempty"`
+}
+
 // TaskEvent is one streaming status or result update for an A2A task.
 type TaskEvent struct {
 	TaskID    string               `json:"task_id,omitempty"`

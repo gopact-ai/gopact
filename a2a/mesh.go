@@ -265,6 +265,32 @@ func (m *Mesh) Bootstrap(ctx context.Context, listers ...CardLister) (BootstrapR
 	return result, nil
 }
 
+// Sync imports cards from discovery sources, registers callable HTTP/JSON-RPC agents, prunes unready agents, and returns a final card snapshot.
+func (m *Mesh) Sync(ctx context.Context, listers ...CardLister) (SyncResult, error) {
+	result := SyncResult{}
+	if len(listers) > 0 {
+		bootstrap, err := m.Bootstrap(ctx, listers...)
+		if err != nil {
+			return result, err
+		}
+		result.Bootstrap = bootstrap
+		result.Events = append(result.Events, bootstrap.Events...)
+	}
+	eviction, err := m.PruneUnready(ctx)
+	if err != nil {
+		return result, err
+	}
+	result.Eviction = eviction
+	result.Events = append(result.Events, eviction.Events...)
+	cards, err := m.ListCards(ctx)
+	if err != nil {
+		return result, err
+	}
+	result.Cards = cards
+	result.Events = copyEvents(result.Events)
+	return result, nil
+}
+
 // Cards returns known agent cards in first-seen mesh order.
 func (m *Mesh) Cards(ctx context.Context) ([]AgentCard, error) {
 	return m.ListCards(ctx)

@@ -14,6 +14,7 @@
 
 - A2A registry and mesh lease registration plus heartbeat renewal for long-running agent discovery.
 - A2A mesh health-driven eviction with `a2a_agent_evicted` evidence for unready HTTP-backed agents.
+- `a2a.Mesh.Sync` and `a2a.Mesh.SyncEnv` for one-shot discovery sync, readiness eviction, final card snapshots, and aggregated mesh evidence.
 - A2A HTTP agent-card discovery with readiness checks for mesh bootstrap.
 - `gopact agent init` and `gopact agent run` for generating and running a standalone A2A HTTP agent scaffold.
 - Core feature coverage matrix in [FEATURES.md](FEATURES.md).
