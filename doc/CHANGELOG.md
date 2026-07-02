@@ -20,6 +20,7 @@ This file records user-visible changes to `gopact` core. Internal reshuffling, p
 
 ### Changed
 
+- Feature coverage now names the tested graph orchestration surface: branch routing, DAG fan-in, dynamic fan-out, loop step limits, and runnable subgraphs.
 - README and `doc/` structure now separate first-reader documentation, design records, maintainer process, and historical execution plans.
 - CI runs hygiene, unit, race, static analysis, coverage, conformance, and security gates in parallel while preserving a required aggregate `test` job.
 - A2A file discovery accepts both `{"agents":[...]}` documents and bare agent-card arrays.
