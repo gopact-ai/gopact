@@ -1,6 +1,7 @@
 package a2a
 
 import (
+	"context"
 	"os"
 	"strings"
 )
@@ -43,6 +44,19 @@ func NewEnvCardListers(lookup func(string) string, opts ...HTTPAgentOption) ([]C
 		sources = append(sources, "HTTP endpoints")
 	}
 	return listers, sources, nil
+}
+
+// BootstrapEnv imports agent cards from standard gopact A2A environment variables.
+func (m *Mesh) BootstrapEnv(ctx context.Context, lookup func(string) string, opts ...HTTPAgentOption) (BootstrapResult, []string, error) {
+	listers, sources, err := NewEnvCardListers(lookup, opts...)
+	if err != nil {
+		return BootstrapResult{}, nil, err
+	}
+	if len(listers) == 0 {
+		return BootstrapResult{}, sources, nil
+	}
+	result, err := m.Bootstrap(ctx, listers...)
+	return result, sources, err
 }
 
 func splitEnvList(value string) []string {
