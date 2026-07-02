@@ -277,6 +277,12 @@ type CancelResult struct {
 	Events []gopact.Event `json:"events,omitempty"`
 }
 
+// EvictionResult records cards removed from a registry and their evidence events.
+type EvictionResult struct {
+	Cards  []AgentCard    `json:"cards,omitempty"`
+	Events []gopact.Event `json:"events,omitempty"`
+}
+
 // RegistrationResult records a successful agent registration.
 type RegistrationResult struct {
 	Card   AgentCard      `json:"card"`
@@ -605,6 +611,30 @@ func (r *Registry) Card(ctx context.Context, name string) (AgentCard, error) {
 		return copyAgentCard(card), nil
 	}
 	return AgentCard{}, ErrAgentNotFound
+}
+
+// Evict removes one known agent card and any local callable binding for it.
+func (r *Registry) Evict(ctx context.Context, name string) (AgentCard, error) {
+	if err := ctx.Err(); err != nil {
+		return AgentCard{}, err
+	}
+	if r == nil {
+		return AgentCard{}, ErrAgentNotFound
+	}
+	if name == "" {
+		return AgentCard{}, ErrCardNameRequired
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	card, ok := r.cards[name]
+	if !ok {
+		return AgentCard{}, ErrAgentNotFound
+	}
+	delete(r.cards, name)
+	delete(r.agents, name)
+	return copyAgentCard(card), nil
 }
 
 // Discover fetches an agent card and stores it in the registry.
@@ -1228,6 +1258,25 @@ func agentHeartbeatEvent(card AgentCard, ids gopact.RuntimeIDs) gopact.Event {
 	}
 	return gopact.Event{
 		Type:     gopact.EventA2AAgentHeartbeat,
+		IDs:      ids,
+		Metadata: metadata,
+	}.WithRuntimeDefaults(ids)
+}
+
+func agentEvictedEvent(card AgentCard, ids gopact.RuntimeIDs, reason string) gopact.Event {
+	metadata := copyAnyMap(card.Metadata)
+	if metadata == nil {
+		metadata = make(map[string]any)
+	}
+	metadata[metadataAgentName] = card.Name
+	if card.URL != "" {
+		metadata[metadataAgentURL] = card.URL
+	}
+	if reason != "" {
+		metadata["eviction_reason"] = reason
+	}
+	return gopact.Event{
+		Type:     gopact.EventA2AAgentEvicted,
 		IDs:      ids,
 		Metadata: metadata,
 	}.WithRuntimeDefaults(ids)

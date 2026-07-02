@@ -286,6 +286,27 @@ func TestProjectSurfaceMessagesProjectsA2AAgentHeartbeat(t *testing.T) {
 	}
 }
 
+func TestProjectSurfaceMessagesProjectsA2AAgentEvicted(t *testing.T) {
+	event := Event{
+		Type: EventA2AAgentEvicted,
+		IDs:  RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"},
+		Metadata: map[string]any{
+			"agent_name":      "planner",
+			"eviction_reason": "readiness_failed",
+		},
+	}
+
+	messages := ProjectSurfaceMessages(event)
+	if len(messages) != 1 ||
+		messages[0].Type != SurfaceMessageStatus ||
+		messages[0].SourceEvent != string(EventA2AAgentEvicted) ||
+		messages[0].Parts[0].Text != "a2a agent evicted" ||
+		messages[0].Metadata["agent_name"] != "planner" ||
+		messages[0].Metadata["eviction_reason"] != "readiness_failed" {
+		t.Fatalf("ProjectSurfaceMessages() = %+v, want A2A eviction status", messages)
+	}
+}
+
 func TestTransferFuncConvertsSurfaceMessage(t *testing.T) {
 	wantPayload := ChannelPayload{Target: ChannelTarget("tui"), Data: "hello"}
 	transfer := TransferFunc{

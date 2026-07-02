@@ -397,6 +397,39 @@ func TestRegistryRegisterCardWithLeaseAndHeartbeat(t *testing.T) {
 	}
 }
 
+func TestRegistryEvictRemovesCardAndCallableAgent(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	if _, err := registry.RegisterWithEvidence(ctx, FakeAgent{
+		CardValue: AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			return Result{TaskID: task.ID, Output: "reviewed"}, nil
+		},
+	}, gopact.RuntimeIDs{}); err != nil {
+		t.Fatalf("RegisterWithEvidence() error = %v", err)
+	}
+
+	evicted, err := registry.Evict(ctx, "reviewer")
+	if err != nil {
+		t.Fatalf("Evict() error = %v", err)
+	}
+	if evicted.Name != "reviewer" {
+		t.Fatalf("Evict() = %+v, want reviewer card", evicted)
+	}
+	if _, err := registry.Card(ctx, "reviewer"); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Card(evicted) error = %v, want %v", err, ErrAgentNotFound)
+	}
+	if _, err := registry.Send(ctx, "reviewer", Task{ID: "task-1"}); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Send(evicted) error = %v, want %v", err, ErrAgentNotFound)
+	}
+	if _, err := registry.Evict(ctx, "reviewer"); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Evict(missing) error = %v, want %v", err, ErrAgentNotFound)
+	}
+	if _, err := registry.Evict(ctx, ""); !errors.Is(err, ErrCardNameRequired) {
+		t.Fatalf("Evict(empty) error = %v, want %v", err, ErrCardNameRequired)
+	}
+}
+
 func TestRegistryCardLeaseRejectsMissingExpiredInvalidAndLocalAgentConflict(t *testing.T) {
 	ctx := context.Background()
 	registry := NewRegistry()

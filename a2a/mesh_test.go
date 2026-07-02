@@ -572,6 +572,82 @@ func TestMeshBootstrapRegistersHTTPCardForRouting(t *testing.T) {
 	}
 }
 
+func TestMeshPruneUnreadyHTTPAgentsEvictsAndPublishesEvidence(t *testing.T) {
+	ctx := context.Background()
+	ready := true
+	handler := NewHTTPHandler(FakeAgent{
+		CardValue: AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			if err := ctx.Err(); err != nil {
+				return Result{}, err
+			}
+			return Result{TaskID: task.ID, Output: "reviewed: " + task.Input}, nil
+		},
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == httpPathReady && !ready {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	events := []gopact.Event{}
+	mesh, err := NewMesh(
+		WithMeshHTTPAgentOptions(WithHTTPClient(server.Client())),
+		WithMeshEventSink(func(ctx context.Context, event gopact.Event) error {
+			events = append(events, event)
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	if _, err := mesh.Bootstrap(ctx, NewStaticDiscoverer(AgentCard{
+		Name:         "reviewer",
+		URL:          server.URL,
+		Capabilities: []string{"code.review"},
+		Health:       &HealthHints{ReadinessPath: httpPathReady},
+	})); err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+
+	ready = false
+	pruned, err := mesh.PruneUnready(ctx)
+	if err != nil {
+		t.Fatalf("PruneUnready() error = %v", err)
+	}
+	if len(pruned.Cards) != 1 || pruned.Cards[0].Name != "reviewer" {
+		t.Fatalf("PruneUnready() cards = %+v, want reviewer evicted", pruned.Cards)
+	}
+	if len(pruned.Events) != 1 ||
+		pruned.Events[0].Type != gopact.EventA2AAgentEvicted ||
+		pruned.Events[0].Metadata["agent_name"] != "reviewer" ||
+		pruned.Events[0].Metadata["eviction_reason"] != "readiness_failed" {
+		t.Fatalf("PruneUnready() events = %+v, want eviction evidence", pruned.Events)
+	}
+	if _, err := mesh.Route(ctx, RouteQuery{Require: []string{"code.review"}, Task: Task{ID: "task-1"}}); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Route(evicted) error = %v, want %v", err, ErrAgentNotFound)
+	}
+	cards, err := mesh.Cards(ctx)
+	if err != nil {
+		t.Fatalf("Cards() error = %v", err)
+	}
+	if len(cards) != 0 {
+		t.Fatalf("Cards() = %+v, want evicted card removed", cards)
+	}
+	got := eventTypes(events)
+	want := []gopact.EventType{
+		gopact.EventA2AAgentCardFetched,
+		gopact.EventA2AAgentRegistered,
+		gopact.EventA2AAgentEvicted,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("published events = %v, want %v", got, want)
+	}
+}
+
 func TestMeshBootstrapAppliesHTTPAgentOptions(t *testing.T) {
 	ctx := context.Background()
 	handler := httpHeaderHandler(NewHTTPHandler(FakeAgent{
