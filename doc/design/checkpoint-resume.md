@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -433,3 +426,7 @@ type Importer interface {
 - cancel safe point 可导出 step snapshot；
 - 非幂等 tool resume 不重复执行；
 - config drift 产生事件。
+
+## English
+
+Checkpoint and resume design. It defines stable step boundaries, interrupt/resume behavior, replay constraints, and the difference between state persistence and recovery semantics.

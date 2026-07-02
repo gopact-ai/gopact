@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -262,3 +255,7 @@ type DefaultsSnapshot struct {
 - Run option 不能扩大 Runner policy；
 - SDK 不调用 `slog.SetDefault`；
 - SDK 不读取 env 或配置文件。
+
+## English
+
+SDK entry and defaults design. It defines setup behavior, default logger/runtime IDs, option precedence, and testability expectations.

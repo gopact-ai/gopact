@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 This repository implements a gopact extension outside the core SDK.
 
 ## Compatibility
@@ -79,3 +72,7 @@ Each extension repository must include:
 ## Security
 
 Document the trust boundary, secret ownership, outbound network behavior, persistence behavior, and redaction policy. Secrets must stay in host-owned clients, secret providers, or transport adapters, and must not be copied into events, checkpoints, run exports, or model-visible context.
+
+## English
+
+Template for extension repository README files. It defines the expected sections for compatibility, installation, usage, conformance, examples, and security notes.

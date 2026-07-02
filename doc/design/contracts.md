@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -763,3 +756,7 @@ M1 完成时必须有：
 - `PolicyDecision`；
 - 不依赖真实模型的 fixture builder；
 - event assertion helper 能断言 `RunID`、`ThreadID`、`CallID` 和事件顺序。
+
+## English
+
+Core contract design for messages, events, runtime IDs, artifacts, policy decisions, checkpoints, and verification records shared across modules.

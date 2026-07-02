@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-30
 
 Agent Mesh 是 `gopact` 面向垂域 agent 集群的分布式运行形态。它的目标是让每个垂域 agent 像微服务一样可启动、可发现、可调用、可治理、可观测，并通过 A2A 协议进行跨 agent 协作。
@@ -244,3 +237,6 @@ Agent Mesh 第一阶段完成后，用户应该可以：
 - 导出包含跨 agent evidence 的 run export；
 - 将 discovery 和 transport 替换为生产 adapter。
 
+## English
+
+Design notes for treating domain agents as discoverable services. It covers A2A discovery, routing, registry expectations, and cluster-level governance.

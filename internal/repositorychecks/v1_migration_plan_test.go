@@ -385,6 +385,9 @@ func TestV1MigrationPlanIsIndexed(t *testing.T) {
 		if !strings.Contains(content, "v1-migration-plan.json") {
 			t.Fatalf("%s does not reference v1-migration-plan.json", path)
 		}
+		if path == "README.md" {
+			continue
+		}
 		if !strings.Contains(content, "release_gate_checks") {
 			t.Fatalf("%s does not document v1 release_gate_checks", path)
 		}

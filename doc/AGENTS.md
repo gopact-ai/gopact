@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 ## Scope
 
 These instructions apply to the entire repository.
@@ -123,3 +116,7 @@ tests, race, vet, lint, coverage, examples, and vulnerability checks.
   docs.
 - Report verification commands that were run, and state clearly when a command
   was skipped.
+
+## English
+
+Repository instructions for coding agents. It summarizes the core/ext/examples boundary, required verification, security constraints, and documentation rules for future automated changes.

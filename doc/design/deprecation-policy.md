@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-25
 
 设计入口：[index.md](index.md)
@@ -85,3 +78,7 @@ v1 后：
 - 是否仍遵守 SDK 不读取配置文件、依赖由宿主注入的原则？
 
 如果答案不清楚，先把 API 标成 `experimental`，不要过早承诺稳定。
+
+## English
+
+Public API deprecation policy. It defines stability states, Deprecated comments, migration windows, and review requirements before public API removal.

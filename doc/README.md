@@ -4,34 +4,60 @@
 
 ## 中文
 
-本文档目录保存除根 README 和 LICENSE 之外的项目文档。根 README 负责面向首次访问者的入口；`doc/` 负责维护能力矩阵、贡献流程、安全策略、设计记录、研究记录和维护者流程。
+这里保存 `gopact` 除根 README 和 LICENSE 以外的长期文档。根 README 面向首次访问者；本目录面向三类读者：
 
-## 索引
+- 使用者：了解当前 SDK 能力、安装方式、示例入口和稳定性边界。
+- 扩展开发者：实现 provider、tool、MCP/A2A、agent template 或其他 extension。
+- 维护者：维护 release gate、CI、版本策略、安全响应和公开仓库治理。
 
-- [FEATURES.md](FEATURES.md)：core SDK 可执行能力覆盖矩阵。
-- [CONTRIBUTING.md](CONTRIBUTING.md)：贡献流程与本地验证要求。
-- [SECURITY.md](SECURITY.md)：漏洞报告与安全处理策略。
-- [CHANGELOG.md](CHANGELOG.md)：面向用户和维护者的变更记录。
-- [AGENTS.md](AGENTS.md)：agent 协作与仓库操作约束。
-- [design/index.md](design/index.md)：总体设计入口。
-- [design/development-plan.md](design/development-plan.md)：阶段性目标、自举要求和发布准备。
-- [maintainers/repository-governance.md](maintainers/repository-governance.md)：PR、CI、自动合并和公开前检查规则。
-- [research/agent-sdk-landscape.md](research/agent-sdk-landscape.md)：agent SDK landscape 调研。
-- [research/harness-loop-engineering.md](research/harness-loop-engineering.md)：harness loop 工程调研。
+### 推荐阅读顺序
+
+| 目标 | 阅读 |
+| --- | --- |
+| 判断现在能用什么 | [FEATURES.md](FEATURES.md) |
+| 开始贡献代码 | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| 报告安全问题 | [SECURITY.md](SECURITY.md) |
+| 查看用户可见变化 | [CHANGELOG.md](CHANGELOG.md) |
+| 理解整体架构 | [design/index.md](design/index.md) |
+| 设计或评审 public API | [design/api-ergonomics.md](design/api-ergonomics.md), [design/deprecation-policy.md](design/deprecation-policy.md), [design/versioning-policy.md](design/versioning-policy.md) |
+| 编写扩展或 template | [design/template-guide.md](design/template-guide.md), [design/modules.md](design/modules.md), [design/external-integration-roadmap.json](design/external-integration-roadmap.json) |
+| 准备 v1 / release gate | [design/migration-guide.md](design/migration-guide.md), [design/v1-migration-plan.json](design/v1-migration-plan.json), [design/milestone-readiness.json](design/milestone-readiness.json) |
+| 维护仓库规则 | [maintainers/repository-governance.md](maintainers/repository-governance.md) |
+
+### 文档分层
+
+- `FEATURES.md` 是能力矩阵，只记录已有离线验收或 conformance 的能力。
+- `design/` 保存架构、边界、迁移、版本和 extension 设计。
+- `research/` 保存调研材料，不代表已经承诺的 public API。
+- `superpowers/` 保存历史执行计划，不作为用户文档入口。
+- `maintainers/` 保存仓库治理和发布维护规则。
 
 ## English
 
-This directory stores project documentation other than the root README and LICENSE. The root README is the first-reader entry point; `doc/` maintains capability matrices, contribution flow, security policy, design records, research notes, and maintainer process documents.
+This directory contains long-lived project documentation other than the root README and LICENSE. The root README is for first-time readers; this directory serves three audiences:
 
-## Index
+- Users who need capability, installation, example, and stability information.
+- Extension authors who implement providers, tools, MCP/A2A integrations, agent templates, or other modules.
+- Maintainers who operate release gates, CI, versioning, security response, and repository governance.
 
-- [FEATURES.md](FEATURES.md): executable capability coverage matrix for the core SDK.
-- [CONTRIBUTING.md](CONTRIBUTING.md): contribution flow and local verification requirements.
-- [SECURITY.md](SECURITY.md): vulnerability reporting and security handling policy.
-- [CHANGELOG.md](CHANGELOG.md): user-facing and maintainer-facing change log.
-- [AGENTS.md](AGENTS.md): agent collaboration and repository operation constraints.
-- [design/index.md](design/index.md): design entry point.
-- [design/development-plan.md](design/development-plan.md): staged goals, self-bootstrap requirements, and release readiness.
-- [maintainers/repository-governance.md](maintainers/repository-governance.md): PR, CI, auto-merge, and pre-public checks.
-- [research/agent-sdk-landscape.md](research/agent-sdk-landscape.md): agent SDK landscape research.
-- [research/harness-loop-engineering.md](research/harness-loop-engineering.md): harness loop engineering research.
+### Recommended Reading Order
+
+| Goal | Read |
+| --- | --- |
+| Check what works today | [FEATURES.md](FEATURES.md) |
+| Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Report a vulnerability | [SECURITY.md](SECURITY.md) |
+| Review user-visible changes | [CHANGELOG.md](CHANGELOG.md) |
+| Understand the architecture | [design/index.md](design/index.md) |
+| Design or review public API | [design/api-ergonomics.md](design/api-ergonomics.md), [design/deprecation-policy.md](design/deprecation-policy.md), [design/versioning-policy.md](design/versioning-policy.md) |
+| Build extensions or templates | [design/template-guide.md](design/template-guide.md), [design/modules.md](design/modules.md), [design/external-integration-roadmap.json](design/external-integration-roadmap.json) |
+| Prepare v1 or release gates | [design/migration-guide.md](design/migration-guide.md), [design/v1-migration-plan.json](design/v1-migration-plan.json), [design/milestone-readiness.json](design/milestone-readiness.json) |
+| Maintain repository rules | [maintainers/repository-governance.md](maintainers/repository-governance.md) |
+
+### Documentation Layers
+
+- `FEATURES.md` is the capability matrix; it only lists behavior with offline tests or conformance coverage.
+- `design/` contains architecture, boundaries, migration, versioning, and extension design.
+- `research/` contains background research and does not define committed public API.
+- `superpowers/` contains historical execution plans and is not a user documentation entry point.
+- `maintainers/` contains repository governance and release maintenance rules.

@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -176,3 +169,7 @@ A2A：
 - redaction 早于 OTel/LangSmith exporter。
 - redaction 早于 channel transfer；
 - channel action spoofing 被拒绝。
+
+## English
+
+Security design for agent runtime boundaries. It covers policy, redaction, sandboxing, tool results, MCP/A2A trust boundaries, and audit expectations.

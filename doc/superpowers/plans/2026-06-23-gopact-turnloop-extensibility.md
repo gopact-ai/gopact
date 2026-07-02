@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 > **For agentic workers:** Continue from Integration Spine. Keep TurnLoop as the control plane and avoid moving business harness concepts into core.
 
 **Goal:** Build the first M4 control-plane and extensibility slice so `gopact` can wrap runs as turns, cancel/preempt active work, mark resume input, and let plugins install node middleware and event subscribers.
@@ -74,3 +67,7 @@ go test ./... -count=1
 go vet ./...
 git diff --check
 ```
+
+## English
+
+Historical implementation plan for TurnLoop control, cancellation/preemption, resume input, plugin host, and middleware composition.

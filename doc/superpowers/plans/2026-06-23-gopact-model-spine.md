@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 > **For agentic workers:** Continue from M1 Runtime Spine. Keep implementation provider-neutral and standard-library only unless a production adapter explicitly requires a dependency.
 
 **Goal:** Build M2 Model Spine so `gopact` can route model calls through typed provider registries, route sets, fake providers, OpenAI-compatible adapters, structured route events, fallback decisions, error classification, and normalized usage metadata.
@@ -55,3 +48,7 @@ Follow-up gate before closing M2:
 go vet ./...
 git diff --check
 ```
+
+## English
+
+Historical implementation plan for provider-neutral model requests, provider routing, fake providers, and route event contracts.

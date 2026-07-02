@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build M1 Runtime Spine so `gopact` has stable SDK defaults, runtime identity, block-friendly messages, structured events, step-level export/import contracts, and a graph event stream that can resume from stable step boundaries.
@@ -1553,3 +1546,7 @@ Not completed in this pass:
 
 - The plan's per-task commit points were intentionally not executed as separate commits.
 - Full cross-run step import execution remains in the follow-up TurnLoop/resume implementation.
+
+## English
+
+Historical implementation plan for runtime identity, messages, events, step export/import, and resumable graph execution.

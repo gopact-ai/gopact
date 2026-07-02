@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -284,3 +277,7 @@ import (
 - 是否有安全默认值？
 
 如果以上任一项答案含糊，先不要合入 API。SDK 的 public surface 一旦发布就是承诺。
+
+## English
+
+Public API design criteria for gopact. It focuses on call-site readability, option shape, stable naming, and when an abstraction belongs in core.

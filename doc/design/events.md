@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -269,3 +262,7 @@ type RunExport struct {
 - OTel/LangSmith/exporter；
 - 自举 agent review gate；
 - 业务层 harness/template 评估的证据输入。
+
+## English
+
+Event stream design. It defines event shape, ordering, redaction, sink behavior, and how events support observability, replay, and trajectory tests.

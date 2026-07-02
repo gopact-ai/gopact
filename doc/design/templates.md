@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -257,3 +250,7 @@ ReAct template 至少有这些 trajectory tests：
 - child agent failure 通过 tool error 返回，child failure events 仍保留在 `ToolResult.Events`，由父 template 决定如何失败、重试或中断。
 
 后续 remote A2A 能力需要继续补更完整 official task/message/artifact schema、production discovery registry、OAuth/advanced auth negotiation、resumable/production streaming adapter 深化和 artifact transfer。
+
+## English
+
+Agent template design. It covers ReAct, Agent-as-Tool, Dev Agent, human-in-the-loop, trajectory tests, and template ownership outside core.
