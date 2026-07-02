@@ -10,7 +10,7 @@
 go get github.com/gopact-ai/gopact
 ```
 
-当前仓库仍为私有，安装需要具备 `gopact-ai/gopact` 的访问权限。SDK 自身不读取配置文件、环境变量或本地 secret；provider、backend、channel、plugin 的配置都应由宿主应用通过 Go options、接口或 typed snapshot 注入。
+SDK 自身不读取配置文件、环境变量或本地 secret；provider、backend、channel、plugin 的配置都应由宿主应用通过 Go options、接口或 typed snapshot 注入。
 
 ## 快速开始
 
@@ -46,6 +46,7 @@ go run ./cmd/gopact agent run /tmp/support-agent
 ## 文档地图
 
 - [FEATURES.md](FEATURES.md)：core SDK 可执行能力覆盖矩阵；ext/examples 仓库各自维护对应矩阵。
+- [docs/maintainers/repository-governance.md](docs/maintainers/repository-governance.md)：公开仓库的 PR、CI、自动合并和发布前检查规则。
 
 
 ## 设计哲学

@@ -2,14 +2,14 @@
 
 ## Supported Versions
 
-`gopact` is pre-v1 and currently private. Security fixes target the `main` branch
-until a public release line is declared.
+`gopact` is pre-v1. Security fixes target the `main` branch until a public
+release line is declared.
 
 ## Reporting a Vulnerability
 
-Do not open a public issue for suspected vulnerabilities while the repository is
-private. Report privately to the maintainers through the gopact-ai organization
-owner channel or the private security contact used for the repository.
+Do not open a public issue for suspected vulnerabilities. Report privately to
+the maintainers through the gopact-ai organization owner channel until a
+dedicated security advisory process is enabled.
 
 Include:
 

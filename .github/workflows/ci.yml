@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -36,6 +41,9 @@ jobs:
 
       - name: Check whitespace
         run: git diff --check
+
+      - name: Public readiness
+        run: ./scripts/public-readiness-check.sh
 
       - name: Check module tidiness
         run: |
