@@ -11,17 +11,20 @@ import (
 	"iter"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const (
 	defaultHTTPMaxResponseBytes int64 = 4 << 20
 
-	httpPathCard       = "/.well-known/agent-card.json"
-	httpPathTaskSend   = "/a2a/task/send"
-	httpPathTaskStream = "/a2a/task/stream"
-	httpPathTaskCancel = "/a2a/task/cancel"
-	httpPathHealth     = "/healthz"
-	httpPathReady      = "/readyz"
+	httpPathCard              = "/.well-known/agent-card.json"
+	httpPathTaskSend          = "/a2a/task/send"
+	httpPathTaskStream        = "/a2a/task/stream"
+	httpPathTaskCancel        = "/a2a/task/cancel"
+	httpPathRegistryRegister  = "/a2a/registry/register"
+	httpPathRegistryHeartbeat = "/a2a/registry/heartbeat"
+	httpPathHealth            = "/healthz"
+	httpPathReady             = "/readyz"
 )
 
 var (
@@ -120,19 +123,15 @@ func NewHTTPRegistry(url string, opts ...HTTPAgentOption) (*HTTPRegistry, error)
 // NewHTTPRegistryHandler exposes any CardLister as an HTTP agent-card registry.
 func NewHTTPRegistryHandler(lister CardLister) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !requireMethod(w, r, http.MethodGet) {
-			return
+		switch r.Method {
+		case http.MethodGet:
+			serveHTTPRegistryCards(w, r, lister)
+		case http.MethodPost:
+			serveHTTPRegistryMutation(w, r, lister)
+		default:
+			w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+			writeHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("a2a: method %s not allowed", r.Method))
 		}
-		if lister == nil {
-			writeHTTPError(w, http.StatusInternalServerError, ErrDiscovererRequired)
-			return
-		}
-		cards, err := lister.ListCards(r.Context())
-		if err != nil {
-			writeHTTPError(w, http.StatusInternalServerError, err)
-			return
-		}
-		writeHTTPJSON(w, http.StatusOK, fileDiscoveryDocument{Agents: cards})
 	})
 }
 
@@ -292,6 +291,38 @@ func (r *HTTPRegistry) Discover(ctx context.Context, query DiscoveryQuery) (Disc
 	return DiscoveryResult{}, ErrAgentNotFound
 }
 
+// RegisterCardWithLease registers a discoverable card in an HTTP registry.
+func (r *HTTPRegistry) RegisterCardWithLease(ctx context.Context, card AgentCard, ttl time.Duration) (AgentCard, error) {
+	if ttl <= 0 {
+		return AgentCard{}, ErrLeaseTTLRequired
+	}
+	var out AgentCard
+	err := r.doRegistryJSON(ctx, httpPathRegistryRegister, httpCardLeaseRequest{
+		Card:      copyAgentCard(card),
+		TTLMillis: durationMillis(ttl),
+	}, &out)
+	if err != nil {
+		return AgentCard{}, err
+	}
+	return copyAgentCard(out), nil
+}
+
+// HeartbeatCard renews one discoverable card lease in an HTTP registry.
+func (r *HTTPRegistry) HeartbeatCard(ctx context.Context, name string, ttl time.Duration) (AgentCard, error) {
+	if ttl <= 0 {
+		return AgentCard{}, ErrLeaseTTLRequired
+	}
+	var out AgentCard
+	err := r.doRegistryJSON(ctx, httpPathRegistryHeartbeat, httpCardLeaseRequest{
+		Name:      name,
+		TTLMillis: durationMillis(ttl),
+	}, &out)
+	if err != nil {
+		return AgentCard{}, err
+	}
+	return copyAgentCard(out), nil
+}
+
 // Send posts one task to the HTTP endpoint.
 func (a *HTTPAgent) Send(ctx context.Context, task Task) (Result, error) {
 	if ctx == nil {
@@ -411,6 +442,19 @@ func (r *HTTPRegistry) readDocument(ctx context.Context) (fileDiscoveryDocument,
 		return fileDiscoveryDocument{}, errors.New("a2a: http response too large")
 	}
 	return decodeDiscoveryDocument(raw, "http registry")
+}
+
+func (r *HTTPRegistry) doRegistryJSON(ctx context.Context, path string, input any, output any) error {
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r == nil || r.url == "" || r.client == nil {
+		return ErrHTTPRegistryURLRequired
+	}
+	return r.client.doJSON(ctx, http.MethodPost, strings.TrimRight(r.url, "/")+path, input, output)
 }
 
 func (a *HTTPAgent) doJSON(ctx context.Context, method string, url string, input any, output any) error {
@@ -655,6 +699,12 @@ type httpCancelRequest struct {
 	TaskID string `json:"task_id"`
 }
 
+type httpCardLeaseRequest struct {
+	Card      AgentCard `json:"card,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	TTLMillis int64     `json:"ttl_millis,omitempty"`
+}
+
 type httpTaskEventFrame struct {
 	Event TaskEvent `json:"event"`
 	Error string    `json:"error,omitempty"`
@@ -725,6 +775,71 @@ func writeHTTPError(w http.ResponseWriter, status int, err error) {
 		message = err.Error()
 	}
 	writeHTTPJSON(w, status, httpErrorResponse{Error: message})
+}
+
+func serveHTTPRegistryCards(w http.ResponseWriter, r *http.Request, lister CardLister) {
+	if lister == nil {
+		writeHTTPError(w, http.StatusInternalServerError, ErrDiscovererRequired)
+		return
+	}
+	cards, err := lister.ListCards(r.Context())
+	if err != nil {
+		writeHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeHTTPJSON(w, http.StatusOK, fileDiscoveryDocument{Agents: cards})
+}
+
+func serveHTTPRegistryMutation(w http.ResponseWriter, r *http.Request, lister CardLister) {
+	registrar, ok := lister.(CardRegistrar)
+	if !ok || registrar == nil {
+		writeHTTPError(w, http.StatusNotImplemented, ErrCardRegistrarRequired)
+		return
+	}
+	switch strings.TrimRight(r.URL.Path, "/") {
+	case httpPathRegistryRegister:
+		serveHTTPRegistryRegister(w, r, registrar)
+	case httpPathRegistryHeartbeat:
+		serveHTTPRegistryHeartbeat(w, r, registrar)
+	default:
+		writeHTTPError(w, http.StatusNotFound, ErrAgentNotFound)
+	}
+}
+
+func serveHTTPRegistryRegister(w http.ResponseWriter, r *http.Request, registrar CardRegistrar) {
+	var req httpCardLeaseRequest
+	if err := decodeHTTPJSON(r, &req); err != nil {
+		writeHTTPError(w, http.StatusBadRequest, err)
+		return
+	}
+	card, err := registrar.RegisterCardWithLease(r.Context(), req.Card, time.Duration(req.TTLMillis)*time.Millisecond)
+	if err != nil {
+		writeHTTPError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeHTTPJSON(w, http.StatusOK, card)
+}
+
+func serveHTTPRegistryHeartbeat(w http.ResponseWriter, r *http.Request, registrar CardRegistrar) {
+	var req httpCardLeaseRequest
+	if err := decodeHTTPJSON(r, &req); err != nil {
+		writeHTTPError(w, http.StatusBadRequest, err)
+		return
+	}
+	card, err := registrar.HeartbeatCard(r.Context(), req.Name, time.Duration(req.TTLMillis)*time.Millisecond)
+	if err != nil {
+		writeHTTPError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeHTTPJSON(w, http.StatusOK, card)
+}
+
+func durationMillis(ttl time.Duration) int64 {
+	millis := ttl.Milliseconds()
+	if millis <= 0 {
+		return 1
+	}
+	return millis
 }
 
 func taskWithContextAuth(ctx context.Context, task Task) Task {

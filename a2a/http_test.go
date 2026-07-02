@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact"
 )
@@ -316,6 +317,98 @@ func TestHTTPRegistryHandlerServesCardsForBootstrap(t *testing.T) {
 		bootstrap.Cards[0].Name != "planner" ||
 		bootstrap.Cards[1].Name != "reviewer" {
 		t.Fatalf("Bootstrap() cards = %+v, want handler registry order", bootstrap.Cards)
+	}
+}
+
+func TestHTTPRegistryRegistersLeasedCardForMeshBootstrap(t *testing.T) {
+	ctx := context.Background()
+	agentServer := httptest.NewServer(NewHTTPHandler(FakeAgent{
+		CardValue: AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			if err := ctx.Err(); err != nil {
+				return Result{}, err
+			}
+			return Result{TaskID: task.ID, Output: "reviewed: " + task.Input}, nil
+		},
+	}))
+	defer agentServer.Close()
+
+	store := NewRegistry()
+	registryServer := httptest.NewServer(NewHTTPRegistryHandler(store))
+	defer registryServer.Close()
+	registry, err := NewHTTPRegistry(registryServer.URL, WithHTTPClient(registryServer.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+
+	registered, err := registry.RegisterCardWithLease(ctx, AgentCard{
+		Name:         "reviewer",
+		URL:          agentServer.URL,
+		Capabilities: []string{"code.review"},
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterCardWithLease() error = %v", err)
+	}
+	renewed, err := registry.HeartbeatCard(ctx, "reviewer", 2*time.Minute)
+	if err != nil {
+		t.Fatalf("HeartbeatCard() error = %v", err)
+	}
+	if !renewed.ExpiresAt.After(registered.ExpiresAt) {
+		t.Fatalf("HeartbeatCard() expiry = %v, want after %v", renewed.ExpiresAt, registered.ExpiresAt)
+	}
+
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	bootstrap, err := mesh.Bootstrap(ctx, registry)
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if len(bootstrap.Cards) != 1 || bootstrap.Cards[0].Name != "reviewer" {
+		t.Fatalf("Bootstrap() cards = %+v, want registered reviewer", bootstrap.Cards)
+	}
+
+	result, err := mesh.Route(ctx, RouteQuery{
+		Require: []string{"code.review"},
+		Task:    Task{ID: "task-1", Input: "diff"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != "reviewed: diff" {
+		t.Fatalf("Route() result = %+v, want registered HTTP agent output", result)
+	}
+}
+
+func TestHTTPRegistryRegistrationRejectsUnsupportedRegistrarAndInvalidLease(t *testing.T) {
+	ctx := context.Background()
+	staticServer := httptest.NewServer(NewHTTPRegistryHandler(NewStaticDiscoverer(
+		AgentCard{Name: "planner", Capabilities: []string{"planning"}},
+	)))
+	defer staticServer.Close()
+	staticRegistry, err := NewHTTPRegistry(staticServer.URL, WithHTTPClient(staticServer.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry(static) error = %v", err)
+	}
+	_, err = staticRegistry.RegisterCardWithLease(ctx, AgentCard{Name: "reviewer"}, time.Minute)
+	if !errors.Is(err, ErrHTTPStatus) || !strings.Contains(err.Error(), ErrCardRegistrarRequired.Error()) {
+		t.Fatalf("RegisterCardWithLease(unsupported) error = %v, want HTTP status with %q", err, ErrCardRegistrarRequired)
+	}
+
+	storeServer := httptest.NewServer(NewHTTPRegistryHandler(NewRegistry()))
+	defer storeServer.Close()
+	registry, err := NewHTTPRegistry(storeServer.URL, WithHTTPClient(storeServer.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry(store) error = %v", err)
+	}
+	_, err = registry.RegisterCardWithLease(ctx, AgentCard{Name: "reviewer"}, 0)
+	if !errors.Is(err, ErrLeaseTTLRequired) {
+		t.Fatalf("RegisterCardWithLease(0) client error = %v, want %v", err, ErrLeaseTTLRequired)
+	}
+	_, err = registry.HeartbeatCard(ctx, "missing", time.Minute)
+	if !errors.Is(err, ErrHTTPStatus) || !strings.Contains(err.Error(), ErrAgentNotFound.Error()) {
+		t.Fatalf("HeartbeatCard(missing) error = %v, want HTTP status with %q", err, ErrAgentNotFound)
 	}
 }
 

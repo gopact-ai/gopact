@@ -24,6 +24,8 @@ var (
 	ErrLeaseTTLRequired = gopact.ErrLeaseTTLRequired
 	// ErrDiscovererRequired is returned when discovery is requested without a discoverer.
 	ErrDiscovererRequired = errors.New("a2a: discoverer is required")
+	// ErrCardRegistrarRequired is returned when card registration is requested without a registrar.
+	ErrCardRegistrarRequired = errors.New("a2a: card registrar is required")
 	// ErrDiscoveryRequired is returned when a discovery query has no name, URL, or metadata.
 	ErrDiscoveryRequired = errors.New("a2a: discovery name, url, or metadata is required")
 	// ErrStreamNotSupported is returned when an agent does not implement streaming.
@@ -203,6 +205,12 @@ type CardLister interface {
 	ListCards(ctx context.Context) ([]AgentCard, error)
 }
 
+// CardRegistrar registers discoverable agent cards without owning the remote agent process.
+type CardRegistrar interface {
+	RegisterCardWithLease(ctx context.Context, card AgentCard, ttl time.Duration) (AgentCard, error)
+	HeartbeatCard(ctx context.Context, name string, ttl time.Duration) (AgentCard, error)
+}
+
 // DiscovererFunc adapts a function into a Discoverer.
 type DiscovererFunc func(ctx context.Context, query DiscoveryQuery) (DiscoveryResult, error)
 
@@ -339,6 +347,53 @@ func (r *Registry) RegisterWithLease(ctx context.Context, agent Agent, ttl time.
 	return r.registerWithEvidence(ctx, agent, gopact.RuntimeIDs{}, time.Now().Add(ttl))
 }
 
+// RegisterCard stores a discoverable card without registering a local callable agent.
+func (r *Registry) RegisterCard(ctx context.Context, card AgentCard) (AgentCard, error) {
+	return r.registerCard(ctx, card, time.Time{})
+}
+
+// RegisterCardWithLease stores a discoverable card with a bounded lease.
+func (r *Registry) RegisterCardWithLease(ctx context.Context, card AgentCard, ttl time.Duration) (AgentCard, error) {
+	if ttl <= 0 {
+		return AgentCard{}, ErrLeaseTTLRequired
+	}
+	return r.registerCard(ctx, card, time.Now().Add(ttl))
+}
+
+func (r *Registry) registerCard(ctx context.Context, card AgentCard, expiresAt time.Time) (AgentCard, error) {
+	if err := ctx.Err(); err != nil {
+		return AgentCard{}, err
+	}
+	if r == nil {
+		return AgentCard{}, ErrAgentNotFound
+	}
+	card = copyAgentCard(card)
+	if card.Name == "" {
+		return AgentCard{}, ErrCardNameRequired
+	}
+	if !expiresAt.IsZero() {
+		card.ExpiresAt = expiresAt
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.cards == nil {
+		r.cards = make(map[string]AgentCard)
+	}
+	now := time.Now()
+	if agent := r.agents[card.Name]; agent != nil {
+		existing, hasCard := r.cards[card.Name]
+		if !hasCard || !agentCardExpired(existing, now) {
+			return AgentCard{}, fmt.Errorf("%w: %s", ErrAgentExists, card.Name)
+		}
+		delete(r.agents, card.Name)
+	}
+	r.cards[card.Name] = copyAgentCard(card)
+	r.appendOrderLocked(card.Name)
+	return copyAgentCard(card), nil
+}
+
 func (r *Registry) registerWithEvidence(ctx context.Context, agent Agent, ids gopact.RuntimeIDs, expiresAt time.Time) (RegistrationResult, error) {
 	if err := ctx.Err(); err != nil {
 		return RegistrationResult{}, err
@@ -401,6 +456,31 @@ func (r *Registry) Heartbeat(ctx context.Context, name string, ttl time.Duration
 	if _, ok := r.agents[name]; !ok {
 		return AgentCard{}, ErrAgentNotFound
 	}
+	card, ok := r.cards[name]
+	now := time.Now()
+	if !ok || agentCardExpired(card, now) {
+		return AgentCard{}, ErrAgentNotFound
+	}
+	card.ExpiresAt = now.Add(ttl)
+	r.cards[name] = copyAgentCard(card)
+	return copyAgentCard(card), nil
+}
+
+// HeartbeatCard renews a discoverable card lease without requiring a local callable agent.
+func (r *Registry) HeartbeatCard(ctx context.Context, name string, ttl time.Duration) (AgentCard, error) {
+	if err := ctx.Err(); err != nil {
+		return AgentCard{}, err
+	}
+	if ttl <= 0 {
+		return AgentCard{}, ErrLeaseTTLRequired
+	}
+	if r == nil {
+		return AgentCard{}, ErrAgentNotFound
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	card, ok := r.cards[name]
 	now := time.Now()
 	if !ok || agentCardExpired(card, now) {
