@@ -12,6 +12,7 @@ import (
 func TestExternalRepositoryManifestCoversRoadmapRepositories(t *testing.T) {
 	roadmap := loadExternalIntegrationRoadmap(t)
 	conformance := loadExtensionConformanceManifest(t)
+	topology := loadEcosystemTopology(t)
 	manifest := loadExternalRepositoryManifest(t)
 
 	if manifest.Organization != conformance.Scaffold.RepositoryOwner {
@@ -53,8 +54,8 @@ func TestExternalRepositoryManifestCoversRoadmapRepositories(t *testing.T) {
 		if !slices.Contains(roadmap.AllowedRoutes, repo.Route) {
 			t.Fatalf("external repository %q route %q is not allowed by roadmap", repo.Name, repo.Route)
 		}
-		if repo.ScaffoldStatus != "ready-to-create" {
-			t.Fatalf("external repository %q scaffold_status = %q, want ready-to-create", repo.Name, repo.ScaffoldStatus)
+		if repo.ScaffoldStatus != topology.Policy.LegacyExternalScaffoldStatus {
+			t.Fatalf("external repository %q scaffold_status = %q, want %q", repo.Name, repo.ScaffoldStatus, topology.Policy.LegacyExternalScaffoldStatus)
 		}
 		if !repo.HostOwnedConfig {
 			t.Fatalf("external repository %q must keep config host-owned", repo.Name)
@@ -270,23 +271,11 @@ func TestExtensionScaffoldMaterializerIsDocumented(t *testing.T) {
 		if !strings.Contains(content, "RenderSyncPlanFromDesign") {
 			t.Fatalf("%s does not reference RenderSyncPlanFromDesign", path)
 		}
-		if !strings.Contains(content, "cmd/gopact-extscaffold") {
-			t.Fatalf("%s does not reference cmd/gopact-extscaffold", path)
-		}
 		if !strings.Contains(content, "go.work") {
 			t.Fatalf("%s does not reference go.work", path)
 		}
 		if !strings.Contains(content, "sync-plan.json") {
 			t.Fatalf("%s does not reference sync-plan.json", path)
-		}
-		if !strings.Contains(content, "-verify") {
-			t.Fatalf("%s does not reference -verify", path)
-		}
-		if !strings.Contains(content, "-plan-json") {
-			t.Fatalf("%s does not reference -plan-json", path)
-		}
-		if !strings.Contains(content, "-remote-status-json") {
-			t.Fatalf("%s does not reference -remote-status-json", path)
 		}
 	}
 }

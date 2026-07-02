@@ -18,7 +18,7 @@
       "route": "adapter-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-adapters-model",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-model-openaicompatible"
@@ -42,7 +42,7 @@
       "route": "adapter-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-adapters-checkpoint",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-checkpoint-gcs",
@@ -71,7 +71,7 @@
       "route": "adapter-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-adapters-turnloop",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-turnloop-http",
@@ -97,7 +97,7 @@
       "route": "adapter-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-adapters-lease",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-lease-http",
@@ -123,7 +123,7 @@
       "route": "adapter-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-adapters-storage",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-storage-gcs",
@@ -150,7 +150,7 @@
       "route": "adapter-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-adapters-channel",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-channel-a2ui",
@@ -176,7 +176,7 @@
       "route": "plugin-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-plugins-observability",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-observability-trace"
@@ -200,7 +200,7 @@
       "route": "adapter-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-adapters-transport",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-adapters-transport-a2a",
@@ -225,7 +225,7 @@
       "route": "template-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-templates-react",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-templates-react"
@@ -249,7 +249,7 @@
       "route": "template-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-templates-devagent",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-templates-devagent"
@@ -273,7 +273,7 @@
       "route": "template-repo",
       "visibility": "private",
       "module_path": "github.com/gopact-ai/gopact-templates-agenttool",
-      "scaffold_status": "ready-to-create",
+      "scaffold_status": "migration-history",
       "host_owned_config": true,
       "extension_targets": [
         "gopact-templates-agenttool"
