@@ -46,7 +46,7 @@ const (
 	// SelfBootstrapCheckFeatureCoverage is the standard feature coverage snapshot check.
 	SelfBootstrapCheckFeatureCoverage = "file-snapshot:FEATURES.md"
 	// SelfBootstrapCheckGraphConformanceCommand is the standard graph workflow conformance check.
-	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./gopacttest/graphconformance"
+	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./graph ./gopacttest/graphconformance"
 	// SelfBootstrapCheckA2AConformanceCommand is the standard A2A mesh conformance check.
 	SelfBootstrapCheckA2AConformanceCommand = "command:go test -count=1 ./a2a ./gopacttest/a2aconformance"
 	// SelfBootstrapCommandAgnesProviderIntegration is the standard local Agnes provider integration command.
@@ -346,7 +346,7 @@ func selfBootstrapReleaseGateChecks(
 			},
 		},
 		selfBootstrapCommandEvidenceCheck("go test -run '^Example' ./..."),
-		selfBootstrapCommandEvidenceCheck("go test -count=1 ./gopacttest/graphconformance"),
+		selfBootstrapCommandEvidenceCheck("go test -count=1 ./graph ./gopacttest/graphconformance"),
 		selfBootstrapCommandEvidenceCheck("go test -count=1 ./a2a ./gopacttest/a2aconformance"),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesProviderIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesAgentTemplatesIntegration),

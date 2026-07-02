@@ -137,6 +137,13 @@ func TestCoreCIGatesRunGraphConformance(t *testing.T) {
 	}
 }
 
+func TestSelfBootstrapReleaseGateTracksGraphConformanceCommand(t *testing.T) {
+	const command = "go test -count=1 ./graph ./gopacttest/graphconformance"
+	if got := gopacttest.SelfBootstrapCheckGraphConformanceCommand; got != "command:"+command {
+		t.Fatalf("self-bootstrap graph conformance check = %q, want %q", got, "command:"+command)
+	}
+}
+
 func TestCoreCIConfiguresPrivateModuleAccess(t *testing.T) {
 	workflow := readTextFile(t, ".github/workflows/ci.yml")
 	for _, want := range []string{
