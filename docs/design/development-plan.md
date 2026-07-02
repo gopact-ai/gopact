@@ -442,6 +442,7 @@
 
 - 根目录必须具备 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md`、`CHANGELOG.md`；是否增加 `CODE_OF_CONDUCT.md` 可由组织治理决定，但不能缺少贡献、安全和变更入口。
 - 当前 `LICENSE`（MIT）、`CONTRIBUTING.md`、`SECURITY.md`、`CHANGELOG.md` 已补齐。
+- 仓库治理规则必须记录在 `docs/maintainers/repository-governance.md`，并明确 PR、CI、admin auto-merge、非 admin 审批和 public-readiness 检查。
 - `README.md` 必须面向新用户重写为短路径入口：项目定位、安装方式、最小可运行 quickstart、核心概念、当前稳定性声明、文档地图和贡献入口；完整能力清单应移入设计文档，不能让 README 变成内部研发流水账。
 - README 的第一屏必须讲清楚 `gopact` 是 Go-first agent SDK，而不是某个单一 agent template；必须说明 core 只提供过程契约、运行时原子能力、默认轻量实现和扩展点。
 - 必须明确标注包边界：stable core、experimental core、reference-only adapter、transitional adapter/template、external adapter/plugin/template。该边界以 `repository-boundary.json`、`public-api-boundary.json` 和 `v1-migration-plan.json` 为准。
@@ -449,7 +450,7 @@
 - 必须保留一组“用户会先复制”的 API 示例：`Setup` / defaults、Runner 或 graph 执行、run export/replay、verification evidence、resume payload schema gate。
 - 文档必须区分“已经可用的第一片”和“后续路线”。M1 complete、M2/M3/M4 first-slice complete、M5 partial、M6 in-progress 这些状态不能在 README 或 release note 中被包装成成熟生产可用。
 - 外部服务型能力必须通过 adapter/plugin/template 仓库表达；主仓不能因为展示效果把 OpenAI/Anthropic、GLM/BigModel、Z.AI、Volcengine Ark、Alibaba DashScope/Model Studio、Gemini/OpenRouter、models.dev catalog、Redis/SQL/S3/GCS/R2/OSS、Lark/A2UI/AG-UI、LangSmith/LangGraph 等生产接入重新沉入 core。
-- 外部仓库 readiness 必须在 release gate 中可见。只要 gopact-ai 外部私有仓库还缺少 `GOPACT_GITHUB_TOKEN`、CI 未通过或 `external_repository_readiness` / `external-ci:gopact-ai` evidence 未 passed，就不能把 M6 判为完成。
+- 外部仓库 readiness 必须在 release gate 中可见。只要官方 ext/examples 仓库、历史迁移仓库或外部 adapter evidence 缺少 CI、public-readiness、release tag 或 `external_repository_readiness` / `external-ci:gopact-ai` evidence，就不能把对应里程碑判为完成。
 - 每个新 public API 必须同时更新 public API boundary、必要的 executable example、godoc 注释和迁移/废弃策略；不能只新增代码符号。
 - 文档措辞必须避免营销化承诺。可以写“第一片”“reference-only”“experimental”“transitional”，不能写 unsupported 的 “production ready”“enterprise grade”。
 - 发布说明必须说明当前适合的使用方式：内部实验、SDK API 评审、template/conformance 开发、外部 adapter scaffold；不应暗示所有 adapter/template 都是长期主仓承诺。

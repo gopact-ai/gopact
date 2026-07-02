@@ -14,6 +14,10 @@ template, adapter-boundary, and release-process changes.
 - `a2a.WithHTTPReadinessCheck` for opt-in readiness-gated HTTP agent discovery.
 - `gopact agent init` for generating a standalone, testable A2A HTTP agent
   scaffold.
+- Public readiness checks for tracked files and commit messages before changing
+  repository visibility.
+- PR governance workflows that allow admin-authored PRs to auto-merge after CI
+  and require admin approval for non-admin-authored PRs.
 - MIT license in `LICENSE`.
 - Open-source release checklist in `docs/design/development-plan.md`.
 - Model reviewer governance field requirements through
@@ -45,5 +49,5 @@ template, adapter-boundary, and release-process changes.
 
 ### Known Blockers
 
-- External private scaffold repositories still require `GOPACT_GITHUB_TOKEN` and
-  passing latest CI before M6 can be complete.
+- Branch protection or repository rulesets must be applied after the repository
+  is public so `main` requires the `ci` and `author-policy` checks.

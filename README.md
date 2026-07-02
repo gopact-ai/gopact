@@ -10,7 +10,7 @@
 go get github.com/gopact-ai/gopact
 ```
 
-当前仓库仍为私有，安装需要具备 `gopact-ai/gopact` 的访问权限。SDK 自身不读取配置文件、环境变量或本地 secret；provider、backend、channel、plugin 的配置都应由宿主应用通过 Go options、接口或 typed snapshot 注入。
+SDK 自身不读取配置文件、环境变量或本地 secret；provider、backend、channel、plugin 的配置都应由宿主应用通过 Go options、接口或 typed snapshot 注入。
 
 ## 快速开始
 
@@ -43,7 +43,7 @@ go run ./cmd/gopact agent run /tmp/support-agent
 
 `gopact` 仍是 pre-v1 SDK。当前适合内部实验、SDK API 评审、template/conformance 开发和外部 adapter scaffold，不应被包装成成熟的完整 agent 平台。
 
-当前路线状态以 [docs/design/milestone-readiness.json](docs/design/milestone-readiness.json) 为准：M1 已完成，M2/M3/M4 是 first-slice complete，M5 partial，M6 in-progress。外部私有仓库 `GOPACT_GITHUB_TOKEN` secret 和 CI readiness 已在 M6 evidence 中记录。
+当前路线状态以 [docs/design/milestone-readiness.json](docs/design/milestone-readiness.json) 为准：M1 已完成，M2/M3/M4 是 first-slice complete，M5 partial，M6 in-progress。外部仓库迁移和 CI readiness evidence 保留在设计文档中，作为 release gate 的审计输入。
 
 ## 文档地图
 
@@ -54,6 +54,7 @@ go run ./cmd/gopact agent run /tmp/support-agent
 - [docs/design/public-api-examples.json](docs/design/public-api-examples.json)：root public API executable example 契约。
 - [docs/design/deprecation-policy.md](docs/design/deprecation-policy.md)：root public API 的废弃、迁移和移除策略。
 - [docs/design/versioning-policy.md](docs/design/versioning-policy.md)：core SDK、schema 和外部 extension 的版本策略。
+- [docs/maintainers/repository-governance.md](docs/maintainers/repository-governance.md)：公开仓库的 PR、CI、自动合并和发布前检查规则。
 - [docs/design/ecosystem-topology.json](docs/design/ecosystem-topology.json)：官方仓库拓扑；当前为 `gopact`、`gopact-ext`、`gopact-examples` 三仓，extension 统一放在 ext 的 Go submodules。
 - [docs/design/repository-boundary.json](docs/design/repository-boundary.json)：主仓、reference adapter 和外部仓库归属边界。
 - [docs/design/v1-migration-plan.json](docs/design/v1-migration-plan.json)：v1 前 core 边界收敛和 `release_gate_checks` 计划；每个 gate 会声明 `required_check_ids`。

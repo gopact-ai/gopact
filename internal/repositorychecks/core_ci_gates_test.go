@@ -157,6 +157,73 @@ func TestCoreCIConfiguresPrivateModuleAccess(t *testing.T) {
 	}
 }
 
+func TestRepositoryPublicReadinessAndPRGovernanceAreConfigured(t *testing.T) {
+	workflow := readTextFile(t, ".github/workflows/ci.yml")
+	readiness := readTextFile(t, filepath.Join("scripts", "public-readiness-check.sh"))
+	prGovernance := readTextFile(t, filepath.Join(".github", "workflows", "pr-governance.yml"))
+	adminAutomerge := readTextFile(t, filepath.Join(".github", "workflows", "admin-automerge.yml"))
+	governanceDoc := readTextFile(t, filepath.Join("docs", "maintainers", "repository-governance.md"))
+
+	for _, want := range []string{
+		"permissions:",
+		"contents: read",
+		"fetch-depth: 0",
+		"./scripts/public-readiness-check.sh",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("core CI workflow missing public readiness control %q", want)
+		}
+	}
+	for _, want := range []string{
+		"git ls-files -- .env '.env.*'",
+		"git rev-list --all",
+		"commit message",
+		"api-key-[0-9]{14,}",
+		"sk-vx[[:alnum:]_-]{20,}",
+		"ep-[0-9]{14}-[[:alnum:]_-]+",
+	} {
+		if !strings.Contains(readiness, want) {
+			t.Fatalf("public readiness script missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"name: pr-governance",
+		"pull_request_target:",
+		"pull_request_review:",
+		"author-policy",
+		"collaborators/${author}/permission",
+		"== \"APPROVED\"",
+	} {
+		if !strings.Contains(prGovernance, want) {
+			t.Fatalf("PR governance workflow missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"name: admin-automerge",
+		"pull_request_target:",
+		"gh pr merge",
+		"--auto",
+		"--squash",
+		"--delete-branch",
+		"!= \"admin\"",
+	} {
+		if !strings.Contains(adminAutomerge, want) {
+			t.Fatalf("admin automerge workflow missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"author-policy",
+		"Admin-authored PRs",
+		"Non-admin-authored PRs",
+		"Do not configure a global required review count",
+		"Require status checks to pass",
+	} {
+		if !strings.Contains(governanceDoc, want) {
+			t.Fatalf("repository governance doc missing %q", want)
+		}
+	}
+}
+
 func TestSelfBootstrapReleaseGateTracksCoreCIGates(t *testing.T) {
 	manifest := loadCoreCIGatesManifest(t)
 	var selfBootstrapGates []string

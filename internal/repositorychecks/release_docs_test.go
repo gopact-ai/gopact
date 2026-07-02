@@ -99,6 +99,15 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 				"## Unreleased",
 			},
 		},
+		{
+			path: filepath.Join("docs", "maintainers", "repository-governance.md"),
+			sections: []string{
+				"# Repository Governance",
+				"## Pull Request Flow",
+				"## Admin Auto-Merge",
+				"## Public Release Checks",
+			},
+		},
 	}
 
 	readme := readReleaseDoc(t, "README.md")
@@ -131,6 +140,22 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 	}
 }
 
+func TestPublicReleaseDocsAvoidPrivateOnlyLanguage(t *testing.T) {
+	for _, path := range []string{"README.md", "SECURITY.md", "CONTRIBUTING.md"} {
+		body := readReleaseDoc(t, path)
+		for _, forbidden := range []string{
+			"currently private",
+			"当前仓库仍为私有",
+			"安装需要具备",
+			"private security contact",
+		} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s contains private-only public release phrase %q", path, forbidden)
+			}
+		}
+	}
+}
+
 func TestReadmeHasPublicSDKEntryPath(t *testing.T) {
 	body := readReleaseDoc(t, "README.md")
 	requirements := []string{
@@ -144,6 +169,7 @@ func TestReadmeHasPublicSDKEntryPath(t *testing.T) {
 		"## 文档地图",
 		"docs/design/index.md",
 		"docs/design/public-api-examples.json",
+		"docs/maintainers/repository-governance.md",
 		"## 贡献与安全",
 		"CONTRIBUTING.md",
 		"SECURITY.md",
