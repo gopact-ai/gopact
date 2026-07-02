@@ -886,6 +886,7 @@ type Server interface {
 - `a2a.AgentCard`、`Task`、`Result`、`Agent`、`Registry` 和 `FakeAgent` 最小契约；
 - `a2a.NewRunnableAgent` 已提供 local `gopact.Runnable` -> A2A `Agent` / `StreamingAgent` 的直接适配第一片；`Send` 会把 task input 转成 user message，把 final assistant message、artifact refs 和 child event count 聚合成 `a2a.Result`，`Stream` 会把本地 runtime message/artifact/completed/failed 投影成 `TaskEvent`；
 - `a2a.NewHTTPAgent` 和 `a2a.NewHTTPHandler` 已提供 HTTP JSON/JSONL client/server wrapper 第一片；card/send/cancel 使用 JSON，task stream 使用 JSONL，`Auth` 只作为 sanitized task/context 透传，不读取配置文件、不持有 secret；
+- `a2a.HTTPRegistry`、`a2a.NewHTTPRegistryHandler`、`a2a.Registry.RegisterCardWithLease` 和 `a2a.Registry.HeartbeatCard` 已提供 HTTP agent card lease registration / heartbeat 第一片；远程 agent 可把自身 card 按 TTL 注册到轻量 HTTP registry，registry 只持有可发现 card，不持有远程进程，`Mesh.Bootstrap` 可从该 registry 导入 card 并按 card URL 路由到 HTTP agent；
 - `a2a.NewJSONRPCAgent` 和 `a2a.NewJSONRPCHandler` 已提供 JSON-RPC 2.0 + SSE client/server wrapper 第一片；method 覆盖 `SendMessage`、`SendStreamingMessage`、`CancelTask`，agent card 使用 well-known endpoint，text task 可映射到 A2A `message.parts[].text`，stream 使用 SSE `data:` frame，HTTP client、headers、response limit 和 card metadata 都由宿主 typed option 注入；
 - `templates/agenttool.NewA2A` 可以把 direct `a2a.Agent` 包装成 `gopact.Tool`；
 - A2A task id 映射到 child `CallID`，`RunID`、`ThreadID`、`UserID` 和 `ParentCallID` 会透传；
@@ -900,9 +901,9 @@ type Server interface {
 
 后续默认 adapter：
 
-- production agent discovery registry；
+- production registry backend adapter 和多实例一致性语义；
 - official A2A proto/schema 完整 Task/Message/Artifact 数据模型；
-- production discovery registry；
+- readiness-aware registry filtering 和 health-driven eviction；
 - resumable / production SSE streaming adapter；
 - artifact store 深度转换。
 

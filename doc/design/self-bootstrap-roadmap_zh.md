@@ -57,7 +57,7 @@
 | S1 | 编排地基 | graph 支持 branch、DAG fan-in、dynamic fan-out、loop/step limit、subgraph / runnable node，并有 conformance tests |
 | S2 | Scaffold 地基 | 提供低门槛 agent scaffold，覆盖 chat、ReAct、Plan-Execute、checkpoint/resume、human approval |
 | S3 | Provider 双轨 | ext 中 OpenAI-compatible、Agnes、Ark provider 示例可本地真实跑通；CI 使用 mock provider 固化行为 |
-| S4 | Agent Mesh | 支持 agent card、readiness-aware discovery、lease registration、heartbeat renewal、A2A call/stream/cancel、RPC-like router、cross-agent evidence |
+| S4 | Agent Mesh | 支持 agent card、readiness-aware discovery、lease registration、heartbeat renewal、A2A call/stream/cancel、RPC-like router、cross-agent evidence；CI 使用 mock HTTP registry 固化注册、续约、bootstrap 和 route 行为 |
 | S5 | Example Cluster | example 仓库提供 gateway、planner、research、code、review agent 本地集群 |
 | S6 | Dev Agent 自举 | Dev Agent 能执行 analyze、plan、write、test、review、release gate，并导出完整 `RunExport` |
 | S7 | 发布门禁 | core、ext、examples 的 mock CI、coverage、conformance、golden trajectory 和本地 Agnes integration 均有明确通过标准 |

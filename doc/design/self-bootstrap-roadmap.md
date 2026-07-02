@@ -34,7 +34,7 @@ This implies three product constraints:
 
 | Slice | Goal | Required proof |
 | --- | --- | --- |
-| P1 A2A lifecycle | Agent cards, readiness-aware discovery, lease registration, heartbeat renewal, call, stream, cancel, routing, policy, and auth | Offline A2A tests plus examples using mock agents |
+| P1 A2A lifecycle | Agent cards, readiness-aware discovery, lease registration, heartbeat renewal, call, stream, cancel, routing, policy, and auth | Offline A2A tests plus HTTP registry mock integration examples |
 | P2 workflow orchestration | Branch, DAG fan-in, dynamic fan-out, loop limits, subgraph/runnable nodes, interrupt, checkpoint, and resume | Graph and checkpoint conformance plus golden trajectories |
 | P3 agent templates | ReAct, Plan-Execute, Supervisor, Agent-as-Tool, and Dev Agent templates in `gopact-ext` | Template conformance, golden trajectories, failure-path tests |
 | P4 provider validation | OpenAI-compatible, Agnes, Ark/OpenAI-compatible, streaming, tool calls, structured output, thinking controls, error classification, timeout, and cancel | CI mock tests plus local `.env` Agnes integration tests |
