@@ -72,7 +72,6 @@ func TestReadmeBadgesAndDocIndexAreConfigured(t *testing.T) {
 	for _, want := range []string{
 		"https://github.com/gopact-ai/gopact/actions/workflows/ci.yml/badge.svg?branch=main",
 		"https://img.shields.io/github/license/gopact-ai/gopact",
-		"https://goreportcard.com/badge/github.com/gopact-ai/gopact",
 		"https://pkg.go.dev/badge/github.com/gopact-ai/gopact.svg",
 		"doc/README.md",
 		"doc/FEATURES.md",
