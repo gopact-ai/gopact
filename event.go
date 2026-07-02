@@ -54,6 +54,7 @@ const (
 	EventMCPPromptsListed              EventType = "mcp_prompts_listed"
 	EventA2AAgentRegistered            EventType = "a2a_agent_registered"
 	EventA2AAgentCardFetched           EventType = "a2a_agent_card_fetched"
+	EventA2AAgentHeartbeat             EventType = "a2a_agent_heartbeat"
 	EventA2ATaskSent                   EventType = "a2a_task_sent"
 	EventA2AMessageReceived            EventType = "a2a_message_received"
 	EventA2AArtifactUpdated            EventType = "a2a_artifact_updated"
