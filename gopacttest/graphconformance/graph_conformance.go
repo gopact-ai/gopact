@@ -42,6 +42,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkLoopStepLimitFails(ctx),
 		checkRunnableNodeRunsSubgraph(ctx),
 		checkRunnableNodeStreamsNestedEvents(ctx),
+		checkNodeEmitsNestedEvents(ctx),
 		checkRunnableNodeInheritsRuntimeIDs(ctx),
 		checkRunnableNodeCheckpointInheritanceIsolation(ctx),
 		checkFailedNodeStopsSuccessors(ctx),
@@ -551,6 +552,59 @@ func checkRunnableNodeStreamsNestedEvents(ctx context.Context) GraphConformanceR
 		return failedGraphConformance(name, fmt.Errorf("parent output type = %T, want traceState", events[6].StepSnapshot.Output))
 	}
 	return requireTrace(name, output, []string{"child"})
+}
+
+func checkNodeEmitsNestedEvents(ctx context.Context) GraphConformanceResult {
+	const name = "node-emits-nested-events"
+	ids := gopact.RuntimeIDs{RunID: "run-graph-node-event", ThreadID: "thread-graph-node-event"}
+	g := graph.New[traceState]()
+	g.AddNode("delegate", func(ctx context.Context, state traceState) (traceState, error) {
+		if !graph.EmitNodeEvent(ctx, gopact.Event{
+			Type: gopact.EventA2ATaskCompleted,
+			IDs:  ids,
+			Metadata: map[string]any{
+				"agent_name": "planner",
+			},
+		}, nil) {
+			return state, graph.ErrNodeEventYieldStopped
+		}
+		state.Trace = append(state.Trace, "delegate")
+		return state, nil
+	})
+	g.AddEdge(graph.Start, "delegate")
+	g.AddEdge("delegate", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}, graph.WithRuntimeIDs(ids)))
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventA2ATaskCompleted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	}
+	if !reflect.DeepEqual(eventTypes(events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(events), wantTypes))
+	}
+	event := events[2]
+	if event.Metadata[graph.EventMetadataParentNode] != "delegate" ||
+		event.Metadata[graph.EventMetadataParentStep] != 1 {
+		return failedGraphConformance(name, fmt.Errorf("nested event metadata = %+v, want parent delegate step 1", event.Metadata))
+	}
+	if event.Metadata["agent_name"] != "planner" {
+		return failedGraphConformance(name, fmt.Errorf("nested event metadata = %+v, want agent_name", event.Metadata))
+	}
+	output, ok := events[3].StepSnapshot.Output.(traceState)
+	if !ok {
+		return failedGraphConformance(name, fmt.Errorf("parent output type = %T, want traceState", events[3].StepSnapshot.Output))
+	}
+	return requireTrace(name, output, []string{"delegate"})
 }
 
 func checkRunnableNodeInheritsRuntimeIDs(ctx context.Context) GraphConformanceResult {
