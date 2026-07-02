@@ -7,6 +7,7 @@ import (
 	"iter"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/gopacttest"
@@ -812,6 +813,93 @@ func TestRegistryRouteByCapability(t *testing.T) {
 	})
 	if !errors.Is(err, ErrAgentNotFound) {
 		t.Fatalf("Route() missing capability error = %v, want ErrAgentNotFound", err)
+	}
+}
+
+func TestRegistrySkipsExpiredAgentCards(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	expired := FakeAgent{
+		CardValue: AgentCard{
+			Name:         "expired-reviewer",
+			Capabilities: []string{"code.review"},
+			ExpiresAt:    time.Now().Add(-time.Minute),
+		},
+		SendFunc: func(context.Context, Task) (Result, error) {
+			return Result{Output: "expired"}, nil
+		},
+	}
+	active := FakeAgent{
+		CardValue: AgentCard{
+			Name:         "active-reviewer",
+			Capabilities: []string{"code.review"},
+			ExpiresAt:    time.Now().Add(time.Minute),
+		},
+		SendFunc: func(context.Context, Task) (Result, error) {
+			return Result{Output: "active"}, nil
+		},
+	}
+	if err := registry.Register(ctx, expired); err != nil {
+		t.Fatalf("Register(expired) error = %v", err)
+	}
+	if err := registry.Register(ctx, active); err != nil {
+		t.Fatalf("Register(active) error = %v", err)
+	}
+
+	cards, err := registry.ListCards(ctx)
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if got, want := cardNames(cards), []string{"active-reviewer"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListCards() names = %v, want %v", got, want)
+	}
+
+	result, err := registry.Route(ctx, RouteQuery{
+		Require: []string{"code.review"},
+		Task:    Task{ID: "task-1"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != "active" {
+		t.Fatalf("Route() output = %q, want active", result.Output)
+	}
+}
+
+func TestRegistryRegisterReplacesExpiredAgent(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	expired := FakeAgent{
+		CardValue: AgentCard{
+			Name:      "reviewer",
+			ExpiresAt: time.Now().Add(-time.Minute),
+		},
+		SendFunc: func(context.Context, Task) (Result, error) {
+			return Result{Output: "expired"}, nil
+		},
+	}
+	active := FakeAgent{
+		CardValue: AgentCard{
+			Name:      "reviewer",
+			ExpiresAt: time.Now().Add(time.Minute),
+		},
+		SendFunc: func(context.Context, Task) (Result, error) {
+			return Result{Output: "active"}, nil
+		},
+	}
+	if err := registry.Register(ctx, expired); err != nil {
+		t.Fatalf("Register(expired) error = %v", err)
+	}
+	if err := registry.Register(ctx, active); err != nil {
+		t.Fatalf("Register(active) error = %v", err)
+	}
+
+	result, err := registry.Send(ctx, "reviewer", Task{ID: "task-1"})
+	if err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	if result.Output != "active" {
+		t.Fatalf("Send() output = %q, want active", result.Output)
 	}
 }
 

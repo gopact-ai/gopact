@@ -8,6 +8,7 @@ import (
 	"iter"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/gopact-ai/gopact"
 )
@@ -129,6 +130,7 @@ type AgentCard struct {
 	Auth         *AuthRequirement  `json:"auth,omitempty"`
 	Owner        string            `json:"owner,omitempty"`
 	Version      string            `json:"version,omitempty"`
+	ExpiresAt    time.Time         `json:"expires_at,omitzero"`
 	Health       *HealthHints      `json:"health,omitempty"`
 	Metadata     map[string]any    `json:"metadata,omitempty"`
 }
@@ -345,7 +347,10 @@ func (r *Registry) RegisterWithEvidence(ctx context.Context, agent Agent, ids go
 		r.cards = make(map[string]AgentCard)
 	}
 	if _, ok := r.agents[card.Name]; ok {
-		return RegistrationResult{}, fmt.Errorf("%w: %s", ErrAgentExists, card.Name)
+		existing, hasCard := r.cards[card.Name]
+		if !hasCard || !agentCardExpired(existing, time.Now()) {
+			return RegistrationResult{}, fmt.Errorf("%w: %s", ErrAgentExists, card.Name)
+		}
 	}
 	r.agents[card.Name] = agent
 	r.cards[card.Name] = copyAgentCard(card)
@@ -369,10 +374,11 @@ func (r *Registry) ListCards(ctx context.Context) ([]AgentCard, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	now := time.Now()
 	cards := make([]AgentCard, 0, len(r.order))
 	for _, name := range r.order {
 		card, ok := r.cards[name]
-		if !ok {
+		if !ok || agentCardExpired(card, now) {
 			continue
 		}
 		cards = append(cards, copyAgentCard(card))
@@ -456,9 +462,15 @@ func (r *Registry) Card(ctx context.Context, name string) (AgentCard, error) {
 	defer r.mu.RUnlock()
 
 	if agent, ok := r.agents[name]; ok {
+		if agentCardExpired(r.cards[name], time.Now()) {
+			return AgentCard{}, ErrAgentNotFound
+		}
 		return copyAgentCard(agent.Card()), nil
 	}
 	if card, ok := r.cards[name]; ok {
+		if agentCardExpired(card, time.Now()) {
+			return AgentCard{}, ErrAgentNotFound
+		}
 		return copyAgentCard(card), nil
 	}
 	return AgentCard{}, ErrAgentNotFound
@@ -679,6 +691,9 @@ func (r *Registry) resolve(ctx context.Context, name string) (Agent, error) {
 	if !ok {
 		return nil, ErrAgentNotFound
 	}
+	if agentCardExpired(r.cards[name], time.Now()) {
+		return nil, ErrAgentNotFound
+	}
 	return agent, nil
 }
 
@@ -701,11 +716,12 @@ func (r *Registry) resolveRoutes(ctx context.Context, query RouteQuery) ([]Agent
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	now := time.Now()
 	agents := make([]Agent, 0, len(r.order))
 	for _, name := range r.order {
 		agent := r.agents[name]
 		card := r.cards[name]
-		if agent == nil {
+		if agent == nil || agentCardExpired(card, now) {
 			continue
 		}
 		if hasCapabilities(card.Capabilities, query.Require) && hasCapabilities(card.Tags, query.Tags) && hasMetadata(card.Metadata, query.Metadata) {
@@ -716,6 +732,10 @@ func (r *Registry) resolveRoutes(ctx context.Context, query RouteQuery) ([]Agent
 		return nil, ErrAgentNotFound
 	}
 	return agents, nil
+}
+
+func agentCardExpired(card AgentCard, now time.Time) bool {
+	return !card.ExpiresAt.IsZero() && !now.Before(card.ExpiresAt)
 }
 
 func (r *Registry) appendOrderLocked(name string) {
