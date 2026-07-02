@@ -68,14 +68,24 @@ func ExampleNewHTTPRegistryHandler() {
 	}
 	agentServer := httptest.NewServer(a2a.NewHTTPHandler(local))
 	defer agentServer.Close()
-	registryServer := httptest.NewServer(a2a.NewHTTPRegistryHandler(a2a.NewStaticDiscoverer(a2a.AgentCard{
-		Name:         "reviewer",
-		URL:          agentServer.URL,
-		Capabilities: []string{"code.review"},
-	})))
+	reviewerEndpoint, err := a2a.NewHTTPAgent(agentServer.URL, a2a.WithHTTPClient(agentServer.Client()))
+	if err != nil {
+		panic(err)
+	}
+	registryServer := httptest.NewServer(a2a.NewHTTPRegistryHandler(a2a.NewCompositeDiscoverer(
+		a2a.NewStaticDiscoverer(a2a.AgentCard{
+			Name:         "planner",
+			Capabilities: []string{"planning"},
+		}),
+		reviewerEndpoint,
+	)))
 	defer registryServer.Close()
 
 	registry, err := a2a.NewHTTPRegistry(registryServer.URL, a2a.WithHTTPClient(registryServer.Client()))
+	if err != nil {
+		panic(err)
+	}
+	cards, err := registry.ListCards(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -94,7 +104,9 @@ func ExampleNewHTTPRegistryHandler() {
 		panic(err)
 	}
 
+	fmt.Println(len(cards))
 	fmt.Println(result.Output)
 	// Output:
+	// 2
 	// reviewed: diff
 }
