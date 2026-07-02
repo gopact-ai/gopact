@@ -122,6 +122,48 @@ func TestMeshRegisterWithLeaseAndHeartbeatRenewVisibleCard(t *testing.T) {
 	}
 }
 
+func TestMeshHeartbeatPublishesLeaseEvidence(t *testing.T) {
+	ctx := context.Background()
+	ids := gopact.RuntimeIDs{RunID: "run-1", AgentID: "mesh-1", CallID: "heartbeat-1"}
+	events := []gopact.Event{}
+	mesh, err := NewMesh(
+		WithMeshRuntimeIDs(ids),
+		WithMeshEventSink(func(ctx context.Context, event gopact.Event) error {
+			events = append(events, event)
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	agent := FakeAgent{CardValue: AgentCard{Name: "reviewer", URL: "https://agents.example/reviewer"}}
+	if _, err := mesh.RegisterWithLease(ctx, agent, time.Minute); err != nil {
+		t.Fatalf("RegisterWithLease() error = %v", err)
+	}
+	events = nil
+
+	renewed, err := mesh.Heartbeat(ctx, "reviewer", 2*time.Minute)
+	if err != nil {
+		t.Fatalf("Heartbeat() error = %v", err)
+	}
+	if renewed.ExpiresAt.IsZero() {
+		t.Fatalf("Heartbeat() expiry is zero: %+v", renewed)
+	}
+
+	if got := eventTypes(events); !reflect.DeepEqual(got, []gopact.EventType{gopact.EventA2AAgentHeartbeat}) {
+		t.Fatalf("published events = %v, want heartbeat evidence", got)
+	}
+	event := events[0]
+	if event.IDs != ids || event.RunID != ids.RunID || event.ThreadID != ids.ThreadID {
+		t.Fatalf("heartbeat event ids = %+v / run %q thread %q, want %+v", event.IDs, event.RunID, event.ThreadID, ids)
+	}
+	if event.Metadata["agent_name"] != "reviewer" ||
+		event.Metadata["agent_url"] != "https://agents.example/reviewer" ||
+		event.Metadata["lease_expires_at"] == "" {
+		t.Fatalf("heartbeat metadata = %+v, want agent lease evidence", event.Metadata)
+	}
+}
+
 func TestMeshCallPropagatesContextRuntimeIDs(t *testing.T) {
 	want := gopact.RuntimeIDs{
 		RunID:   "task-run",

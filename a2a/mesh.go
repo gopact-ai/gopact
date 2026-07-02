@@ -296,7 +296,16 @@ func (m *Mesh) Heartbeat(ctx context.Context, name string, ttl time.Duration) (A
 	}
 	ctx, cancel := m.operationContext(ctx)
 	defer cancel()
-	return registry.Heartbeat(ctx, name, ttl)
+	ids := m.idsWithContext(ctx)
+	ctx = contextWithRuntimeIDs(ctx, ids)
+	card, err := registry.Heartbeat(ctx, name, ttl)
+	if err != nil {
+		return card, err
+	}
+	if err := m.publishEvents(ctx, []gopact.Event{agentHeartbeatEvent(card, ids)}); err != nil {
+		return card, err
+	}
+	return card, nil
 }
 
 // Call sends one task to an agent by name and publishes call evidence.

@@ -49,11 +49,12 @@ const (
 )
 
 const (
-	metadataAgentName  = "agent_name"
-	metadataAgentURL   = "agent_url"
-	metadataA2ATaskID  = "a2a_task_id"
-	metadataA2AStatus  = "a2a_status"
-	metadataA2AMessage = "a2a_message"
+	metadataAgentName      = "agent_name"
+	metadataAgentURL       = "agent_url"
+	metadataLeaseExpiresAt = "lease_expires_at"
+	metadataA2ATaskID      = "a2a_task_id"
+	metadataA2AStatus      = "a2a_status"
+	metadataA2AMessage     = "a2a_message"
 )
 
 // Auth carries sanitized authentication context for an A2A operation.
@@ -1208,6 +1209,25 @@ func agentRegisteredEvent(card AgentCard, ids gopact.RuntimeIDs) gopact.Event {
 	metadata["capability_count"] = len(card.Capabilities)
 	return gopact.Event{
 		Type:     gopact.EventA2AAgentRegistered,
+		IDs:      ids,
+		Metadata: metadata,
+	}.WithRuntimeDefaults(ids)
+}
+
+func agentHeartbeatEvent(card AgentCard, ids gopact.RuntimeIDs) gopact.Event {
+	metadata := copyAnyMap(card.Metadata)
+	if metadata == nil {
+		metadata = make(map[string]any)
+	}
+	metadata[metadataAgentName] = card.Name
+	if card.URL != "" {
+		metadata[metadataAgentURL] = card.URL
+	}
+	if !card.ExpiresAt.IsZero() {
+		metadata[metadataLeaseExpiresAt] = card.ExpiresAt.Format(time.RFC3339Nano)
+	}
+	return gopact.Event{
+		Type:     gopact.EventA2AAgentHeartbeat,
 		IDs:      ids,
 		Metadata: metadata,
 	}.WithRuntimeDefaults(ids)

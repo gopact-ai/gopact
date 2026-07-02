@@ -340,6 +340,10 @@
           "kind": "const"
         },
         {
+          "name": "EventA2AAgentHeartbeat",
+          "kind": "const"
+        },
+        {
           "name": "EventA2AAgentRegistered",
           "kind": "const"
         },
