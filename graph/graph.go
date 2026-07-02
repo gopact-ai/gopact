@@ -25,7 +25,11 @@ const (
 
 const metadataCompletedNodes = "graph_completed_nodes"
 
-var errNestedEventYieldStopped = errors.New("graph: nested event yield stopped")
+// ErrNodeEventYieldStopped can be returned by a node after EmitNodeEvent reports
+// that the graph event consumer stopped accepting events.
+var ErrNodeEventYieldStopped = errors.New("graph: nested event yield stopped")
+
+var errNestedEventYieldStopped = ErrNodeEventYieldStopped
 
 // NodeFunc 表示 graph 中一步状态转换。
 type NodeFunc[S any] func(ctx context.Context, state S) (S, error)
@@ -229,6 +233,18 @@ func contextWithNestedEventSink(ctx context.Context, parentNode string, parentSt
 		parentStep: parentStep,
 		yield:      yield,
 	})
+}
+
+// EmitNodeEvent publishes a child event from inside a graph node.
+//
+// The event is annotated with graph parent metadata when the node is running
+// through Runnable.Run. Calls outside a graph run are no-ops and return true.
+func EmitNodeEvent(ctx context.Context, event gopact.Event, err error) bool {
+	sink, ok := nestedEventSinkFromContext(ctx)
+	if !ok {
+		return true
+	}
+	return sink.yield(annotateNestedEvent(event, sink), err)
 }
 
 func runNestedRunnableNode[S any](ctx context.Context, state S, runnable *Runnable[S], opts []InvokeOption, sink nestedEventSink) (S, error) {

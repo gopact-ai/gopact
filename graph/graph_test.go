@@ -216,6 +216,53 @@ func TestGraphRunnableNodeStreamsNestedEvents(t *testing.T) {
 	}
 }
 
+func TestGraphNodeCanEmitNestedEvents(t *testing.T) {
+	ctx := context.Background()
+	ids := gopact.RuntimeIDs{RunID: "run-1", ThreadID: "thread-1"}
+	g := New[traceState]()
+	g.AddNode("delegate", func(ctx context.Context, state traceState) (traceState, error) {
+		if !EmitNodeEvent(ctx, gopact.Event{
+			Type: gopact.EventA2ATaskCompleted,
+			IDs:  ids,
+			Metadata: map[string]any{
+				"agent_name": "planner",
+			},
+		}, nil) {
+			return state, ErrNodeEventYieldStopped
+		}
+		state.Trace = append(state.Trace, "delegate")
+		return state, nil
+	})
+	g.AddEdge(Start, "delegate")
+	g.AddEdge("delegate", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}, WithRuntimeIDs(ids)))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventA2ATaskCompleted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	)
+	if events[2].Metadata[EventMetadataParentNode] != "delegate" {
+		t.Fatalf("nested event parent node = %v, want delegate", events[2].Metadata[EventMetadataParentNode])
+	}
+	if events[2].Metadata[EventMetadataParentStep] != 1 {
+		t.Fatalf("nested event parent step = %v, want 1", events[2].Metadata[EventMetadataParentStep])
+	}
+	if events[2].Metadata["agent_name"] != "planner" {
+		t.Fatalf("nested event metadata = %+v, want agent_name", events[2].Metadata)
+	}
+}
+
 func TestGraphRunnableNodeInheritsRuntimeIDs(t *testing.T) {
 	ctx := context.Background()
 	want := gopact.RuntimeIDs{

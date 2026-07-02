@@ -29,6 +29,7 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"loop-step-limit-fails",
 		"runnable-node-runs-subgraph",
 		"runnable-node-streams-nested-events",
+		"node-emits-nested-events",
 		"runnable-node-inherits-runtime-ids",
 		"runnable-node-checkpoint-inheritance-isolation",
 		"failed-node-stops-successors",
