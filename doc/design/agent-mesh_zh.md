@@ -115,7 +115,7 @@ Agent Mesh 应支持分层发现：
 | static registry | 简单生产部署 |
 | external registry adapter | Consul、etcd、Kubernetes、Nacos 或企业服务发现 |
 
-Core 只定义 discovery contract 和轻量实现。当前 lightweight HTTP registry 支持按 TTL 注册/续约 agent card，供本地集群、example 和 adapter conformance 使用；它不替代生产注册中心的一致性、选主、权限和驱逐能力。外部服务发现系统放在 adapter 层。
+Core 只定义 discovery contract 和轻量实现。当前 lightweight HTTP registry 支持按 TTL 注册/续约 agent card，并可在导入和发现时过滤未 ready 的 HTTP agent card，供本地集群、example 和 adapter conformance 使用；它不替代生产注册中心的一致性、选主、权限和驱逐能力。外部服务发现系统放在 adapter 层。
 
 ## Server Scaffold
 
