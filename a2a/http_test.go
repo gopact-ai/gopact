@@ -136,6 +136,38 @@ func TestHTTPAgentDiscoversWellKnownAgentCard(t *testing.T) {
 	}
 }
 
+func TestHTTPAgentReadinessCheckFiltersNotReadyDiscovery(t *testing.T) {
+	ctx := context.Background()
+	readyHits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/agent-card.json":
+			writeHTTPJSON(w, http.StatusOK, AgentCard{
+				Name:   "planner",
+				Health: &HealthHints{ReadinessPath: "/custom-ready"},
+			})
+		case "/custom-ready":
+			readyHits++
+			writeHTTPJSON(w, http.StatusServiceUnavailable, httpStatusResponse{Status: "not_ready"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	remote, err := NewHTTPAgent(server.URL, WithHTTPClient(server.Client()), WithHTTPReadinessCheck())
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+
+	_, err = remote.Discover(ctx, DiscoveryQuery{Name: "planner"})
+	if !errors.Is(err, ErrHTTPStatus) {
+		t.Fatalf("Discover() error = %v, want ErrHTTPStatus", err)
+	}
+	if readyHits != 1 {
+		t.Fatalf("readiness hits = %d, want 1", readyHits)
+	}
+}
+
 func TestHTTPAgentListCardsReturnsWellKnownAgentCard(t *testing.T) {
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

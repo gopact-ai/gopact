@@ -43,6 +43,7 @@ type HTTPAgent struct {
 	card             AgentCard
 	headers          http.Header
 	maxResponseBytes int64
+	readinessCheck   bool
 }
 
 // HTTPRegistry fetches agent cards from one HTTP JSON registry document.
@@ -180,6 +181,14 @@ func WithHTTPMaxResponseBytes(n int64) HTTPAgentOption {
 	}
 }
 
+// WithHTTPReadinessCheck requires the endpoint readiness URL to return 2xx before discovery succeeds.
+func WithHTTPReadinessCheck() HTTPAgentOption {
+	return func(agent *HTTPAgent) error {
+		agent.readinessCheck = true
+		return nil
+	}
+}
+
 // Card returns configured card metadata for model-visible tool specs.
 func (a *HTTPAgent) Card() AgentCard {
 	if a == nil {
@@ -216,6 +225,11 @@ func (a *HTTPAgent) Discover(ctx context.Context, query DiscoveryQuery) (Discove
 	}
 	if !matchesRemoteDiscoveryQuery(card, query) {
 		return DiscoveryResult{}, ErrAgentNotFound
+	}
+	if a.readinessCheck {
+		if err := a.checkReadiness(ctx, endpoint, card); err != nil {
+			return DiscoveryResult{}, err
+		}
 	}
 	return DiscoveryResult{Card: copyAgentCard(card)}, nil
 }
@@ -455,6 +469,31 @@ func (a *HTTPAgent) checkStatus(resp *http.Response) error {
 		return fmt.Errorf("%w: %s: %s", ErrHTTPStatus, resp.Status, remote.Error)
 	}
 	return fmt.Errorf("%w: %s", ErrHTTPStatus, resp.Status)
+}
+
+func (a *HTTPAgent) checkReadiness(ctx context.Context, endpoint string, card AgentCard) error {
+	resp, err := a.do(ctx, http.MethodGet, readinessURL(endpoint, card), nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	return a.checkStatus(resp)
+}
+
+func readinessURL(endpoint string, card AgentCard) string {
+	path := httpPathReady
+	if card.Health != nil && strings.TrimSpace(card.Health.ReadinessPath) != "" {
+		path = strings.TrimSpace(card.Health.ReadinessPath)
+	}
+	if isHTTPURL(path) {
+		return path
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return strings.TrimRight(endpoint, "/") + path
 }
 
 // HTTPHandlerOption configures an HTTP A2A server handler.
