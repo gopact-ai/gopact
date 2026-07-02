@@ -903,6 +903,90 @@ func TestRegistryRegisterReplacesExpiredAgent(t *testing.T) {
 	}
 }
 
+func TestRegistryRegisterWithLeaseSetsVisibleExpiryAndHeartbeatRenews(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	agent := FakeAgent{
+		CardValue: AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review"},
+		},
+		SendFunc: func(context.Context, Task) (Result, error) {
+			return Result{Output: "active"}, nil
+		},
+	}
+
+	registration, err := registry.RegisterWithLease(ctx, agent, time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterWithLease() error = %v", err)
+	}
+	if registration.Card.ExpiresAt.IsZero() {
+		t.Fatalf("RegisterWithLease() card expiry is zero: %+v", registration.Card)
+	}
+
+	card, err := registry.Card(ctx, "reviewer")
+	if err != nil {
+		t.Fatalf("Card() error = %v", err)
+	}
+	if card.ExpiresAt.IsZero() {
+		t.Fatalf("Card() expiry is zero, want registry lease expiry")
+	}
+	firstExpiry := card.ExpiresAt
+
+	renewed, err := registry.Heartbeat(ctx, "reviewer", 2*time.Minute)
+	if err != nil {
+		t.Fatalf("Heartbeat() error = %v", err)
+	}
+	if !renewed.ExpiresAt.After(firstExpiry) {
+		t.Fatalf("Heartbeat() expiry = %v, want after %v", renewed.ExpiresAt, firstExpiry)
+	}
+	card, err = registry.Card(ctx, "reviewer")
+	if err != nil {
+		t.Fatalf("Card() after heartbeat error = %v", err)
+	}
+	if !card.ExpiresAt.Equal(renewed.ExpiresAt) {
+		t.Fatalf("Card() expiry = %v, want renewed expiry %v", card.ExpiresAt, renewed.ExpiresAt)
+	}
+
+	result, err := registry.Route(ctx, RouteQuery{
+		Require: []string{"code.review"},
+		Task:    Task{ID: "task-1"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != "active" {
+		t.Fatalf("Route() output = %q, want active", result.Output)
+	}
+}
+
+func TestRegistryHeartbeatRejectsMissingExpiredAndInvalidLease(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	if _, err := registry.Heartbeat(ctx, "missing", time.Minute); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Heartbeat(missing) error = %v, want ErrAgentNotFound", err)
+	}
+	if _, err := registry.RegisterWithLease(ctx, FakeAgent{CardValue: AgentCard{Name: "invalid"}}, 0); !errors.Is(err, ErrLeaseTTLRequired) {
+		t.Fatalf("RegisterWithLease(0) error = %v, want ErrLeaseTTLRequired", err)
+	}
+	if _, err := registry.Heartbeat(ctx, "missing", 0); !errors.Is(err, ErrLeaseTTLRequired) {
+		t.Fatalf("Heartbeat(0) error = %v, want ErrLeaseTTLRequired", err)
+	}
+
+	expired := FakeAgent{
+		CardValue: AgentCard{
+			Name:      "expired-reviewer",
+			ExpiresAt: time.Now().Add(-time.Minute),
+		},
+	}
+	if err := registry.Register(ctx, expired); err != nil {
+		t.Fatalf("Register(expired) error = %v", err)
+	}
+	if _, err := registry.Heartbeat(ctx, "expired-reviewer", time.Minute); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Heartbeat(expired) error = %v, want ErrAgentNotFound", err)
+	}
+}
+
 func TestRegistryRouteByCapabilityUsesRegistrationOrder(t *testing.T) {
 	ctx := context.Background()
 	registry := NewRegistry()

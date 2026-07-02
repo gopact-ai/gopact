@@ -19,6 +19,7 @@ Main architecture map for gopact. It links design philosophy, runtime modules, t
 - [v1-migration-plan.json](v1-migration-plan.json): v1 migration and release gate manifest.
 - [milestone-readiness.json](milestone-readiness.json): milestone readiness evidence.
 - [extension-scaffold-spec.json](extension-scaffold-spec.json): external extension scaffold specification.
+- [self-bootstrap-roadmap.md](self-bootstrap-roadmap.md): long-running self-bootstrap phase goal, test standards, and release gates.
 
 ## Release Evidence
 

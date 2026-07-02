@@ -16,6 +16,30 @@
 
 可自举不是单次模型生成代码，而是一条可观察、可恢复、可审计、可验证的工程流程。
 
+## 当前长程阶段目标
+
+下一阶段目标是把 `gopact` 推进为 production-grade、可自举的 Agent SDK。SDK 必须能够运行垂域 agent，将它们组合成 A2A agent mesh，通过 mock 与真实 provider 双轨测试固化行为，并用同一套 runtime evidence 维护 `gopact` 自身仓库。
+
+目标状态不是一个 demo，而是一条可重复的工程闭环：
+
+- 分析仓库或 agent cluster；
+- 生成结构化计划；
+- 执行受控代码或配置修改；
+- 运行测试并采集 command evidence；
+- 封存 diff、policy、checkpoint、artifact、review、A2A task 和 release-gate evidence；
+- 在 approval、cancel 或 failure 后从稳定 checkpoint 恢复；
+- 只有 mock CI gate 与本地 integration gate 都满足时才允许产出 release bundle。
+
+## 差异化约束
+
+`gopact` 的核心优势必须落在低门槛、evidence-first 的 agent 工程组合能力上：用户应能快速创建垂域 agent，暴露 agent card，加入 A2A mesh，并验证行为；不要求采用 hosted platform，也不要求重写 provider 或 template 代码。
+
+这带来三个产品边界：
+
+- core 负责稳定契约、本地默认实现、conformance kit、graph/workflow runtime、evidence、checkpoint/resume、policy 和 A2A 生命周期语义；
+- `gopact-ext` 负责生产 provider、存储、channel、registry 和 template 实现；
+- `gopact-examples` 负责可运行 workflow 和 agent cluster，同时作为 smoke test 与用户用法参考。
+
 ## 核心原则
 
 - Evidence-first：每次 run 必须能留下结构化过程证据。
@@ -33,7 +57,7 @@
 | S1 | 编排地基 | graph 支持 branch、DAG fan-in、dynamic fan-out、loop/step limit、subgraph / runnable node，并有 conformance tests |
 | S2 | Scaffold 地基 | 提供低门槛 agent scaffold，覆盖 chat、ReAct、Plan-Execute、checkpoint/resume、human approval |
 | S3 | Provider 双轨 | ext 中 OpenAI-compatible、Agnes、Ark provider 示例可本地真实跑通；CI 使用 mock provider 固化行为 |
-| S4 | Agent Mesh | 支持 agent card、discovery、A2A call/stream/cancel、RPC-like router、cross-agent evidence |
+| S4 | Agent Mesh | 支持 agent card、readiness-aware discovery、lease registration、heartbeat renewal、A2A call/stream/cancel、RPC-like router、cross-agent evidence |
 | S5 | Example Cluster | example 仓库提供 gateway、planner、research、code、review agent 本地集群 |
 | S6 | Dev Agent 自举 | Dev Agent 能执行 analyze、plan、write、test、review、release gate，并导出完整 `RunExport` |
 | S7 | 发布门禁 | core、ext、examples 的 mock CI、coverage、conformance、golden trajectory 和本地 Agnes integration 均有明确通过标准 |

@@ -170,6 +170,33 @@ func (m *Mesh) Register(ctx context.Context, agent Agent) (RegistrationResult, e
 	return result, nil
 }
 
+// RegisterWithLease adds an agent to the mesh with a bounded registry lease.
+func (m *Mesh) RegisterWithLease(ctx context.Context, agent Agent, ttl time.Duration) (RegistrationResult, error) {
+	if ttl <= 0 {
+		return RegistrationResult{}, ErrLeaseTTLRequired
+	}
+	registry, err := m.requireRegistry()
+	if err != nil {
+		return RegistrationResult{}, err
+	}
+	ctx, cancel := m.operationContext(ctx)
+	defer cancel()
+	ids := m.idsWithContext(ctx)
+	ctx = contextWithRuntimeIDs(ctx, ids)
+	agent, err = m.wrapAgent(agent)
+	if err != nil {
+		return RegistrationResult{}, err
+	}
+	result, err := registry.registerWithEvidence(ctx, agent, ids, time.Now().Add(ttl))
+	if err != nil {
+		return result, err
+	}
+	if err := m.publishEvents(ctx, result.Events); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
 // Discover fetches an agent card, caches it, and registers a callable agent when possible.
 func (m *Mesh) Discover(ctx context.Context, discoverer Discoverer, query DiscoveryQuery) (DiscoveryResult, error) {
 	registry, err := m.requireRegistry()
@@ -259,6 +286,17 @@ func (m *Mesh) Card(ctx context.Context, name string) (AgentCard, error) {
 		return AgentCard{}, err
 	}
 	return registry.Card(ctx, name)
+}
+
+// Heartbeat renews a registered agent lease and returns the updated card snapshot.
+func (m *Mesh) Heartbeat(ctx context.Context, name string, ttl time.Duration) (AgentCard, error) {
+	registry, err := m.requireRegistry()
+	if err != nil {
+		return AgentCard{}, err
+	}
+	ctx, cancel := m.operationContext(ctx)
+	defer cancel()
+	return registry.Heartbeat(ctx, name, ttl)
 }
 
 // Call sends one task to an agent by name and publishes call evidence.

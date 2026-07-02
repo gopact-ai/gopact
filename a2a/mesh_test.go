@@ -69,6 +69,59 @@ func TestMeshRegisterAndCallPublishesEvidence(t *testing.T) {
 	}
 }
 
+func TestMeshRegisterWithLeaseAndHeartbeatRenewVisibleCard(t *testing.T) {
+	ctx := context.Background()
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	agent := FakeAgent{
+		CardValue: AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review"},
+		},
+		SendFunc: func(context.Context, Task) (Result, error) {
+			return Result{Output: "active"}, nil
+		},
+	}
+
+	registration, err := mesh.RegisterWithLease(ctx, agent, time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterWithLease() error = %v", err)
+	}
+	if registration.Card.ExpiresAt.IsZero() {
+		t.Fatalf("RegisterWithLease() card expiry is zero: %+v", registration.Card)
+	}
+	firstExpiry := registration.Card.ExpiresAt
+
+	renewed, err := mesh.Heartbeat(ctx, "reviewer", 2*time.Minute)
+	if err != nil {
+		t.Fatalf("Heartbeat() error = %v", err)
+	}
+	if !renewed.ExpiresAt.After(firstExpiry) {
+		t.Fatalf("Heartbeat() expiry = %v, want after %v", renewed.ExpiresAt, firstExpiry)
+	}
+
+	card, err := mesh.Card(ctx, "reviewer")
+	if err != nil {
+		t.Fatalf("Card() error = %v", err)
+	}
+	if !card.ExpiresAt.Equal(renewed.ExpiresAt) {
+		t.Fatalf("Card() expiry = %v, want renewed expiry %v", card.ExpiresAt, renewed.ExpiresAt)
+	}
+
+	result, err := mesh.Route(ctx, RouteQuery{
+		Require: []string{"code.review"},
+		Task:    Task{ID: "task-1"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != "active" {
+		t.Fatalf("Route() output = %q, want active", result.Output)
+	}
+}
+
 func TestMeshCallPropagatesContextRuntimeIDs(t *testing.T) {
 	want := gopact.RuntimeIDs{
 		RunID:   "task-run",

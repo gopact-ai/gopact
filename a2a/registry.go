@@ -20,6 +20,8 @@ var (
 	ErrAgentNotFound = errors.New("a2a: agent not found")
 	// ErrCardNameRequired is returned when an agent card has no name.
 	ErrCardNameRequired = errors.New("a2a: agent card name is required")
+	// ErrLeaseTTLRequired is returned when a lease or heartbeat has no positive TTL.
+	ErrLeaseTTLRequired = gopact.ErrLeaseTTLRequired
 	// ErrDiscovererRequired is returned when discovery is requested without a discoverer.
 	ErrDiscovererRequired = errors.New("a2a: discoverer is required")
 	// ErrDiscoveryRequired is returned when a discovery query has no name, URL, or metadata.
@@ -326,8 +328,23 @@ func (r *Registry) Register(ctx context.Context, agent Agent) error {
 
 // RegisterWithEvidence adds agent and returns an A2A registration evidence event.
 func (r *Registry) RegisterWithEvidence(ctx context.Context, agent Agent, ids gopact.RuntimeIDs) (RegistrationResult, error) {
+	return r.registerWithEvidence(ctx, agent, ids, time.Time{})
+}
+
+// RegisterWithLease adds agent with a bounded registry lease and returns registration evidence.
+func (r *Registry) RegisterWithLease(ctx context.Context, agent Agent, ttl time.Duration) (RegistrationResult, error) {
+	if ttl <= 0 {
+		return RegistrationResult{}, ErrLeaseTTLRequired
+	}
+	return r.registerWithEvidence(ctx, agent, gopact.RuntimeIDs{}, time.Now().Add(ttl))
+}
+
+func (r *Registry) registerWithEvidence(ctx context.Context, agent Agent, ids gopact.RuntimeIDs, expiresAt time.Time) (RegistrationResult, error) {
 	if err := ctx.Err(); err != nil {
 		return RegistrationResult{}, err
+	}
+	if r == nil {
+		return RegistrationResult{}, ErrAgentNotFound
 	}
 	if agent == nil {
 		return RegistrationResult{}, errors.New("a2a: agent is nil")
@@ -335,6 +352,9 @@ func (r *Registry) RegisterWithEvidence(ctx context.Context, agent Agent, ids go
 	card := agent.Card()
 	if card.Name == "" {
 		return RegistrationResult{}, ErrCardNameRequired
+	}
+	if !expiresAt.IsZero() {
+		card.ExpiresAt = expiresAt
 	}
 
 	r.mu.Lock()
@@ -346,9 +366,10 @@ func (r *Registry) RegisterWithEvidence(ctx context.Context, agent Agent, ids go
 	if r.cards == nil {
 		r.cards = make(map[string]AgentCard)
 	}
+	now := time.Now()
 	if _, ok := r.agents[card.Name]; ok {
 		existing, hasCard := r.cards[card.Name]
-		if !hasCard || !agentCardExpired(existing, time.Now()) {
+		if !hasCard || !agentCardExpired(existing, now) {
 			return RegistrationResult{}, fmt.Errorf("%w: %s", ErrAgentExists, card.Name)
 		}
 	}
@@ -360,6 +381,34 @@ func (r *Registry) RegisterWithEvidence(ctx context.Context, agent Agent, ids go
 		Card:   card,
 		Events: []gopact.Event{agentRegisteredEvent(card, ids)},
 	}, nil
+}
+
+// Heartbeat renews a registered agent lease and returns the updated card snapshot.
+func (r *Registry) Heartbeat(ctx context.Context, name string, ttl time.Duration) (AgentCard, error) {
+	if err := ctx.Err(); err != nil {
+		return AgentCard{}, err
+	}
+	if ttl <= 0 {
+		return AgentCard{}, ErrLeaseTTLRequired
+	}
+	if r == nil {
+		return AgentCard{}, ErrAgentNotFound
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.agents[name]; !ok {
+		return AgentCard{}, ErrAgentNotFound
+	}
+	card, ok := r.cards[name]
+	now := time.Now()
+	if !ok || agentCardExpired(card, now) {
+		return AgentCard{}, ErrAgentNotFound
+	}
+	card.ExpiresAt = now.Add(ttl)
+	r.cards[name] = copyAgentCard(card)
+	return copyAgentCard(card), nil
 }
 
 // ListCards returns known agent cards in first-seen registration/discovery order.
@@ -461,11 +510,12 @@ func (r *Registry) Card(ctx context.Context, name string) (AgentCard, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if agent, ok := r.agents[name]; ok {
-		if agentCardExpired(r.cards[name], time.Now()) {
+	if _, ok := r.agents[name]; ok {
+		card, ok := r.cards[name]
+		if !ok || agentCardExpired(card, time.Now()) {
 			return AgentCard{}, ErrAgentNotFound
 		}
-		return copyAgentCard(agent.Card()), nil
+		return copyAgentCard(card), nil
 	}
 	if card, ok := r.cards[name]; ok {
 		if agentCardExpired(card, time.Now()) {
