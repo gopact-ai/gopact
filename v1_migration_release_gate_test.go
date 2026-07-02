@@ -86,8 +86,8 @@ func v1SyntheticReleaseGateReport(t *testing.T, check v1ReleaseGateCheck) (gopac
 func v1SyntheticVerificationCheck(t *testing.T, id string, gate v1ReleaseGateCheck) gopact.VerificationCheck {
 	t.Helper()
 
-	if id == "external-ci:gopact-ai" {
-		return v1SyntheticExternalCIRunSetCheck(t, id, gate)
+	if id == "extension-ecosystem-ci:gopact-ai" {
+		return v1SyntheticExtensionEcosystemCIRunSetCheck(t, id, gate)
 	}
 	evidence := v1SyntheticEvidenceForCheck(id, gate)
 	return gopact.VerificationCheck{
@@ -99,21 +99,21 @@ func v1SyntheticVerificationCheck(t *testing.T, id string, gate v1ReleaseGateChe
 	}
 }
 
-func v1SyntheticExternalCIRunSetCheck(t *testing.T, id string, gate v1ReleaseGateCheck) gopact.VerificationCheck {
+func v1SyntheticExtensionEcosystemCIRunSetCheck(t *testing.T, id string, gate v1ReleaseGateCheck) gopact.VerificationCheck {
 	t.Helper()
 
 	recorder := gopact.NewVerificationRecorder()
 	err := gopacttest.RecordCIRunSetCheck(recorder, gopacttest.CIRunSet{
 		ID:   id,
-		Name: "external repository CI",
+		Name: "extension ecosystem CI",
 		RequiredRepositories: []string{
-			"gopact-ai/gopact-adapters-model",
-			"gopact-ai/gopact-templates-react",
+			"gopact-ai/gopact-ext",
+			"gopact-ai/gopact-examples",
 		},
 		RequiredGates: gate.RequiredCIGates,
 		Runs: []gopacttest.CIRun{
-			v1SyntheticExternalCIRun("gopact-ai/gopact-adapters-model", "1001", gate.RequiredCIGates),
-			v1SyntheticExternalCIRun("gopact-ai/gopact-templates-react", "1002", gate.RequiredCIGates),
+			v1SyntheticExternalCIRun("gopact-ai/gopact-ext", "1001", gate.RequiredCIGates),
+			v1SyntheticExternalCIRun("gopact-ai/gopact-examples", "1002", gate.RequiredCIGates),
 		},
 		Metadata: map[string]any{"v1_release_gate_check": gate.ID},
 	})

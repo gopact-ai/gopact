@@ -130,12 +130,12 @@
           "workflow": "ci",
           "conclusion": "success",
           "observed_at": "2026-06-29T11:43:47+08:00",
-          "notes": "Remote audit historically showed ready=11 / not_ready=0 / missing=0 for the legacy private external scaffold repositories. That evidence is now retained as migration history; internal/extensionscaffold.RecordRemoteStatusCheck can still record observed remote readiness reports as external_repository_readiness evidence, and internal/extensionscaffold.RecordRemoteCIRunSetCheck can still record observed Actions runs as the external-ci:gopact-ai cross-repository ci_gate evidence required by release automation."
+          "notes": "Remote audit historically showed ready=11 / not_ready=0 / missing=0 for the legacy private external scaffold repositories. That evidence is now retained as migration history; internal/extensionscaffold.RecordRemoteStatusCheck can still record observed remote readiness reports as external_repository_readiness evidence, and internal/extensionscaffold.RecordRemoteCIRunSetCheck can still record observed Actions runs as the legacy external-ci:gopact-ai cross-repository ci_gate evidence."
         }
       ],
       "open_items": [
-        "外部仓库 readiness 与迁移责任需要由 release gate、远端 CI evidence 和周期性审计持续防回归。",
-        "v1 migration 仍需 release 前按 v1-migration-plan.json 执行最终 gate，确认 public API、repository boundary、migration guide 与 external CI evidence 同步。"
+        "extension 生态 readiness 与历史迁移责任需要由 release gate、远端 CI evidence 和周期性审计持续防回归。",
+        "v1 migration 仍需 release 前按 v1-migration-plan.json 执行最终 gate，确认 public API、repository boundary、migration guide 与 extension ecosystem CI evidence 同步。"
       ]
     }
   ],

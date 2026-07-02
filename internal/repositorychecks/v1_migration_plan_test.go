@@ -31,7 +31,7 @@ func TestV1MigrationPlanCoversRepositoryBoundaryMoves(t *testing.T) {
 	}
 	for _, gate := range []string{
 		"core-ci-gates",
-		"external-repository-readiness",
+		"extension-ecosystem-readiness",
 		"extension-conformance",
 		"public-api-examples",
 		"migration-guide",
@@ -71,7 +71,7 @@ func TestV1MigrationPlanCoversRepositoryBoundaryMoves(t *testing.T) {
 		if strings.TrimSpace(migration.V1Condition) == "" {
 			t.Fatalf("v1 repository migration %q v1_condition is empty", migration.SourcePath)
 		}
-		for _, required := range []string{"extension-conformance", "external-repository-readiness", "core-ci-gates"} {
+		for _, required := range []string{"extension-conformance", "extension-ecosystem-readiness", "core-ci-gates"} {
 			if !slices.Contains(migration.Verification, required) {
 				t.Fatalf("v1 repository migration %q verification missing %q", migration.SourcePath, required)
 			}
@@ -174,10 +174,6 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 		if slices.Contains(check.EvidenceTypes, "command") && !hasRequiredCheckIDPrefix(check, "command:") {
 			t.Fatalf("v1 release gate check %q declares command evidence without command:* required_check_ids", check.ID)
 		}
-		if slices.Contains(check.EvidenceTypes, "external_repository_readiness") &&
-			!slices.Contains(check.RequiredCheckIDs, "external-repositories:gopact-ai") {
-			t.Fatalf("v1 release gate check %q missing external-repositories:gopact-ai required_check_ids entry", check.ID)
-		}
 		if slices.Contains(check.EvidenceTypes, "file_snapshot") {
 			for _, path := range check.SourceManifests {
 				id := "file-snapshot:" + path
@@ -212,26 +208,31 @@ func TestV1MigrationPlanDeclaresReleaseGateChecks(t *testing.T) {
 		}
 	}
 
-	externalGateCheck := checks["external-repository-readiness"]
-	if externalGateCheck.ID == "" {
-		t.Fatal("v1 release gate checks missing external-repository-readiness")
+	extensionGateCheck := checks["extension-ecosystem-readiness"]
+	if extensionGateCheck.ID == "" {
+		t.Fatal("v1 release gate checks missing extension-ecosystem-readiness")
 	}
-	for _, evidenceType := range []string{"external_repository_readiness", "ci_gate"} {
-		if !slices.Contains(externalGateCheck.EvidenceTypes, evidenceType) {
-			t.Fatalf("external-repository-readiness evidence_types = %v, want %q", externalGateCheck.EvidenceTypes, evidenceType)
+	for _, evidenceType := range []string{"ci_gate", "file_snapshot"} {
+		if !slices.Contains(extensionGateCheck.EvidenceTypes, evidenceType) {
+			t.Fatalf("extension-ecosystem-readiness evidence_types = %v, want %q", extensionGateCheck.EvidenceTypes, evidenceType)
 		}
 	}
-	for _, id := range []string{"external-repositories:gopact-ai", "external-ci:gopact-ai"} {
-		if !slices.Contains(externalGateCheck.RequiredCheckIDs, id) {
-			t.Fatalf("external-repository-readiness required_check_ids missing %q", id)
+	for _, id := range []string{
+		"file-snapshot:doc/design/ecosystem-topology.json",
+		"file-snapshot:doc/design/external-integration-roadmap.json",
+		"file-snapshot:doc/design/extension-conformance.json",
+		"extension-ecosystem-ci:gopact-ai",
+	} {
+		if !slices.Contains(extensionGateCheck.RequiredCheckIDs, id) {
+			t.Fatalf("extension-ecosystem-readiness required_check_ids missing %q", id)
 		}
 	}
-	gotExternalCIGates := slices.Clone(externalGateCheck.RequiredCIGates)
-	wantExternalCIGates := []string{"module-tidiness", "unit", "vet", "whitespace"}
-	slices.Sort(gotExternalCIGates)
-	slices.Sort(wantExternalCIGates)
-	if !slices.Equal(gotExternalCIGates, wantExternalCIGates) {
-		t.Fatalf("external-repository-readiness required_ci_gates = %v, want %v", gotExternalCIGates, wantExternalCIGates)
+	gotExtensionCIGates := slices.Clone(extensionGateCheck.RequiredCIGates)
+	wantExtensionCIGates := []string{"examples-mock-ci", "ext-mock-ci"}
+	slices.Sort(gotExtensionCIGates)
+	slices.Sort(wantExtensionCIGates)
+	if !slices.Equal(gotExtensionCIGates, wantExtensionCIGates) {
+		t.Fatalf("extension-ecosystem-readiness required_ci_gates = %v, want %v", gotExtensionCIGates, wantExtensionCIGates)
 	}
 
 	for _, condition := range plan.ReleaseGateConditions {

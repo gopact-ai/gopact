@@ -46,17 +46,42 @@ func TestCheckVerificationEvidenceRequirementsPassesMultipleRequirements(t *test
 	RequireVerificationEvidenceRequirements(t, report, requirements)
 }
 
-func TestCheckVerificationEvidenceRequirementsPrefixesFailedRequirementName(t *testing.T) {
+func TestCheckVerificationEvidenceRequirementsScopesCIGatesToRequiredChecks(t *testing.T) {
 	report := verificationConformanceReport(t)
+	report.Checks = append(report.Checks, gopact.VerificationCheck{
+		ID:     "extension-ci",
+		Status: gopact.VerificationStatusPassed,
+		Evidence: []gopact.VerificationEvidence{
+			ciGateVerificationEvidence("ext-mock-ci", gopact.VerificationStatusPassed),
+		},
+	})
+	report.PassedCount++
 	requirements := []VerificationEvidenceRequirement{
 		{
-			Name:             "external-repository-readiness",
-			RequiredCheckIDs: []string{"external-repositories:gopact-ai"},
+			Name:                  "extension-ecosystem",
+			RequiredCheckIDs:      []string{"extension-ci"},
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
+			RequiredCIGates:       []string{"unit"},
 		},
 	}
 
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, requirements)
-	if !hasFailedVerificationEvidenceConformanceCase(results, "external-repository-readiness/required-check-ids") {
+	if !hasFailedVerificationEvidenceConformanceCase(results, "extension-ecosystem/required-ci-gates") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() accepted CI gate from another check: %+v", results)
+	}
+}
+
+func TestCheckVerificationEvidenceRequirementsPrefixesFailedRequirementName(t *testing.T) {
+	report := verificationConformanceReport(t)
+	requirements := []VerificationEvidenceRequirement{
+		{
+			Name:             "extension-ecosystem-readiness",
+			RequiredCheckIDs: []string{"extension-ecosystem-ci:gopact-ai"},
+		},
+	}
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, requirements)
+	if !hasFailedVerificationEvidenceConformanceCase(results, "extension-ecosystem-readiness/required-check-ids") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report named failed requirement: %+v", results)
 	}
 }

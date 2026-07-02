@@ -11,7 +11,7 @@
   ],
   "release_gate_conditions": [
     "core-ci-gates",
-    "external-repository-readiness",
+    "extension-ecosystem-readiness",
     "extension-conformance",
     "public-api-boundary",
     "public-api-examples",
@@ -59,30 +59,29 @@
       "blocker_summary": "All core CI gates declared by doc/design/core-ci-gates.json must pass locally and in GitHub Actions before v1 release."
     },
     {
-      "id": "external-repository-readiness",
+      "id": "extension-ecosystem-readiness",
       "evidence_types": [
-        "external_repository_readiness",
-        "ci_gate"
+        "ci_gate",
+        "file_snapshot"
       ],
       "source_manifests": [
-        "doc/design/external-repositories.json",
-        "doc/design/extension-scaffold-spec.json",
-        "doc/design/extension-conformance.json",
-        "doc/design/extension-ci-workflow.yml"
+        "doc/design/ecosystem-topology.json",
+        "doc/design/external-integration-roadmap.json",
+        "doc/design/extension-conformance.json"
       ],
       "required_check_ids": [
-        "external-repositories:gopact-ai",
-        "external-ci:gopact-ai"
+        "file-snapshot:doc/design/ecosystem-topology.json",
+        "file-snapshot:doc/design/external-integration-roadmap.json",
+        "file-snapshot:doc/design/extension-conformance.json",
+        "extension-ecosystem-ci:gopact-ai"
       ],
       "required_ci_gates": [
-        "whitespace",
-        "module-tidiness",
-        "unit",
-        "vet"
+        "ext-mock-ci",
+        "examples-mock-ci"
       ],
       "required_status": "passed",
       "blocking_status": "failed",
-      "blocker_summary": "Every external gopact-ai adapter/plugin/template repository must exist, match expected visibility, expose CI, provide GOPACT_GITHUB_TOKEN while the core SDK is private, have latest CI passing, and provide passed cross-repository CI gate evidence before v1 release."
+      "blocker_summary": "The official extension ecosystem must route production integrations to gopact-ext, keep runnable examples in gopact-examples, keep extension conformance manifests current, and provide passed gopact-ext/gopact-examples CI evidence before v1 release. Legacy external scaffold manifests remain migration history only."
     },
     {
       "id": "extension-conformance",
@@ -177,7 +176,7 @@
       "v1_condition": "The A2UI adapter is removed from the core module after the external repository owns the source path, runs the channel-transfer conformance suites, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -192,7 +191,7 @@
       "v1_condition": "The AG-UI adapter is removed from the core module after the external repository owns the source path, runs the channel-transfer conformance suites, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -207,7 +206,7 @@
       "v1_condition": "The Lark adapter is removed from the core module after the external repository owns the source path, documents host-owned client and callback configuration, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -222,7 +221,7 @@
       "v1_condition": "The GCS checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -237,7 +236,7 @@
       "v1_condition": "The OSS checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -252,7 +251,7 @@
       "v1_condition": "The R2 checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -267,7 +266,7 @@
       "v1_condition": "The Redis checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -282,7 +281,7 @@
       "v1_condition": "The S3 checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -297,7 +296,7 @@
       "v1_condition": "The database/sql checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -312,7 +311,7 @@
       "v1_condition": "The channel reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps review evidence conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -327,7 +326,7 @@
       "v1_condition": "The CI reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps review evidence conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -342,7 +341,7 @@
       "v1_condition": "The git diff scanner adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps observed diff evidence conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -357,7 +356,7 @@
       "v1_condition": "The model reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps reviewer decision conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -372,7 +371,7 @@
       "v1_condition": "The HTTP lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -387,7 +386,7 @@
       "v1_condition": "The Redis lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -402,7 +401,7 @@
       "v1_condition": "The database/sql lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -417,7 +416,7 @@
       "v1_condition": "The OpenAI-compatible model adapter is removed from the core module after the external model repository owns the source path, keeps provider conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -432,7 +431,7 @@
       "v1_condition": "The trace exporter plugin is removed from the core module after the observability plugin repository owns the source path, keeps exporter conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -447,7 +446,7 @@
       "v1_condition": "The GCS blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -462,7 +461,7 @@
       "v1_condition": "The OSS blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -477,7 +476,7 @@
       "v1_condition": "The R2 blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -492,7 +491,7 @@
       "v1_condition": "The S3 blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -507,7 +506,7 @@
       "v1_condition": "The HTTP TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -522,7 +521,7 @@
       "v1_condition": "The Redis TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -537,7 +536,7 @@
       "v1_condition": "The database/sql TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -552,7 +551,7 @@
       "v1_condition": "The Agent-as-Tool template is removed from the core module after the external template repository owns the source path, keeps template trajectory conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     },
@@ -567,7 +566,7 @@
       "v1_condition": "The Dev Agent template is removed from the core module after the external template repository owns the source path, keeps workflow/release conformance, and passes remote readiness.",
       "verification": [
         "extension-conformance",
-        "external-repository-readiness",
+        "extension-ecosystem-readiness",
         "core-ci-gates"
       ]
     }
