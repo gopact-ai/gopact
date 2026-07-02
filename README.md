@@ -1,102 +1,34 @@
 # gopact
 
+#### Go SDK contracts for typed, observable, and resumable agent workflows.
+
 [![CI](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/gopact-ai/gopact)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/gopact-ai/gopact.svg)](https://pkg.go.dev/github.com/gopact-ai/gopact)
+[![License](https://img.shields.io/github/license/gopact-ai/gopact)](LICENSE)
 
-Go SDK contracts for typed, observable, and resumable agent workflows.
+<!-- gopact:doc-language: en -->
 
-<!-- gopact:doc-language: zh,en -->
+Chinese documentation: [README_zh.md](README_zh.md)
 
-## 中文
+`gopact` is the provider-neutral core for building Go agent systems with typed workflow graphs, event streams, checkpoints, resumable runs, tool/MCP/A2A boundaries, policy hooks, and release evidence.
 
-`gopact` 是一个面向 Go 应用的 Agent SDK core。它不绑定具体模型厂商、存储后端或 UI 渠道，而是提供可测试的运行时契约：typed graph、event stream、checkpoint/resume、tool/MCP/A2A 边界、policy/redaction，以及 release evidence。
+`gopact` stays small on purpose. Model providers, production agent templates, development-agent helpers, and runnable examples live in sibling repositories:
 
-官方仓库分工：
+- [`gopact`](https://github.com/gopact-ai/gopact): core SDK, public contracts, reference implementations, and conformance helpers.
+- [`gopact-ext`](https://github.com/gopact-ai/gopact-ext): official providers, agent templates, and development-agent helpers.
+- [`gopact-examples`](https://github.com/gopact-ai/gopact-examples): runnable quickstarts for workflows, providers, and agent clusters.
 
-| 仓库 | 职责 |
-| --- | --- |
-| [`gopact`](https://github.com/gopact-ai/gopact) | core SDK、公共契约、参考实现、conformance helper |
-| [`gopact-ext`](https://github.com/gopact-ai/gopact-ext) | 官方 provider、agent template、dev-agent helper 等扩展模块 |
-| [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) | 可运行 quickstart、provider 示例、workflow 示例 |
+## Installation
 
-## 安装
-
-需要 Go 1.25 或更新版本：
+Go 1.25 or newer is required.
 
 ```bash
 go get github.com/gopact-ai/gopact
 ```
 
-SDK 不读取 `.env`、配置文件或本地 secret。模型、工具、存储、channel 和安全策略都由宿主应用通过 Go options 或接口显式注入。
+The core SDK does not read `.env`, configuration files, or local secrets. Hosts inject models, tools, storage, channels, and policy through Go interfaces and options.
 
-## 快速开始
-
-运行 core 中最小 graph 示例：
-
-```bash
-go test -run Example_graphRun .
-```
-
-生成一个可测试的 A2A HTTP agent scaffold：
-
-```bash
-go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
-(cd /tmp/support-agent && go test ./...)
-go run ./cmd/gopact agent run /tmp/support-agent
-```
-
-需要模型 provider 或完整 agent template 时，从 [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) 开始；core 仓库只保留 provider-neutral 契约和离线可测实现。
-
-## 核心概念
-
-| 概念 | 说明 |
-| --- | --- |
-| `graph` | 类型化 workflow runtime，负责 node、edge、middleware、event 和 step 边界 |
-| `checkpoint` | checkpoint store、codec、resume payload 校验和稳定恢复点 |
-| `ModelRequest` / provider | provider-neutral 模型请求、响应、tool call、streaming 和 conformance 契约 |
-| `tools` / `mcp` / `a2a` | 本地工具、MCP server、远程 agent 的统一能力边界 |
-| `Policy` / redaction | 外部动作、secret、prompt/tool payload 和 artifact 的安全边界 |
-| `VerificationRecorder` | 记录已经观察到的测试、CI、文件快照、review 和 release evidence |
-
-## 当前稳定性
-
-`gopact` 仍处于 pre-v1。当前适合：
-
-- 评审和收敛 Agent SDK public API；
-- 编写可恢复 workflow、A2A mesh、MCP/tool 边界和 conformance 测试；
-- 为 `gopact-ext` 和业务应用开发 provider、backend、channel、agent template。
-
-当前不承诺：
-
-- v1 前 public API 完全稳定；
-- core 直接内置生产模型厂商、云存储、向量库或外部 UI 渠道；
-- 不经过宿主应用配置就自动读取环境变量、secret 或远端配置。
-
-## 文档地图
-
-| 文档 | 用途 |
-| --- | --- |
-| [doc/README.md](doc/README.md) | 完整文档索引 |
-| [doc/FEATURES.md](doc/FEATURES.md) | core 能力矩阵和离线验收命令 |
-| [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md) | PR、CI、自动合并和公开仓库治理 |
-
-## 贡献与安全
-
-- 贡献流程：[doc/CONTRIBUTING.md](doc/CONTRIBUTING.md)
-- 安全策略：[doc/SECURITY.md](doc/SECURITY.md)
-- 变更记录：[doc/CHANGELOG.md](doc/CHANGELOG.md)
-- 许可证：[MIT](LICENSE)
-
-## English
-
-`gopact` is the core Go SDK for typed, observable, and resumable agent workflows. It keeps model providers, storage backends, UI channels, and production adapters outside the core package so applications can own configuration, secrets, policy, and deployment choices.
-
-Install:
-
-```bash
-go get github.com/gopact-ai/gopact
-```
+## Usage
 
 Run the smallest executable graph example:
 
@@ -104,6 +36,42 @@ Run the smallest executable graph example:
 go test -run Example_graphRun .
 ```
 
-Use this repository for core contracts, graph execution, checkpoint/resume, tool/MCP/A2A boundaries, policy/redaction, and conformance helpers. Use [`gopact-ext`](https://github.com/gopact-ai/gopact-ext) for official extensions and [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) for runnable examples.
+Generate and test an A2A HTTP agent scaffold:
 
-The main documentation index is [doc/README.md](doc/README.md). Feature coverage is tracked in [doc/FEATURES.md](doc/FEATURES.md). Contribution, security, changelog, and maintainer governance documents are under [doc/](doc/).
+```bash
+go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
+(cd /tmp/support-agent && go test ./...)
+go run ./cmd/gopact agent run /tmp/support-agent
+```
+
+Use [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) when you want a complete runnable provider or agent-template path.
+
+## Features
+
+- Typed graph runtime with named nodes, edges, middleware, events, and step snapshots.
+- Checkpoint stores, codecs, resume payload validation, and stable recovery boundaries.
+- Provider-neutral `ModelRequest`, model response, streaming, tool-call, and conformance contracts.
+- Local tools, MCP servers, and A2A agents behind explicit capability boundaries.
+- Policy, redaction, artifact verification, and secret-handling hooks for host-owned safety.
+- `VerificationRecorder` support for tests, CI, file snapshots, review evidence, and release evidence.
+
+See [doc/FEATURES.md](doc/FEATURES.md) for the executable feature matrix.
+
+## Stability
+
+`gopact` is pre-v1. It is ready for API review, conformance work, extension development, and early application integration. Public APIs may still change before v1.
+
+The core repository intentionally does not ship production model providers, cloud storage adapters, vector databases, or UI channels. Those belong in `gopact-ext` or host applications.
+
+## Documentation
+
+- [doc/README.md](doc/README.md): documentation index.
+- [doc/FEATURES.md](doc/FEATURES.md): core capability matrix and offline verification commands.
+- [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md): PR, CI, auto-merge, and public repository governance.
+
+## Contributing
+
+- [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md): development setup and pull request checklist.
+- [doc/SECURITY.md](doc/SECURITY.md): security policy and vulnerability reporting.
+- [doc/CHANGELOG.md](doc/CHANGELOG.md): user-visible changes.
+- [MIT License](LICENSE).
