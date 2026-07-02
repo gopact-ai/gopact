@@ -14,6 +14,7 @@ This file records user-visible changes to `gopact` core. Internal reshuffling, p
 - A2A mesh health-driven eviction with `a2a_agent_evicted` evidence for unready HTTP-backed agents.
 - `a2a.Mesh.Sync` and `a2a.Mesh.SyncEnv` for one-shot discovery sync, readiness eviction, final card snapshots, and aggregated mesh evidence.
 - `a2a.Mesh.SyncEvery` for continuous A2A mesh sync until context cancellation.
+- `a2a.Mesh.SyncEnvEvery` for continuous environment-driven A2A mesh sync until context cancellation.
 - A2A HTTP agent-card discovery with readiness checks for mesh bootstrap.
 - `gopact agent init` and `gopact agent run` for generating and running a standalone A2A HTTP agent scaffold.
 - Core feature coverage matrix in [FEATURES.md](FEATURES.md).

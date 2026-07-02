@@ -2,8 +2,10 @@ package a2a
 
 import (
 	"context"
+	"iter"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -71,6 +73,35 @@ func (m *Mesh) SyncEnv(ctx context.Context, lookup func(string) string, opts ...
 		return result, err
 	}
 	return result, nil
+}
+
+// SyncEnvEvery runs SyncEnv immediately and then again every interval until ctx is canceled.
+func (m *Mesh) SyncEnvEvery(ctx context.Context, interval time.Duration, lookup func(string) string, opts ...HTTPAgentOption) iter.Seq2[SyncResult, error] {
+	return func(yield func(SyncResult, error) bool) {
+		if interval <= 0 {
+			yield(SyncResult{}, ErrSyncIntervalRequired)
+			return
+		}
+		if ctx == nil {
+			ctx = context.TODO()
+		}
+		for {
+			if err := ctx.Err(); err != nil {
+				return
+			}
+			result, err := m.SyncEnv(ctx, lookup, opts...)
+			if !yield(result, err) || err != nil {
+				return
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+	}
 }
 
 func (m *Mesh) withHTTPOptions(opts []HTTPAgentOption) *Mesh {

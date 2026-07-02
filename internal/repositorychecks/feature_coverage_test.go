@@ -76,6 +76,12 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			boundary:   "immediate sync, interval resync, context cancellation",
 		},
 		{
+			capability: "A2A continuous env mesh sync",
+			path:       "a2a/env.go",
+			command:    "go test -count=1 ./a2a -run TestMeshSyncEnvEvery",
+			boundary:   "standard A2A environment variables, interval resync, context cancellation",
+		},
+		{
 			capability: "agent scaffold generator",
 			path:       "cmd/gopact",
 			command:    "go test -count=1 ./cmd/gopact",
@@ -152,6 +158,7 @@ func featureCoverageCommands() []string {
 		"go test -count=1 ./a2a ./gopacttest/a2aconformance",
 		"go test -count=1 -run ExampleNewHTTPRegistryHandler ./a2a",
 		"go test -count=1 ./a2a -run TestMeshSyncEvery",
+		"go test -count=1 ./a2a -run TestMeshSyncEnvEvery",
 		"go test -count=1 ./cmd/gopact",
 		"go test -count=1 -run Channel . ./gopacttest",
 		"go test -count=1 . ./sandbox ./gopacttest/secretconformance ./gopacttest/promptinjectionconformance",

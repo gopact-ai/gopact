@@ -3,12 +3,14 @@ package a2a
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact"
 )
@@ -253,6 +255,70 @@ func TestMeshSyncEnvReturnsSourcesOnSyncError(t *testing.T) {
 	if got, want := result.Sources, []string{"file registry"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("SyncEnv() sources on error = %v, want %v", got, want)
 	}
+}
+
+func TestMeshSyncEnvEveryRunsImmediatelyAndRepeats(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	filePath := filepath.Join(t.TempDir(), "agents.json")
+	writeCards := func(cards []AgentCard) {
+		raw, err := json.Marshal(cards)
+		if err != nil {
+			t.Fatalf("Marshal() error = %v", err)
+		}
+		if err := os.WriteFile(filePath, raw, 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+	}
+	writeCards([]AgentCard{{Name: "planner-agent"}})
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+
+	var results []SyncResult
+	for result, err := range mesh.SyncEnvEvery(ctx, time.Millisecond, func(key string) string {
+		if key == EnvA2ARegistryFile {
+			return filePath
+		}
+		return ""
+	}) {
+		if err != nil {
+			t.Fatalf("SyncEnvEvery() error = %v", err)
+		}
+		results = append(results, result)
+		if got, want := result.Sources, []string{"file registry"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("SyncEnvEvery() sources = %v, want %v", got, want)
+		}
+		switch len(results) {
+		case 1:
+			if got, want := cardNames(result.Cards), []string{"planner-agent"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("first SyncEnvEvery() cards = %v, want %v", got, want)
+			}
+			writeCards([]AgentCard{{Name: "planner-agent"}, {Name: "review-agent"}})
+		case 2:
+			if got, want := cardNames(result.Cards), []string{"planner-agent", "review-agent"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("second SyncEnvEvery() cards = %v, want %v", got, want)
+			}
+			cancel()
+			return
+		}
+	}
+	t.Fatalf("SyncEnvEvery() yielded %d results, want 2", len(results))
+}
+
+func TestMeshSyncEnvEveryRejectsNonPositiveInterval(t *testing.T) {
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	for _, err := range mesh.SyncEnvEvery(context.Background(), 0, func(string) string { return "" }) {
+		if !errors.Is(err, ErrSyncIntervalRequired) {
+			t.Fatalf("SyncEnvEvery() error = %v, want ErrSyncIntervalRequired", err)
+		}
+		return
+	}
+	t.Fatal("SyncEnvEvery() yielded no error for zero interval")
 }
 
 func TestNewEnvCardListersReturnsNoSourcesForEmptyEnv(t *testing.T) {
