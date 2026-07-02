@@ -47,6 +47,7 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 		"httptest.NewServer",
 		"TestScaffoldAgentServesHealthEndpoints",
 		"TestScaffoldServerStopsOnContextCancel",
+		"TestScaffoldAgentRegistryMeshStreamsAndCancels",
 		"a2a.NewHTTPAgent",
 		"a2a.NewHTTPRegistry",
 	)
