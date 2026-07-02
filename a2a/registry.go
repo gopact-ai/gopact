@@ -34,6 +34,8 @@ var (
 	ErrTaskIDRequired = errors.New("a2a: task id is required")
 	// ErrMeshRetryTaskIDRequired is returned when retry is enabled for a task without a stable id.
 	ErrMeshRetryTaskIDRequired = errors.New("a2a: mesh retry requires task id")
+	// ErrSyncIntervalRequired is returned when continuous mesh sync has no positive interval.
+	ErrSyncIntervalRequired = errors.New("a2a: sync interval must be positive")
 )
 
 // TaskStatus identifies the current state of a remote task.
