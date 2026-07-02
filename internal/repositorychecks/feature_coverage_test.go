@@ -79,7 +79,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			capability: "A2A continuous env mesh sync",
 			path:       "a2a/env.go",
 			command:    "go test -count=1 ./a2a -run TestMeshSyncEnvEvery",
-			boundary:   "standard A2A environment variables, interval resync, context cancellation",
+			boundary:   "standard A2A environment variables, immediate sync, interval resync, context cancellation, and positive interval validation",
 		},
 		{
 			capability: "agent scaffold generator",
