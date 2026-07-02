@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-func TestExternalRepositoryManifestCoversRoadmapRepositories(t *testing.T) {
-	roadmap := loadExternalIntegrationRoadmap(t)
+func TestLegacyExternalRepositoryManifestCoversHistoricalExtensionTargets(t *testing.T) {
 	conformance := loadExtensionConformanceManifest(t)
 	topology := loadEcosystemTopology(t)
 	manifest := loadExternalRepositoryManifest(t)
@@ -51,9 +50,6 @@ func TestExternalRepositoryManifestCoversRoadmapRepositories(t *testing.T) {
 		if repo.Route == "" {
 			t.Fatalf("external repository %q route is empty", repo.Name)
 		}
-		if !slices.Contains(roadmap.AllowedRoutes, repo.Route) {
-			t.Fatalf("external repository %q route %q is not allowed by roadmap", repo.Name, repo.Route)
-		}
 		if repo.ScaffoldStatus != topology.Policy.LegacyExternalScaffoldStatus {
 			t.Fatalf("external repository %q scaffold_status = %q, want %q", repo.Name, repo.ScaffoldStatus, topology.Policy.LegacyExternalScaffoldStatus)
 		}
@@ -80,21 +76,6 @@ func TestExternalRepositoryManifestCoversRoadmapRepositories(t *testing.T) {
 			targetOwners[target] = repo.Name
 		}
 		repos[repo.Name] = repo
-	}
-
-	for _, entry := range roadmap.Entries {
-		repo, ok := repos[entry.TargetRepo]
-		if !ok {
-			t.Fatalf("external repositories manifest missing roadmap target_repo %q", entry.TargetRepo)
-		}
-		if repo.Route != entry.Route {
-			t.Fatalf("external repository %q route = %q, want %q", repo.Name, repo.Route, entry.Route)
-		}
-		for _, target := range entry.ExtensionTargets {
-			if owner := targetOwners[target]; owner != entry.TargetRepo {
-				t.Fatalf("roadmap entry %q target %q assigned to repo %q, want %q", entry.ID, target, owner, entry.TargetRepo)
-			}
-		}
 	}
 
 	for _, target := range conformance.Targets {

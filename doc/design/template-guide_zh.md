@@ -6,7 +6,7 @@
 
 ## 中文
 
-本文定义外部 `gopact-templates-*` 仓库应如何组织 graph template。Template 是业务 harness 的可复用组合，不是 SDK core 的原子能力。
+本文定义 `gopact-ext` 或宿主自有模块应如何组织 graph template。Template 是业务 harness 的可复用组合，不是 SDK core 的原子能力。
 
 ## Template Boundary
 
