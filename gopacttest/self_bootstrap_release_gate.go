@@ -157,8 +157,8 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 	return []VerificationEvidenceRequirement{
 		{
 			Name:                  "self-bootstrap-ci",
-			RequiredCheckIDs:      []string{VerificationCheckCIGates},
-			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
+			RequiredCheckIDs:      append([]string{VerificationCheckCIGates}, selfBootstrapCoreCICommandCheckIDs()...),
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate, VerificationEvidenceTypeCommand},
 			RequiredCIGates: []string{
 				SelfBootstrapCIGateWhitespace,
 				SelfBootstrapCIGateUnit,
@@ -338,16 +338,9 @@ func selfBootstrapReleaseGateChecks(
 			},
 		},
 		selfBootstrapExternalCIGatesCheck(cfg.externalCIGates),
-		{
-			ID:     "command:go-test",
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: VerificationEvidenceTypeCommand, Ref: "go test -count=1 ./...", Summary: "command passed"},
-			},
-		},
-		selfBootstrapCommandEvidenceCheck("go test -run '^Example' ./..."),
-		selfBootstrapCommandEvidenceCheck("go test -count=1 ./graph ./gopacttest/graphconformance"),
-		selfBootstrapCommandEvidenceCheck("go test -count=1 ./a2a ./gopacttest/a2aconformance"),
+	}
+	checks = append(checks, selfBootstrapCoreCICommandChecks()...)
+	checks = append(checks, []gopact.VerificationCheck{
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesProviderIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesAgentTemplatesIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExamplesIntegration),
@@ -407,7 +400,7 @@ func selfBootstrapReleaseGateChecks(
 				{Type: gopact.VerificationEvidenceTypePolicyDecision, Ref: policyRef, Summary: "policy allowed"},
 			},
 		},
-	}
+	}...)
 	return append(checks, cfg.additionalChecks...)
 }
 
@@ -458,6 +451,41 @@ func selfBootstrapCommandEvidenceCheck(command string) gopact.VerificationCheck 
 		Evidence: []gopact.VerificationEvidence{
 			{Type: VerificationEvidenceTypeCommand, Ref: command, Summary: command + " passed"},
 		},
+	}
+}
+
+func selfBootstrapCoreCICommandChecks() []gopact.VerificationCheck {
+	commands := selfBootstrapCoreCICommands()
+	checks := make([]gopact.VerificationCheck, 0, len(commands))
+	for _, command := range commands {
+		checks = append(checks, selfBootstrapCommandEvidenceCheck(command))
+	}
+	return checks
+}
+
+func selfBootstrapCoreCICommandCheckIDs() []string {
+	commands := selfBootstrapCoreCICommands()
+	ids := make([]string, 0, len(commands))
+	for _, command := range commands {
+		ids = append(ids, "command:"+command)
+	}
+	return ids
+}
+
+func selfBootstrapCoreCICommands() []string {
+	return []string{
+		"git diff --check",
+		"go mod tidy",
+		"git diff --exit-code",
+		"go test -count=1 ./...",
+		"go test -race -count=1 ./...",
+		"go vet ./...",
+		"golangci-lint run ./...",
+		"go test -coverprofile=coverage.out ./...",
+		"go test -run '^Example' ./...",
+		"go test -count=1 ./graph ./gopacttest/graphconformance",
+		"go test -count=1 ./a2a ./gopacttest/a2aconformance",
+		"govulncheck ./...",
 	}
 }
 

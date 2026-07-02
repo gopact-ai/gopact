@@ -171,6 +171,32 @@ func TestSelfBootstrapReleaseGateTracksCoreCIGates(t *testing.T) {
 	}
 }
 
+func TestSelfBootstrapReleaseGateTracksCoreCICommandEvidence(t *testing.T) {
+	manifest := loadCoreCIGatesManifest(t)
+	var selfBootstrapRequirement gopacttest.VerificationEvidenceRequirement
+	for _, requirement := range gopacttest.SelfBootstrapReleaseGateRequirements() {
+		if requirement.Name == "self-bootstrap-ci" {
+			selfBootstrapRequirement = requirement
+			break
+		}
+	}
+	if selfBootstrapRequirement.Name == "" {
+		t.Fatal("self-bootstrap release gate missing self-bootstrap-ci requirement")
+	}
+	if !slices.Contains(selfBootstrapRequirement.RequiredEvidenceTypes, gopacttest.VerificationEvidenceTypeCommand) {
+		t.Fatalf(
+			"self-bootstrap-ci evidence types = %v, want command evidence",
+			selfBootstrapRequirement.RequiredEvidenceTypes,
+		)
+	}
+	for _, command := range manifest.RequiredCommands {
+		id := "command:" + command
+		if !slices.Contains(selfBootstrapRequirement.RequiredCheckIDs, id) {
+			t.Fatalf("self-bootstrap-ci required check IDs missing %q", id)
+		}
+	}
+}
+
 type coreCIGatesManifest struct {
 	Version             int      `json:"version"`
 	WorkflowPath        string   `json:"workflow_path"`

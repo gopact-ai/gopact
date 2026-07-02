@@ -276,6 +276,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingFeatureCoverage(t *tes
 	}
 }
 
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingCoreCICommand(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheckIfPresent(&report, "command:go vet ./...")
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-ci/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing core CI command: %+v", results)
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingGraphConformanceCommand(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheckIfPresent(&report, SelfBootstrapCheckGraphConformanceCommand)
