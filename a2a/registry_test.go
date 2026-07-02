@@ -356,6 +356,108 @@ func TestRegistryRegisterCardAndSend(t *testing.T) {
 	}
 }
 
+func TestRegistryRegisterCardWithLeaseAndHeartbeat(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+	card := AgentCard{
+		Name:         "reviewer",
+		URL:          "https://agents.example/reviewer",
+		Capabilities: []string{"code.review"},
+		Metadata:     map[string]any{"domain": "code"},
+	}
+
+	registered, err := registry.RegisterCardWithLease(ctx, card, time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterCardWithLease() error = %v", err)
+	}
+	if registered.ExpiresAt.IsZero() {
+		t.Fatalf("RegisterCardWithLease() expiry is zero: %+v", registered)
+	}
+	if !card.ExpiresAt.IsZero() {
+		t.Fatalf("RegisterCardWithLease() mutated input card: %+v", card)
+	}
+
+	renewed, err := registry.HeartbeatCard(ctx, "reviewer", 2*time.Minute)
+	if err != nil {
+		t.Fatalf("HeartbeatCard() error = %v", err)
+	}
+	if !renewed.ExpiresAt.After(registered.ExpiresAt) {
+		t.Fatalf("HeartbeatCard() expiry = %v, want after %v", renewed.ExpiresAt, registered.ExpiresAt)
+	}
+
+	cards, err := registry.ListCards(ctx)
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if len(cards) != 1 || cards[0].Name != "reviewer" || !cards[0].ExpiresAt.Equal(renewed.ExpiresAt) {
+		t.Fatalf("ListCards() = %+v, want renewed reviewer card", cards)
+	}
+	if _, err := registry.Send(ctx, "reviewer", Task{ID: "task-1"}); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Send() for card-only registration error = %v, want %v", err, ErrAgentNotFound)
+	}
+}
+
+func TestRegistryCardLeaseRejectsMissingExpiredInvalidAndLocalAgentConflict(t *testing.T) {
+	ctx := context.Background()
+	registry := NewRegistry()
+
+	if _, err := registry.RegisterCardWithLease(ctx, AgentCard{Name: "invalid"}, 0); !errors.Is(err, ErrLeaseTTLRequired) {
+		t.Fatalf("RegisterCardWithLease(0) error = %v, want %v", err, ErrLeaseTTLRequired)
+	}
+	if _, err := registry.HeartbeatCard(ctx, "missing", time.Minute); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("HeartbeatCard(missing) error = %v, want %v", err, ErrAgentNotFound)
+	}
+	if _, err := registry.HeartbeatCard(ctx, "missing", 0); !errors.Is(err, ErrLeaseTTLRequired) {
+		t.Fatalf("HeartbeatCard(0) error = %v, want %v", err, ErrLeaseTTLRequired)
+	}
+
+	if _, err := registry.RegisterCard(ctx, AgentCard{
+		Name:      "expired-reviewer",
+		ExpiresAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("RegisterCard(expired) error = %v", err)
+	}
+	if _, err := registry.HeartbeatCard(ctx, "expired-reviewer", time.Minute); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("HeartbeatCard(expired) error = %v, want %v", err, ErrAgentNotFound)
+	}
+
+	expiredLocal := FakeAgent{
+		CardValue: AgentCard{
+			Name:      "expired-local-reviewer",
+			ExpiresAt: time.Now().Add(-time.Minute),
+		},
+		SendFunc: func(context.Context, Task) (Result, error) {
+			return Result{Output: "stale local"}, nil
+		},
+	}
+	if err := registry.Register(ctx, expiredLocal); err != nil {
+		t.Fatalf("Register(expired local) error = %v", err)
+	}
+	registered, err := registry.RegisterCardWithLease(ctx, AgentCard{
+		Name: "expired-local-reviewer",
+		URL:  "https://agents.example/expired-local-reviewer",
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterCardWithLease(expired local replacement) error = %v", err)
+	}
+	if registered.URL != "https://agents.example/expired-local-reviewer" {
+		t.Fatalf("RegisterCardWithLease(expired local replacement) card = %+v", registered)
+	}
+	if _, err := registry.Send(ctx, "expired-local-reviewer", Task{ID: "task-1"}); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Send(expired local replacement) error = %v, want %v", err, ErrAgentNotFound)
+	}
+
+	if err := registry.Register(ctx, FakeAgent{CardValue: AgentCard{Name: "local-reviewer"}}); err != nil {
+		t.Fatalf("Register(local) error = %v", err)
+	}
+	if _, err := registry.RegisterCardWithLease(ctx, AgentCard{
+		Name: "local-reviewer",
+		URL:  "https://agents.example/local-reviewer",
+	}, time.Minute); !errors.Is(err, ErrAgentExists) {
+		t.Fatalf("RegisterCardWithLease(local conflict) error = %v, want %v", err, ErrAgentExists)
+	}
+}
+
 func TestRegistryRegisterWithEvidenceReturnsAgentRegisteredEvent(t *testing.T) {
 	ctx := context.Background()
 	registry := NewRegistry()
