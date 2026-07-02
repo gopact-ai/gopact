@@ -7,7 +7,7 @@ import (
 )
 
 func TestVersioningPolicyDocumentedAndIndexed(t *testing.T) {
-	policyPath := filepath.Join("docs", "design", "versioning-policy.md")
+	policyPath := filepath.Join("doc", "design", "versioning-policy.md")
 	policy := readTextFile(t, policyPath)
 
 	for _, phrase := range []string{
@@ -37,10 +37,10 @@ func TestVersioningPolicyDocumentedAndIndexed(t *testing.T) {
 
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
-		filepath.Join("docs", "design", "deprecation-policy.md"),
-		filepath.Join("docs", "design", "migration-guide.md"),
+		filepath.Join("doc", "design", "index.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "deprecation-policy.md"),
+		filepath.Join("doc", "design", "migration-guide.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "versioning-policy.md") {

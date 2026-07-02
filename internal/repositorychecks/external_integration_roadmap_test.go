@@ -242,7 +242,7 @@ type externalIntegrationRoadmapEntry struct {
 func loadExternalIntegrationRoadmap(t *testing.T) externalIntegrationRoadmap {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "external-integration-roadmap.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "external-integration-roadmap.json"))
 	var roadmap externalIntegrationRoadmap
 	if err := json.Unmarshal(raw, &roadmap); err != nil {
 		t.Fatalf("decode external integration roadmap: %v", err)

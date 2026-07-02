@@ -45,7 +45,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("gopact-extscaffold", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&root, "root", ".", "gopact repository root containing docs/design manifests")
+	fs.StringVar(&root, "root", ".", "gopact repository root containing doc/design manifests")
 	fs.StringVar(&out, "out", "", "output directory for external repository scaffolds")
 	fs.BoolVar(&dryRun, "dry-run", false, "print scaffold plan without writing files")
 	fs.BoolVar(&planJSON, "plan-json", false, "print remote bootstrap sync plan as JSON without writing files")

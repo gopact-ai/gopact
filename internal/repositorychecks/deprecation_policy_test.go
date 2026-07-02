@@ -7,7 +7,7 @@ import (
 )
 
 func TestDeprecationPolicyDocumentedAndIndexed(t *testing.T) {
-	policy := readTextFile(t, filepath.Join("docs", "design", "deprecation-policy.md"))
+	policy := readTextFile(t, filepath.Join("doc", "design", "deprecation-policy.md"))
 
 	requiredPhrases := []string{
 		"# gopact Public API 废弃策略",
@@ -27,9 +27,9 @@ func TestDeprecationPolicyDocumentedAndIndexed(t *testing.T) {
 
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
-		filepath.Join("docs", "design", "api-ergonomics.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "index.md"),
+		filepath.Join("doc", "design", "api-ergonomics.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "deprecation-policy.md") {
@@ -39,7 +39,7 @@ func TestDeprecationPolicyDocumentedAndIndexed(t *testing.T) {
 }
 
 func TestDeprecationPolicyCoversPublicAPIStabilityStates(t *testing.T) {
-	policy := readTextFile(t, filepath.Join("docs", "design", "deprecation-policy.md"))
+	policy := readTextFile(t, filepath.Join("doc", "design", "deprecation-policy.md"))
 	manifest := loadPublicAPIBoundaryManifest(t)
 
 	seen := map[string]bool{}

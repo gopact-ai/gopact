@@ -255,7 +255,7 @@ func renderReadme(repo Repository) string {
 	b.WriteString("```go\n// Replace this block with the smallest constructor-based setup for this extension.\n```\n\n")
 	if repositoryHasMigrations(repo) {
 		b.WriteString("## V1 Migration Ownership\n\n")
-		b.WriteString("This scaffold is tied to `docs/design/v1-migration-plan.json`. Before v1, this repository must own the listed source paths and keep the matching conformance/readiness gates green.\n\n")
+		b.WriteString("This scaffold is tied to `doc/design/v1-migration-plan.json`. Before v1, this repository must own the listed source paths and keep the matching conformance/readiness gates green.\n\n")
 		for _, target := range repo.Targets {
 			for _, migration := range target.Migrations {
 				fmt.Fprintf(&b, "- `%s` -> `%s` (`%s`): %s\n", migration.SourcePath, target.Name, migration.Action, migration.V1Condition)
@@ -312,7 +312,7 @@ func renderConformance(repo Repository) string {
 	}
 	if repositoryHasMigrations(repo) {
 		b.WriteString("## V1 Migration Ownership\n\n")
-		b.WriteString("These entries are generated from `docs/design/v1-migration-plan.json` and must stay aligned with the core repository boundary before v1.\n\n")
+		b.WriteString("These entries are generated from `doc/design/v1-migration-plan.json` and must stay aligned with the core repository boundary before v1.\n\n")
 		for _, target := range repo.Targets {
 			for _, migration := range target.Migrations {
 				fmt.Fprintf(&b, "- `%s` -> `%s` (`%s`): %s\n", migration.SourcePath, target.Name, migration.Action, migration.V1Condition)

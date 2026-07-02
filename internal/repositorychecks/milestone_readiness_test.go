@@ -111,8 +111,8 @@ func TestMilestoneReadinessDefinesBootstrapLevels(t *testing.T) {
 func TestMilestoneReadinessManifestIsIndexed(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "index.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "milestone-readiness.json") {
@@ -266,7 +266,7 @@ type bootstrapLevel struct {
 func loadMilestoneReadinessManifest(t *testing.T) milestoneReadinessManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "milestone-readiness.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "milestone-readiness.json"))
 	var manifest milestoneReadinessManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode milestone readiness manifest: %v", err)

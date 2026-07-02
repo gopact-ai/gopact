@@ -12,10 +12,10 @@ import (
 const DefaultSDKVersion = "v0.0.0"
 
 const (
-	externalRepositoriesManifestPath = "docs/design/external-repositories.json"
-	extensionConformanceManifestPath = "docs/design/extension-conformance.json"
-	extensionScaffoldSpecPath        = "docs/design/extension-scaffold-spec.json"
-	v1MigrationPlanPath              = "docs/design/v1-migration-plan.json"
+	externalRepositoriesManifestPath = "doc/design/external-repositories.json"
+	extensionConformanceManifestPath = "doc/design/extension-conformance.json"
+	extensionScaffoldSpecPath        = "doc/design/extension-scaffold-spec.json"
+	v1MigrationPlanPath              = "doc/design/v1-migration-plan.json"
 )
 
 // LoadRepositoriesFromDesign loads external repository scaffold inputs from the design manifests.

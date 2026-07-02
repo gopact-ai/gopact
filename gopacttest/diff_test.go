@@ -16,7 +16,7 @@ func TestRecordDiffCheckRecordsPassedCheck(t *testing.T) {
 		Name:       "observed patch diff",
 		Ref:        "patch-1.diff",
 		Diff:       "diff --git a/README.md b/README.md\n",
-		Files:      []string{"README.md", "docs/design/index.md"},
+		Files:      []string{"README.md", "doc/design/index.md"},
 		Insertions: 12,
 		Deletions:  3,
 		Metadata:   map[string]any{"mode": "write"},
@@ -42,7 +42,7 @@ func TestRecordDiffCheckRecordsPassedCheck(t *testing.T) {
 		t.Fatalf("metadata = %+v, want diff stats and custom metadata", check.Metadata)
 	}
 	files, ok := check.Metadata["files"].([]string)
-	if !ok || !reflect.DeepEqual(files, []string{"README.md", "docs/design/index.md"}) {
+	if !ok || !reflect.DeepEqual(files, []string{"README.md", "doc/design/index.md"}) {
 		t.Fatalf("metadata files = %#v, want copied files", check.Metadata["files"])
 	}
 }

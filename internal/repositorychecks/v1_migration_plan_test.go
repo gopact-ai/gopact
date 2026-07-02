@@ -18,12 +18,12 @@ func TestV1MigrationPlanCoversRepositoryBoundaryMoves(t *testing.T) {
 		t.Fatalf("v1 migration plan scope = %q, want v1-core-boundary", plan.Scope)
 	}
 	for _, path := range []string{
-		"docs/design/repository-boundary.json",
-		"docs/design/extension-conformance.json",
-		"docs/design/external-repositories.json",
-		"docs/design/public-api-boundary.json",
-		"docs/design/migration-guide.md",
-		"docs/design/versioning-policy.md",
+		"doc/design/repository-boundary.json",
+		"doc/design/extension-conformance.json",
+		"doc/design/external-repositories.json",
+		"doc/design/public-api-boundary.json",
+		"doc/design/migration-guide.md",
+		"doc/design/versioning-policy.md",
 	} {
 		if !slices.Contains(plan.SourceManifests, path) {
 			t.Fatalf("v1 migration plan source_manifests missing %q", path)
@@ -376,10 +376,10 @@ func TestV1MigrationPlanCoversTransitionalPublicAPI(t *testing.T) {
 func TestV1MigrationPlanIsIndexed(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
-		filepath.Join("docs", "design", "migration-guide.md"),
-		filepath.Join("docs", "design", "versioning-policy.md"),
+		filepath.Join("doc", "design", "index.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "migration-guide.md"),
+		filepath.Join("doc", "design", "versioning-policy.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "v1-migration-plan.json") {
@@ -440,7 +440,7 @@ type v1PublicAPITransition struct {
 func loadV1MigrationPlan(t *testing.T) v1MigrationPlan {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "v1-migration-plan.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "v1-migration-plan.json"))
 	var plan v1MigrationPlan
 	if err := json.Unmarshal(raw, &plan); err != nil {
 		t.Fatalf("decode v1 migration plan: %v", err)

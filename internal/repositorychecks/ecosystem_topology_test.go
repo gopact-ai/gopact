@@ -40,7 +40,7 @@ func TestEcosystemTopologyDefinesOfficialRepositories(t *testing.T) {
 func TestEcosystemTopologyIsDocumented(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
+		filepath.Join("doc", "design", "index.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "ecosystem-topology.json") {
@@ -75,7 +75,7 @@ type ecosystemTopologyRepository struct {
 func loadEcosystemTopology(t *testing.T) ecosystemTopologyManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "ecosystem-topology.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "ecosystem-topology.json"))
 	var manifest ecosystemTopologyManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode ecosystem topology manifest: %v", err)

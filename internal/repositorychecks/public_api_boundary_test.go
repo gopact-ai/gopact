@@ -166,7 +166,7 @@ type rootExportedMethod struct {
 func loadPublicAPIBoundaryManifest(t *testing.T) publicAPIBoundaryManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "public-api-boundary.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "public-api-boundary.json"))
 	var manifest publicAPIBoundaryManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode public api boundary manifest: %v", err)

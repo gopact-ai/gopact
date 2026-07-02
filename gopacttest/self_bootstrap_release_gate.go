@@ -38,13 +38,13 @@ const (
 	SelfBootstrapCIGateAgnesIntegration = "agnes-integration"
 
 	// SelfBootstrapCheckPublicAPIBoundary is the standard public API boundary snapshot check.
-	SelfBootstrapCheckPublicAPIBoundary = "file-snapshot:docs/design/public-api-boundary.json"
+	SelfBootstrapCheckPublicAPIBoundary = "file-snapshot:doc/design/public-api-boundary.json"
 	// SelfBootstrapCheckPublicAPIExamples is the standard public API examples manifest snapshot check.
-	SelfBootstrapCheckPublicAPIExamples = "file-snapshot:docs/design/public-api-examples.json"
+	SelfBootstrapCheckPublicAPIExamples = "file-snapshot:doc/design/public-api-examples.json"
 	// SelfBootstrapCheckPublicAPIExamplesCommand is the standard executable public API examples check.
 	SelfBootstrapCheckPublicAPIExamplesCommand = "command:go test -run '^Example' ./..."
 	// SelfBootstrapCheckFeatureCoverage is the standard feature coverage snapshot check.
-	SelfBootstrapCheckFeatureCoverage = "file-snapshot:FEATURES.md"
+	SelfBootstrapCheckFeatureCoverage = "file-snapshot:doc/FEATURES.md"
 	// SelfBootstrapCheckGraphConformanceCommand is the standard graph workflow conformance check.
 	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./graph ./gopacttest/graphconformance"
 	// SelfBootstrapCheckA2AConformanceCommand is the standard A2A mesh conformance check.
@@ -62,15 +62,15 @@ const (
 	// SelfBootstrapCheckAgnesExamplesIntegrationCommand is the standard local Agnes examples integration check.
 	SelfBootstrapCheckAgnesExamplesIntegrationCommand = "command:" + SelfBootstrapCommandAgnesExamplesIntegration
 	// SelfBootstrapCheckDeprecationPolicy is the standard deprecation policy snapshot check.
-	SelfBootstrapCheckDeprecationPolicy = "file-snapshot:docs/design/deprecation-policy.md"
+	SelfBootstrapCheckDeprecationPolicy = "file-snapshot:doc/design/deprecation-policy.md"
 	// SelfBootstrapCheckAPIErgonomics is the standard API ergonomics snapshot check.
-	SelfBootstrapCheckAPIErgonomics = "file-snapshot:docs/design/api-ergonomics.md"
+	SelfBootstrapCheckAPIErgonomics = "file-snapshot:doc/design/api-ergonomics.md"
 	// SelfBootstrapCheckRepositoryBoundary is the standard repository boundary snapshot check.
-	SelfBootstrapCheckRepositoryBoundary = "file-snapshot:docs/design/repository-boundary.json"
+	SelfBootstrapCheckRepositoryBoundary = "file-snapshot:doc/design/repository-boundary.json"
 	// SelfBootstrapCheckV1MigrationPlan is the standard v1 migration plan snapshot check.
-	SelfBootstrapCheckV1MigrationPlan = "file-snapshot:docs/design/v1-migration-plan.json"
+	SelfBootstrapCheckV1MigrationPlan = "file-snapshot:doc/design/v1-migration-plan.json"
 	// SelfBootstrapCheckMigrationGuide is the standard migration guide snapshot check.
-	SelfBootstrapCheckMigrationGuide = "file-snapshot:docs/design/migration-guide.md"
+	SelfBootstrapCheckMigrationGuide = "file-snapshot:doc/design/migration-guide.md"
 	// SelfBootstrapCheckExternalRepositories is the standard external repository readiness check.
 	SelfBootstrapCheckExternalRepositories = "external-repositories:gopact-ai"
 	// SelfBootstrapCheckExternalCI is the standard external repository CI readiness check.
@@ -322,14 +322,14 @@ func selfBootstrapReleaseGateChecks(
 				{Type: VerificationEvidenceTypeFileSnapshot, Ref: "go.mod", Summary: "file snapshot captured"},
 			},
 		},
-		selfBootstrapSnapshotCheck("docs/design/public-api-boundary.json"),
-		selfBootstrapSnapshotCheck("docs/design/public-api-examples.json"),
-		selfBootstrapSnapshotCheck("FEATURES.md"),
-		selfBootstrapSnapshotCheck("docs/design/deprecation-policy.md"),
-		selfBootstrapSnapshotCheck("docs/design/api-ergonomics.md"),
-		selfBootstrapSnapshotCheck("docs/design/repository-boundary.json"),
-		selfBootstrapSnapshotCheck("docs/design/v1-migration-plan.json"),
-		selfBootstrapSnapshotCheck("docs/design/migration-guide.md"),
+		selfBootstrapSnapshotCheck("doc/design/public-api-boundary.json"),
+		selfBootstrapSnapshotCheck("doc/design/public-api-examples.json"),
+		selfBootstrapSnapshotCheck("doc/FEATURES.md"),
+		selfBootstrapSnapshotCheck("doc/design/deprecation-policy.md"),
+		selfBootstrapSnapshotCheck("doc/design/api-ergonomics.md"),
+		selfBootstrapSnapshotCheck("doc/design/repository-boundary.json"),
+		selfBootstrapSnapshotCheck("doc/design/v1-migration-plan.json"),
+		selfBootstrapSnapshotCheck("doc/design/migration-guide.md"),
 		{
 			ID:     SelfBootstrapCheckExternalRepositories,
 			Status: gopact.VerificationStatusPassed,

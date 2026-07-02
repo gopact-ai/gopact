@@ -1,0 +1,728 @@
+{
+  "version": 1,
+  "scope": "v1-core-boundary",
+  "source_manifests": [
+    "doc/design/repository-boundary.json",
+    "doc/design/extension-conformance.json",
+    "doc/design/external-repositories.json",
+    "doc/design/public-api-boundary.json",
+    "doc/design/migration-guide.md",
+    "doc/design/versioning-policy.md"
+  ],
+  "release_gate_conditions": [
+    "core-ci-gates",
+    "external-repository-readiness",
+    "extension-conformance",
+    "public-api-boundary",
+    "public-api-examples",
+    "migration-guide"
+  ],
+  "release_gate_checks": [
+    {
+      "id": "core-ci-gates",
+      "evidence_types": [
+        "ci_gate",
+        "command"
+      ],
+      "source_manifests": [
+        "doc/design/core-ci-gates.json",
+        ".github/workflows/ci.yml",
+        "Makefile"
+      ],
+      "required_check_ids": [
+        "ci-gates",
+        "command:git diff --check",
+        "command:go mod tidy",
+        "command:git diff --exit-code",
+        "command:go test -count=1 ./...",
+        "command:go test -race -count=1 ./...",
+        "command:go vet ./...",
+        "command:golangci-lint run ./...",
+        "command:go test -coverprofile=coverage.out ./...",
+        "command:go test -run '^Example' ./...",
+        "command:go test -count=1 ./graph ./gopacttest/graphconformance",
+        "command:go test -count=1 ./a2a ./gopacttest/a2aconformance",
+        "command:govulncheck ./..."
+      ],
+      "required_ci_gates": [
+        "whitespace",
+        "unit",
+        "race",
+        "vet",
+        "lint",
+        "coverage",
+        "examples",
+        "security"
+      ],
+      "required_status": "passed",
+      "blocking_status": "failed",
+      "blocker_summary": "All core CI gates declared by doc/design/core-ci-gates.json must pass locally and in GitHub Actions before v1 release."
+    },
+    {
+      "id": "external-repository-readiness",
+      "evidence_types": [
+        "external_repository_readiness",
+        "ci_gate"
+      ],
+      "source_manifests": [
+        "doc/design/external-repositories.json",
+        "doc/design/extension-scaffold-spec.json",
+        "doc/design/extension-conformance.json",
+        "doc/design/extension-ci-workflow.yml"
+      ],
+      "required_check_ids": [
+        "external-repositories:gopact-ai",
+        "external-ci:gopact-ai"
+      ],
+      "required_ci_gates": [
+        "whitespace",
+        "module-tidiness",
+        "unit",
+        "vet"
+      ],
+      "required_status": "passed",
+      "blocking_status": "failed",
+      "blocker_summary": "Every external gopact-ai adapter/plugin/template repository must exist, match expected visibility, expose CI, provide GOPACT_GITHUB_TOKEN while the core SDK is private, have latest CI passing, and provide passed cross-repository CI gate evidence before v1 release."
+    },
+    {
+      "id": "extension-conformance",
+      "evidence_types": [
+        "command",
+        "file_snapshot"
+      ],
+      "source_manifests": [
+        "doc/design/extension-conformance.json",
+        "doc/design/extension-conformance-template.md",
+        "doc/design/extension-scaffold-spec.json"
+      ],
+      "required_check_ids": [
+        "file-snapshot:doc/design/extension-conformance.json",
+        "file-snapshot:doc/design/extension-conformance-template.md",
+        "file-snapshot:doc/design/extension-scaffold-spec.json",
+        "command:git diff --check",
+        "command:go test -count=1 ./...",
+        "command:go vet ./..."
+      ],
+      "required_status": "passed",
+      "blocking_status": "failed",
+      "blocker_summary": "Every extension target referenced by the v1 migration plan must keep its scaffold, required conformance suites, examples, and generated repository contract passing before v1 release."
+    },
+    {
+      "id": "public-api-examples",
+      "evidence_types": [
+        "command",
+        "file_snapshot"
+      ],
+      "source_manifests": [
+        "doc/design/public-api-boundary.json",
+        "doc/design/public-api-examples.json"
+      ],
+      "required_check_ids": [
+        "file-snapshot:doc/design/public-api-boundary.json",
+        "file-snapshot:doc/design/public-api-examples.json",
+        "command:go test -run '^Example' ./..."
+      ],
+      "required_status": "passed",
+      "blocking_status": "failed",
+      "blocker_summary": "Every stable or transitional root public API required for v1 must be covered by public-api-boundary.json and executable public API examples before v1 release."
+    },
+    {
+      "id": "public-api-boundary",
+      "evidence_types": [
+        "file_snapshot"
+      ],
+      "source_manifests": [
+        "doc/design/public-api-boundary.json",
+        "doc/design/deprecation-policy.md",
+        "doc/design/api-ergonomics.md"
+      ],
+      "required_check_ids": [
+        "file-snapshot:doc/design/public-api-boundary.json",
+        "file-snapshot:doc/design/deprecation-policy.md",
+        "file-snapshot:doc/design/api-ergonomics.md"
+      ],
+      "required_status": "passed",
+      "blocking_status": "failed",
+      "blocker_summary": "Every root exported API that remains visible at v1 must be categorized, assigned a stability state, and covered by deprecation policy before v1 release."
+    },
+    {
+      "id": "migration-guide",
+      "evidence_types": [
+        "file_snapshot"
+      ],
+      "source_manifests": [
+        "doc/design/migration-guide.md",
+        "doc/design/deprecation-policy.md",
+        "doc/design/versioning-policy.md"
+      ],
+      "required_check_ids": [
+        "file-snapshot:doc/design/migration-guide.md",
+        "file-snapshot:doc/design/deprecation-policy.md",
+        "file-snapshot:doc/design/versioning-policy.md"
+      ],
+      "required_status": "passed",
+      "blocking_status": "failed",
+      "blocker_summary": "The v1 migration guide, deprecation policy, and versioning policy must describe every public API transition or repository migration that remains visible to SDK users before v1 release."
+    }
+  ],
+  "repository_migrations": [
+    {
+      "source_path": "adapters/channel/a2ui",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-channel-a2ui",
+      "external_repository": "gopact-adapters-channel",
+      "external_module": "github.com/gopact-ai/gopact-adapters-channel",
+      "external_source_ref": "gopact-ai/gopact-adapters-channel@846642fc0c0dd0e369f14cf91331bda7f82d86d4:a2ui",
+      "core_source_removed": true,
+      "v1_condition": "The A2UI adapter is removed from the core module after the external repository owns the source path, runs the channel-transfer conformance suites, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/channel/agui",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-channel-agui",
+      "external_repository": "gopact-adapters-channel",
+      "external_module": "github.com/gopact-ai/gopact-adapters-channel",
+      "external_source_ref": "gopact-ai/gopact-adapters-channel@846642fc0c0dd0e369f14cf91331bda7f82d86d4:agui",
+      "core_source_removed": true,
+      "v1_condition": "The AG-UI adapter is removed from the core module after the external repository owns the source path, runs the channel-transfer conformance suites, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/channel/lark",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-channel-lark",
+      "external_repository": "gopact-adapters-channel",
+      "external_module": "github.com/gopact-ai/gopact-adapters-channel",
+      "external_source_ref": "gopact-ai/gopact-adapters-channel@846642fc0c0dd0e369f14cf91331bda7f82d86d4:lark",
+      "core_source_removed": true,
+      "v1_condition": "The Lark adapter is removed from the core module after the external repository owns the source path, documents host-owned client and callback configuration, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/checkpoint/gcsstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-checkpoint-gcs",
+      "external_repository": "gopact-adapters-checkpoint",
+      "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@49ef3db82fbf4d2ea7eb57c715aadc65d62bd717:gcsstore",
+      "core_source_removed": true,
+      "v1_condition": "The GCS checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/checkpoint/ossstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-checkpoint-oss",
+      "external_repository": "gopact-adapters-checkpoint",
+      "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@b658c4e52f0354b56eec87450a73a00b0f22e8f1:ossstore",
+      "core_source_removed": true,
+      "v1_condition": "The OSS checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/checkpoint/r2store",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-checkpoint-r2",
+      "external_repository": "gopact-adapters-checkpoint",
+      "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@120c254d655124f5864bbbad2368525650dc3bc8:r2store",
+      "core_source_removed": true,
+      "v1_condition": "The R2 checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/checkpoint/redisstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-checkpoint-redis",
+      "external_repository": "gopact-adapters-checkpoint",
+      "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@57efe8fe1eb42a9059222a2b11e52cf635fb55bc:redisstore",
+      "core_source_removed": true,
+      "v1_condition": "The Redis checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/checkpoint/s3store",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-checkpoint-s3",
+      "external_repository": "gopact-adapters-checkpoint",
+      "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@f8c3f64bcdc98a08ee4e13db3a88827216e339f6:s3store",
+      "core_source_removed": true,
+      "v1_condition": "The S3 checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/checkpoint/sqlstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-checkpoint-sql",
+      "external_repository": "gopact-adapters-checkpoint",
+      "external_module": "github.com/gopact-ai/gopact-adapters-checkpoint",
+      "external_source_ref": "gopact-ai/gopact-adapters-checkpoint@6fa3b5eb74e332c6f79bfdf27b48333a0a585910:sqlstore",
+      "core_source_removed": true,
+      "v1_condition": "The database/sql checkpoint adapter is removed from the core module after the external checkpoint repository owns the source path and passes checkpoint conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/devagent/channelreview",
+      "action": "move-to-template-repo",
+      "extension_target": "gopact-templates-devagent",
+      "external_repository": "gopact-templates-devagent",
+      "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@da65fc532ddfa85c21b22e592c109bf13e79d108:channelreview",
+      "core_source_removed": true,
+      "v1_condition": "The channel reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps review evidence conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/devagent/cireview",
+      "action": "move-to-template-repo",
+      "extension_target": "gopact-templates-devagent",
+      "external_repository": "gopact-templates-devagent",
+      "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@518ea787bac5deb354a30c5907cf61529f8aeacd:cireview",
+      "core_source_removed": true,
+      "v1_condition": "The CI reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps review evidence conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/devagent/gitdiff",
+      "action": "move-to-template-repo",
+      "extension_target": "gopact-templates-devagent",
+      "external_repository": "gopact-templates-devagent",
+      "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@7ba23ebce5dc90f9065ee6bdb5fe3c8b1a2462fc:gitdiff",
+      "core_source_removed": true,
+      "v1_condition": "The git diff scanner adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps observed diff evidence conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/devagent/modelreview",
+      "action": "move-to-template-repo",
+      "extension_target": "gopact-templates-devagent",
+      "external_repository": "gopact-templates-devagent",
+      "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@608d93ad1aca34278c5fa759a113270acb6a5d4a:modelreview",
+      "core_source_removed": true,
+      "v1_condition": "The model reviewer adapter is removed from the core module after the Dev Agent template repository owns the source path, keeps reviewer decision conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/lease/httpstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-lease-http",
+      "external_repository": "gopact-adapters-lease",
+      "external_module": "github.com/gopact-ai/gopact-adapters-lease",
+      "external_source_ref": "gopact-ai/gopact-adapters-lease@265e1e90a4e5d637f4a0d55087b0cd219219827d:httpstore",
+      "core_source_removed": true,
+      "v1_condition": "The HTTP lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/lease/redisstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-lease-redis",
+      "external_repository": "gopact-adapters-lease",
+      "external_module": "github.com/gopact-ai/gopact-adapters-lease",
+      "external_source_ref": "gopact-ai/gopact-adapters-lease@265e1e90a4e5d637f4a0d55087b0cd219219827d:redisstore",
+      "core_source_removed": true,
+      "v1_condition": "The Redis lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/lease/sqlstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-lease-sql",
+      "external_repository": "gopact-adapters-lease",
+      "external_module": "github.com/gopact-ai/gopact-adapters-lease",
+      "external_source_ref": "gopact-ai/gopact-adapters-lease@265e1e90a4e5d637f4a0d55087b0cd219219827d:sqlstore",
+      "core_source_removed": true,
+      "v1_condition": "The database/sql lease backend is removed from the core module after the external lease repository owns the source path and passes lease conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/model/openaicompatible",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-model-openaicompatible",
+      "external_repository": "gopact-adapters-model",
+      "external_module": "github.com/gopact-ai/gopact-adapters-model",
+      "external_source_ref": "gopact-ai/gopact-adapters-model@07edc0efb1bfed57e67da28331c3347b0b8e2ddb:openaicompatible",
+      "core_source_removed": true,
+      "v1_condition": "The OpenAI-compatible model adapter is removed from the core module after the external model repository owns the source path, keeps provider conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/observability/trace",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-observability-trace",
+      "external_repository": "gopact-plugins-observability",
+      "external_module": "github.com/gopact-ai/gopact-plugins-observability",
+      "external_source_ref": "gopact-ai/gopact-plugins-observability@c7331078378fb9c63384c3504d2dd5136c4ecd6c:trace",
+      "core_source_removed": true,
+      "v1_condition": "The trace exporter plugin is removed from the core module after the observability plugin repository owns the source path, keeps exporter conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/storage/gcsblob",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-storage-gcs",
+      "external_repository": "gopact-adapters-storage",
+      "external_module": "github.com/gopact-ai/gopact-adapters-storage",
+      "external_source_ref": "gopact-ai/gopact-adapters-storage@b0636030be2d3238a9df7acf9832bb63ab1764e3:gcsblob",
+      "core_source_removed": true,
+      "v1_condition": "The GCS blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/storage/ossblob",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-storage-oss",
+      "external_repository": "gopact-adapters-storage",
+      "external_module": "github.com/gopact-ai/gopact-adapters-storage",
+      "external_source_ref": "gopact-ai/gopact-adapters-storage@b0636030be2d3238a9df7acf9832bb63ab1764e3:ossblob",
+      "core_source_removed": true,
+      "v1_condition": "The OSS blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/storage/r2blob",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-storage-r2",
+      "external_repository": "gopact-adapters-storage",
+      "external_module": "github.com/gopact-ai/gopact-adapters-storage",
+      "external_source_ref": "gopact-ai/gopact-adapters-storage@5cd6b85b7ac0d4877895361484286c3328d0dabc:r2blob",
+      "core_source_removed": true,
+      "v1_condition": "The R2 blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/storage/s3blob",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-storage-s3",
+      "external_repository": "gopact-adapters-storage",
+      "external_module": "github.com/gopact-ai/gopact-adapters-storage",
+      "external_source_ref": "gopact-ai/gopact-adapters-storage@5cd6b85b7ac0d4877895361484286c3328d0dabc:s3blob",
+      "core_source_removed": true,
+      "v1_condition": "The S3 blob adapter is removed from the core module after the external storage repository owns the source path and passes storage conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/turnloop/httpstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-turnloop-http",
+      "external_repository": "gopact-adapters-turnloop",
+      "external_module": "github.com/gopact-ai/gopact-adapters-turnloop",
+      "external_source_ref": "gopact-ai/gopact-adapters-turnloop@d0138857c3d8989b4f766eafedaf2166d9f5a78c:httpstore",
+      "core_source_removed": true,
+      "v1_condition": "The HTTP TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/turnloop/redisstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-turnloop-redis",
+      "external_repository": "gopact-adapters-turnloop",
+      "external_module": "github.com/gopact-ai/gopact-adapters-turnloop",
+      "external_source_ref": "gopact-ai/gopact-adapters-turnloop@d0138857c3d8989b4f766eafedaf2166d9f5a78c:redisstore",
+      "core_source_removed": true,
+      "v1_condition": "The Redis TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "adapters/turnloop/sqlstore",
+      "action": "move-to-adapter-repo",
+      "extension_target": "gopact-adapters-turnloop-sql",
+      "external_repository": "gopact-adapters-turnloop",
+      "external_module": "github.com/gopact-ai/gopact-adapters-turnloop",
+      "external_source_ref": "gopact-ai/gopact-adapters-turnloop@d0138857c3d8989b4f766eafedaf2166d9f5a78c:sqlstore",
+      "core_source_removed": true,
+      "v1_condition": "The database/sql TurnLoop store is removed from the core module after the external TurnLoop repository owns the source path and passes TurnLoop store conformance plus remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "templates/agenttool",
+      "action": "move-to-template-repo",
+      "extension_target": "gopact-templates-agenttool",
+      "external_repository": "gopact-templates-agenttool",
+      "external_module": "github.com/gopact-ai/gopact-templates-agenttool",
+      "external_source_ref": "gopact-ai/gopact-templates-agenttool@49e2dd684920b819fc2818e097ad5ae2a2d4270c:agenttool",
+      "core_source_removed": true,
+      "v1_condition": "The Agent-as-Tool template is removed from the core module after the external template repository owns the source path, keeps template trajectory conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "source_path": "templates/devagent",
+      "action": "move-to-template-repo",
+      "extension_target": "gopact-templates-devagent",
+      "external_repository": "gopact-templates-devagent",
+      "external_module": "github.com/gopact-ai/gopact-templates-devagent",
+      "external_source_ref": "gopact-ai/gopact-templates-devagent@558778afbccecca9c3a74a5d93ed25a6c134e909:devagent",
+      "core_source_removed": true,
+      "v1_condition": "The Dev Agent template is removed from the core module after the external template repository owns the source path, keeps workflow/release conformance, and passes remote readiness.",
+      "verification": [
+        "extension-conformance",
+        "external-repository-readiness",
+        "core-ci-gates"
+      ]
+    }
+  ],
+  "public_api_transitions": [
+    {
+      "category": "reference-implementation",
+      "source_file": "lease.go",
+      "symbols": [
+        "ErrLeaseConflict",
+        "ErrLeaseKeyRequired",
+        "ErrLeaseNotHeld",
+        "ErrLeaseOwnerRequired",
+        "ErrLeaseTTLRequired",
+        "ErrLeaseTokenRequired",
+        "LeaseBackend",
+        "LeaseRecord",
+        "LeaseReleaseRequest",
+        "LeaseRenewRequest",
+        "LeaseRequest",
+        "MemoryLeaseBackend",
+        "MemoryLeaseOption",
+        "NewMemoryLeaseBackend",
+        "WithMemoryLeaseClock"
+      ],
+      "action": "stabilize-core",
+      "target_state": "stable",
+      "v1_condition": "LeaseBackend and the memory lease implementation either graduate to stable root API with examples and release gates, or this entry must be changed before v1.",
+      "verification": [
+        "public-api-boundary",
+        "public-api-examples",
+        "migration-guide",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "source_file": "turnloop_store_blob.go",
+      "symbols": [
+        "BlobTurnLoopStore",
+        "ErrTurnLoopBlobBackendRequired",
+        "ErrTurnLoopBlobNotFound",
+        "MemoryTurnLoopBlobBackend",
+        "NewBlobTurnLoopStore",
+        "NewMemoryTurnLoopBlobBackend",
+        "TurnLoopBlobBackend"
+      ],
+      "action": "keep-reference",
+      "target_state": "experimental",
+      "v1_condition": "The blob-backed TurnLoop store remains only as a lightweight reference implementation unless promoted with public examples and schema migration guidance.",
+      "verification": [
+        "public-api-boundary",
+        "public-api-examples",
+        "migration-guide",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "source_file": "turnloop_store_file.go",
+      "symbols": [
+        "ErrTurnLoopStoreSchemaMismatch",
+        "FileTurnLoopStore",
+        "NewFileTurnLoopStore"
+      ],
+      "action": "keep-reference",
+      "target_state": "experimental",
+      "v1_condition": "The local file TurnLoop store remains only as a lightweight reference implementation unless promoted with public examples and schema migration guidance.",
+      "verification": [
+        "public-api-boundary",
+        "public-api-examples",
+        "migration-guide",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "source_file": "turnloop_store_leased.go",
+      "symbols": [
+        "ErrLeaseRenewalIntervalRequired",
+        "ErrLeasedTurnLoopStoreClosed",
+        "ErrTurnLoopLeaseBackendRequired",
+        "ErrTurnLoopStoreRequired",
+        "LeaseEvent",
+        "LeaseEventAcquired",
+        "LeaseEventConflict",
+        "LeaseEventReleaseFailed",
+        "LeaseEventReleased",
+        "LeaseEventRenewFailed",
+        "LeaseEventRenewalStarted",
+        "LeaseEventRenewalStopped",
+        "LeaseEventRenewed",
+        "LeaseEventType",
+        "LeaseObserver",
+        "LeaseObserverFunc",
+        "LeasedTurnLoopStore",
+        "LeasedTurnLoopStoreOption",
+        "NewLeasedTurnLoopStore",
+        "WithLeasedTurnLoopObserver",
+        "WithLeasedTurnLoopRenewalInterval"
+      ],
+      "action": "stabilize-core",
+      "target_state": "stable",
+      "v1_condition": "The leased TurnLoop wrapper graduates to stable root API only after ownership, renewal, conflict, observer, and close semantics are covered by examples and release gates.",
+      "verification": [
+        "public-api-boundary",
+        "public-api-examples",
+        "migration-guide",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "source_file": "turnloop_store_row.go",
+      "symbols": [
+        "ErrTurnLoopRowBackendRequired",
+        "MemoryTurnLoopRowBackend",
+        "NewMemoryTurnLoopRowBackend",
+        "NewRowTurnLoopStore",
+        "RowTurnLoopStore",
+        "TurnLoopRowBackend",
+        "TurnLoopRowRecord"
+      ],
+      "action": "keep-reference",
+      "target_state": "experimental",
+      "v1_condition": "The row-backed TurnLoop store remains only as a lightweight reference implementation unless promoted with public examples and schema migration guidance.",
+      "verification": [
+        "public-api-boundary",
+        "public-api-examples",
+        "migration-guide",
+        "core-ci-gates"
+      ]
+    },
+    {
+      "category": "reference-implementation",
+      "source_file": "turnloop_store_versioned.go",
+      "symbols": [
+        "ErrTurnLoopStoreConflict",
+        "ErrTurnLoopVersionedBackendRequired",
+        "MemoryTurnLoopVersionedBackend",
+        "NewMemoryTurnLoopVersionedBackend",
+        "NewVersionedTurnLoopStore",
+        "TurnLoopVersionedBackend",
+        "TurnLoopVersionedRecord",
+        "VersionedTurnLoopStore"
+      ],
+      "action": "stabilize-core",
+      "target_state": "stable",
+      "v1_condition": "The versioned TurnLoop store graduates to stable root API only after conflict, import/export, and resume semantics are covered by examples and release gates.",
+      "verification": [
+        "public-api-boundary",
+        "public-api-examples",
+        "migration-guide",
+        "core-ci-gates"
+      ]
+    }
+  ]
+}

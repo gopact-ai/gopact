@@ -101,7 +101,7 @@ func TestProfileSessionRestrictsReadAndWritePaths(t *testing.T) {
 	ctx := context.Background()
 	session := &profileRecordingSession{id: "session-1"}
 	manager, err := NewProfileManager(&profileRecordingManager{session: session}, Profile{
-		AllowedReadPaths:  []string{"docs"},
+		AllowedReadPaths:  []string{"doc"},
 		AllowedWritePaths: []string{"tmp"},
 	})
 	if err != nil {
@@ -118,14 +118,14 @@ func TestProfileSessionRestrictsReadAndWritePaths(t *testing.T) {
 	if _, err := wrapped.ReadFile(ctx, "src/main.go"); !errors.Is(err, ErrProfileViolation) {
 		t.Fatalf("ReadFile(outside allowlist) error = %v, want ErrProfileViolation", err)
 	}
-	if _, err := wrapped.ReadFile(ctx, "docs/index.md"); err != nil {
+	if _, err := wrapped.ReadFile(ctx, "doc/index.md"); err != nil {
 		t.Fatalf("ReadFile(allowed) error = %v", err)
 	}
 	if session.reads != 1 {
 		t.Fatalf("underlying reads = %d, want 1", session.reads)
 	}
 
-	err = wrapped.WriteFile(ctx, File{Path: "docs/generated.md", Content: []byte("blocked")})
+	err = wrapped.WriteFile(ctx, File{Path: "doc/generated.md", Content: []byte("blocked")})
 	if !errors.Is(err, ErrProfileViolation) {
 		t.Fatalf("WriteFile(outside allowlist) error = %v, want ErrProfileViolation", err)
 	}

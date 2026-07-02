@@ -136,8 +136,8 @@ func TestLegacyExternalScaffoldManifestsPointToOfficialTopology(t *testing.T) {
 		"external-repositories superseded_by":   repositories.SupersededBy,
 		"extension-scaffold-spec superseded_by": spec.SupersededBy,
 	} {
-		if got != "docs/design/ecosystem-topology.json" {
-			t.Fatalf("%s = %q, want docs/design/ecosystem-topology.json", name, got)
+		if got != "doc/design/ecosystem-topology.json" {
+			t.Fatalf("%s = %q, want doc/design/ecosystem-topology.json", name, got)
 		}
 	}
 }
@@ -148,12 +148,12 @@ func TestExtensionScaffoldSpecCoversExternalRepositories(t *testing.T) {
 	spec := loadExtensionScaffoldSpec(t)
 
 	for _, path := range []string{
-		"docs/design/external-repositories.json",
-		"docs/design/extension-conformance.json",
-		"docs/design/extension-repository-template.md",
-		"docs/design/extension-conformance-template.md",
-		"docs/design/extension-ci-workflow.yml",
-		"docs/design/v1-migration-plan.json",
+		"doc/design/external-repositories.json",
+		"doc/design/extension-conformance.json",
+		"doc/design/extension-repository-template.md",
+		"doc/design/extension-conformance-template.md",
+		"doc/design/extension-ci-workflow.yml",
+		"doc/design/v1-migration-plan.json",
 	} {
 		if !slices.Contains(spec.SourceManifests, path) {
 			t.Fatalf("extension scaffold spec source_manifests missing %q", path)
@@ -235,9 +235,9 @@ func TestExtensionScaffoldSpecCoversExternalRepositories(t *testing.T) {
 func TestExtensionScaffoldSpecIsIndexed(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
-		filepath.Join("docs", "design", "versioning-policy.md"),
+		filepath.Join("doc", "design", "index.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "versioning-policy.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "extension-scaffold-spec.json") {
@@ -249,8 +249,8 @@ func TestExtensionScaffoldSpecIsIndexed(t *testing.T) {
 func TestExtensionScaffoldMaterializerIsDocumented(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "index.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "internal/extensionscaffold") {
@@ -345,7 +345,7 @@ type extensionScaffoldTarget struct {
 func loadExternalRepositoryManifest(t *testing.T) externalRepositoryManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "external-repositories.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "external-repositories.json"))
 	var manifest externalRepositoryManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode external repositories manifest: %v", err)
@@ -359,7 +359,7 @@ func loadExternalRepositoryManifest(t *testing.T) externalRepositoryManifest {
 func loadExtensionScaffoldSpec(t *testing.T) extensionScaffoldSpec {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "extension-scaffold-spec.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "extension-scaffold-spec.json"))
 	var spec extensionScaffoldSpec
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		t.Fatalf("decode extension scaffold spec: %v", err)

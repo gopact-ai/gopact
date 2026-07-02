@@ -10,18 +10,18 @@ import (
 )
 
 func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
-	matrix := readTextFile(t, "FEATURES.md")
+	matrix := readTextFile(t, "doc/FEATURES.md")
 	readme := readTextFile(t, "README.md")
-	index := readTextFile(t, filepath.Join("docs", "design", "index.md"))
+	index := readTextFile(t, filepath.Join("doc", "design", "index.md"))
 
 	for _, indexed := range []struct {
 		path string
 		body string
 	}{
 		{path: "README.md", body: readme},
-		{path: filepath.Join("docs", "design", "index.md"), body: index},
+		{path: filepath.Join("doc", "design", "index.md"), body: index},
 	} {
-		if !strings.Contains(indexed.body, "FEATURES.md") {
+		if !strings.Contains(indexed.body, "doc/FEATURES.md") {
 			t.Fatalf("%s must link to FEATURES.md", indexed.path)
 		}
 	}

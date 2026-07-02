@@ -657,7 +657,7 @@ func stringSlicesEqual(got, want []string) bool {
 
 func TestLoadRepositoriesFromDesignRejectsMissingTargetScaffoldSpec(t *testing.T) {
 	dir := t.TempDir()
-	writeManifestFixture(t, dir, "docs/design/external-repositories.json", `{
+	writeManifestFixture(t, dir, "doc/design/external-repositories.json", `{
   "version": 1,
   "module_path_prefix": "github.com/gopact-ai/",
   "repositories": [{
@@ -669,7 +669,7 @@ func TestLoadRepositoriesFromDesignRejectsMissingTargetScaffoldSpec(t *testing.T
     "required_ci_commands": ["go test -count=1 ./..."]
   }]
 }`)
-	writeManifestFixture(t, dir, "docs/design/extension-conformance.json", `{
+	writeManifestFixture(t, dir, "doc/design/extension-conformance.json", `{
   "version": 1,
   "sdk_compatibility": {
     "module": "github.com/gopact-ai/gopact",
@@ -683,7 +683,7 @@ func TestLoadRepositoriesFromDesignRejectsMissingTargetScaffoldSpec(t *testing.T
     "required_examples": ["minimal example"]
   }]
 }`)
-	writeManifestFixture(t, dir, "docs/design/extension-scaffold-spec.json", `{
+	writeManifestFixture(t, dir, "doc/design/extension-scaffold-spec.json", `{
   "version": 1,
   "repositories": [{
     "name": "gopact-adapters-example",
@@ -691,7 +691,7 @@ func TestLoadRepositoriesFromDesignRejectsMissingTargetScaffoldSpec(t *testing.T
     "targets": []
   }]
 }`)
-	writeManifestFixture(t, dir, "docs/design/v1-migration-plan.json", `{
+	writeManifestFixture(t, dir, "doc/design/v1-migration-plan.json", `{
   "version": 1,
   "repository_migrations": []
 }`)

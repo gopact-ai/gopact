@@ -81,7 +81,7 @@ type publicAPIExampleEntry struct {
 func loadPublicAPIExamplesManifest(t *testing.T) publicAPIExamplesManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "public-api-examples.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "public-api-examples.json"))
 	var manifest publicAPIExamplesManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode public api examples manifest: %v", err)

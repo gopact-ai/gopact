@@ -12,7 +12,7 @@ func TestReleaseReadinessDocsAreIndexed(t *testing.T) {
 		sections []string
 	}{
 		{
-			path: filepath.Join("docs", "design", "migration-guide.md"),
+			path: filepath.Join("doc", "design", "migration-guide.md"),
 			sections: []string{
 				"# gopact Migration Guide",
 				"## Compatibility Promise",
@@ -23,7 +23,7 @@ func TestReleaseReadinessDocsAreIndexed(t *testing.T) {
 			},
 		},
 		{
-			path: filepath.Join("docs", "design", "template-guide.md"),
+			path: filepath.Join("doc", "design", "template-guide.md"),
 			sections: []string{
 				"# gopact Template Guide",
 				"## Template Boundary",
@@ -36,8 +36,8 @@ func TestReleaseReadinessDocsAreIndexed(t *testing.T) {
 	}
 
 	readme := readReleaseDoc(t, "README.md")
-	index := readReleaseDoc(t, filepath.Join("docs", "design", "index.md"))
-	plan := readReleaseDoc(t, filepath.Join("docs", "design", "development-plan.md"))
+	index := readReleaseDoc(t, filepath.Join("doc", "design", "index.md"))
+	plan := readReleaseDoc(t, filepath.Join("doc", "design", "development-plan.md"))
 
 	for _, doc := range docs {
 		body := readReleaseDoc(t, doc.path)
@@ -53,8 +53,8 @@ func TestReleaseReadinessDocsAreIndexed(t *testing.T) {
 			body string
 		}{
 			{path: "README.md", body: readme},
-			{path: filepath.Join("docs", "design", "index.md"), body: index},
-			{path: filepath.Join("docs", "design", "development-plan.md"), body: plan},
+			{path: filepath.Join("doc", "design", "index.md"), body: index},
+			{path: filepath.Join("doc", "design", "development-plan.md"), body: plan},
 		} {
 			if !strings.Contains(indexed.body, name) {
 				t.Fatalf("%s does not index %s", indexed.path, name)
@@ -76,7 +76,7 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 			},
 		},
 		{
-			path: "CONTRIBUTING.md",
+			path: "doc/CONTRIBUTING.md",
 			sections: []string{
 				"# Contributing to gopact",
 				"## Development Setup",
@@ -85,7 +85,7 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 			},
 		},
 		{
-			path: "SECURITY.md",
+			path: "doc/SECURITY.md",
 			sections: []string{
 				"# Security Policy",
 				"## Supported Versions",
@@ -93,14 +93,14 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 			},
 		},
 		{
-			path: "CHANGELOG.md",
+			path: "doc/CHANGELOG.md",
 			sections: []string{
 				"# Changelog",
 				"## Unreleased",
 			},
 		},
 		{
-			path: filepath.Join("docs", "maintainers", "repository-governance.md"),
+			path: filepath.Join("doc", "maintainers", "repository-governance.md"),
 			sections: []string{
 				"# Repository Governance",
 				"## Pull Request Flow",
@@ -111,7 +111,7 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 	}
 
 	readme := readReleaseDoc(t, "README.md")
-	plan := readReleaseDoc(t, filepath.Join("docs", "design", "development-plan.md"))
+	plan := readReleaseDoc(t, filepath.Join("doc", "design", "development-plan.md"))
 
 	for _, doc := range docs {
 		body := readReleaseDoc(t, doc.path)
@@ -127,7 +127,7 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 			body string
 		}{
 			{path: "README.md", body: readme},
-			{path: filepath.Join("docs", "design", "development-plan.md"), body: plan},
+			{path: filepath.Join("doc", "design", "development-plan.md"), body: plan},
 		} {
 			if !strings.Contains(indexed.body, name) {
 				t.Fatalf("%s does not index %s", indexed.path, name)
@@ -141,7 +141,7 @@ func TestOpenSourceGovernanceDocsArePresent(t *testing.T) {
 }
 
 func TestPublicReleaseDocsAvoidPrivateOnlyLanguage(t *testing.T) {
-	for _, path := range []string{"README.md", "SECURITY.md", "CONTRIBUTING.md"} {
+	for _, path := range []string{"README.md", "doc/SECURITY.md", "doc/CONTRIBUTING.md"} {
 		body := readReleaseDoc(t, path)
 		for _, forbidden := range []string{
 			"currently private",
@@ -167,13 +167,13 @@ func TestReadmeHasPublicSDKEntryPath(t *testing.T) {
 		"## 核心概念",
 		"## 当前稳定性",
 		"## 文档地图",
-		"docs/design/index.md",
-		"docs/design/public-api-examples.json",
-		"docs/maintainers/repository-governance.md",
+		"doc/design/index.md",
+		"doc/design/public-api-examples.json",
+		"doc/maintainers/repository-governance.md",
 		"## 贡献与安全",
-		"CONTRIBUTING.md",
-		"SECURITY.md",
-		"CHANGELOG.md",
+		"doc/CONTRIBUTING.md",
+		"doc/SECURITY.md",
+		"doc/CHANGELOG.md",
 	}
 
 	for _, requirement := range requirements {
@@ -199,9 +199,9 @@ func TestReadmeKeepsInternalCapabilityLedgerInDesignDocs(t *testing.T) {
 	}
 
 	for _, requirement := range []string{
-		"docs/design/templates.md",
-		"docs/design/modules.md",
-		"docs/design/external-integration-roadmap.json",
+		"doc/design/templates.md",
+		"doc/design/modules.md",
+		"doc/design/external-integration-roadmap.json",
 	} {
 		if !strings.Contains(body, requirement) {
 			t.Fatalf("README.md missing design-doc handoff %q", requirement)
@@ -215,9 +215,9 @@ func TestReadmeKeepsInternalCapabilityLedgerInDesignDocs(t *testing.T) {
 
 func TestDevAgentProcessRecordsAreDocumented(t *testing.T) {
 	for _, path := range []string{
-		filepath.Join("docs", "design", "templates.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
-		filepath.Join("docs", "design", "index.md"),
+		filepath.Join("doc", "design", "templates.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "index.md"),
 	} {
 		body := readReleaseDoc(t, path)
 		if !strings.Contains(body, "RecordProcessRecords") {

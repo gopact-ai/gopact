@@ -572,7 +572,7 @@ func writeScaffoldFixture(t *testing.T) string {
 	t.Helper()
 
 	root := t.TempDir()
-	writeFixtureFile(t, root, "docs/design/external-repositories.json", `{
+	writeFixtureFile(t, root, "doc/design/external-repositories.json", `{
   "version": 1,
   "organization": "gopact-ai",
   "default_visibility": "private",
@@ -598,7 +598,7 @@ func writeScaffoldFixture(t *testing.T) string {
     ]
   }]
 }`)
-	writeFixtureFile(t, root, "docs/design/extension-conformance.json", `{
+	writeFixtureFile(t, root, "doc/design/extension-conformance.json", `{
   "version": 1,
   "sdk_compatibility": {
     "module": "github.com/gopact-ai/gopact",
@@ -612,7 +612,7 @@ func writeScaffoldFixture(t *testing.T) string {
     "required_examples": ["minimal example"]
   }]
 }`)
-	writeFixtureFile(t, root, "docs/design/extension-scaffold-spec.json", `{
+	writeFixtureFile(t, root, "doc/design/extension-scaffold-spec.json", `{
   "version": 1,
   "repositories": [{
     "name": "gopact-adapters-example",
@@ -624,7 +624,7 @@ func writeScaffoldFixture(t *testing.T) string {
     }]
 	}]
 }`)
-	writeFixtureFile(t, root, "docs/design/v1-migration-plan.json", `{
+	writeFixtureFile(t, root, "doc/design/v1-migration-plan.json", `{
   "version": 1,
   "repository_migrations": [{
     "source_path": "adapters/example",

@@ -1,8 +1,17 @@
 # gopact
 
-`gopact` 是一个 Go-first 的 agent SDK 骨架，重点放在显式契约、类型化 workflow/graph 执行、可观察事件流，以及任意稳定 step 边界的 export/import/resume。
+[![CI](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/gopact-ai/gopact)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/gopact-ai/gopact)](https://goreportcard.com/report/github.com/gopact-ai/gopact)
+[![Go Reference](https://pkg.go.dev/badge/github.com/gopact-ai/gopact.svg)](https://pkg.go.dev/github.com/gopact-ai/gopact)
 
-这个仓库仍处于早期阶段。当前目标是先确定 SDK 的公共形态，再增加生产 provider adapter 或完整业务 template。
+<!-- gopact:doc-language: zh,en -->
+
+## 中文
+
+`gopact` 是一个 Go-first、provider-neutral 的 agent SDK 骨架，重点放在显式契约、类型化 workflow/graph 执行、可观察事件流，以及任意稳定 step 边界的 export/import/resume。
+
+当前仓库保存 core SDK：公共契约、运行时 facade、轻量参考实现、conformance helper 和 release gate evidence。生产 provider、存储、channel、observability 与常用 agent template 由 [gopact-ext](https://github.com/gopact-ai/gopact-ext) 提供；可运行示例由 [gopact-examples](https://github.com/gopact-ai/gopact-examples) 提供。
 
 ## 安装
 
@@ -20,8 +29,6 @@ SDK 自身不读取配置文件、环境变量或本地 secret；provider、back
 go test -run Example_graphRun .
 ```
 
-这个 example 覆盖 `graph.New`、`graph.WithRuntimeIDs`、`graph.WithCheckpointer`、事件流和 checkpoint 写入。更多 root facade 示例由 [docs/design/public-api-examples.json](docs/design/public-api-examples.json) 约束，并通过 `go test -run '^Example' ./...` 持续验证。
-
 从零启动一个可测试的 A2A HTTP agent scaffold：
 
 ```bash
@@ -37,48 +44,36 @@ go run ./cmd/gopact agent run /tmp/support-agent
 - `graph`：类型化 workflow 执行层，负责 node、edge、middleware、event stream 和 step 边界。
 - `RunExport` / `StepExport`：过程导出和恢复契约，目标是在任意稳定 step 边界中断后可以 import/resume。
 - `VerificationRecorder`：记录已观察证据，不替宿主执行隐藏命令，也不保存 raw prompt、raw response 或 secret。
-- adapter / plugin / template：生产 provider、backend、channel、observability 和业务 agent 组装应通过外部 adapter/plugin/template 表达。
+- adapter / plugin / template：生产 provider、backend、channel、observability 和业务 agent 组装通过外部 extension 表达。
 
 ## 当前稳定性
 
-`gopact` 仍是 pre-v1 SDK。当前适合内部实验、SDK API 评审、template/conformance 开发和外部 adapter scaffold，不应被包装成成熟的完整 agent 平台。
-
-当前路线状态以 [docs/design/milestone-readiness.json](docs/design/milestone-readiness.json) 为准：M1 已完成，M2/M3/M4 是 first-slice complete，M5 partial，M6 in-progress。外部仓库迁移和 CI readiness evidence 保留在设计文档中，作为 release gate 的审计输入。
+`gopact` 仍是 pre-v1 SDK。当前适合 SDK API 评审、template/conformance 开发、外部 adapter scaffold 和自举实验，不应被包装成成熟的完整 agent 平台。
 
 ## 文档地图
 
-- [FEATURES.md](FEATURES.md)：core SDK 可执行能力覆盖矩阵；ext/examples 仓库各自维护对应矩阵。
-- [docs/design/index.md](docs/design/index.md)：总体设计入口、模块关系和路线图。
-- [docs/design/development-plan.md](docs/design/development-plan.md)：研发计划、自举门槛和开源化发布手册。
-- [docs/design/public-api-boundary.json](docs/design/public-api-boundary.json)：root public API 边界清单。
-- [docs/design/public-api-examples.json](docs/design/public-api-examples.json)：root public API executable example 契约。
-- [docs/design/deprecation-policy.md](docs/design/deprecation-policy.md)：root public API 的废弃、迁移和移除策略。
-- [docs/design/versioning-policy.md](docs/design/versioning-policy.md)：core SDK、schema 和外部 extension 的版本策略。
-- [docs/maintainers/repository-governance.md](docs/maintainers/repository-governance.md)：公开仓库的 PR、CI、自动合并和发布前检查规则。
-- [docs/design/ecosystem-topology.json](docs/design/ecosystem-topology.json)：官方仓库拓扑；当前为 `gopact`、`gopact-ext`、`gopact-examples` 三仓，extension 统一放在 ext 的 Go submodules。
-- [docs/design/repository-boundary.json](docs/design/repository-boundary.json)：主仓、reference adapter 和外部仓库归属边界。
-- [docs/design/v1-migration-plan.json](docs/design/v1-migration-plan.json)：v1 前 core 边界收敛和 `release_gate_checks` 计划；每个 gate 会声明 `required_check_ids`。
-- [docs/design/modules.md](docs/design/modules.md)：provider、tool、sandbox、memory、skill、MCP、A2A 等运行时模块设计。
-- [docs/design/templates.md](docs/design/templates.md)：ReAct、Agent-as-Tool、Dev Agent 等 graph template 边界。
-- [docs/design/template-guide.md](docs/design/template-guide.md)：外部 graph template 的边界、step export/resume、events/verification 和 conformance 要求。
-- [docs/design/migration-guide.md](docs/design/migration-guide.md)：v1 前后的 public API、adapter split、checkpoint/resume 和 verification 迁移要求。
-- [docs/design/core-ci-gates.json](docs/design/core-ci-gates.json)：core repo CI gate 清单；`gopacttest.RecordCIGateSuiteCheck` 可把已观察 gate suite 记录为 `ci_gate` evidence。
-- [docs/design/external-integration-roadmap.json](docs/design/external-integration-roadmap.json)：生产 adapter/plugin/template 的外部仓库路线。
-- [docs/design/extension-scaffold-spec.json](docs/design/extension-scaffold-spec.json)：旧外部仓库 scaffold 蓝图，保留为 migration evidence；当前官方拓扑以 `ecosystem-topology.json` 为准。实现入口仍在 `internal/extensionscaffold`、`LoadRepositoriesFromDesign`、`WriteRepositoriesFromDesign`、`RenderSyncPlanFromDesign` 和 `cmd/gopact-extscaffold`，并在外部仓库文档中渲染 `V1 Migration Ownership`；维护命令会生成 `go.work` / `sync-plan.json`，支持 `-verify`、`-plan-json` 和 `-remote-status-json`。
-
-调研记录见 [docs/research/agent-sdk-landscape.md](docs/research/agent-sdk-landscape.md) 和 [docs/research/harness-loop-engineering.md](docs/research/harness-loop-engineering.md)。
-
-## 设计哲学
-
-`gopact` 把“契约”视为产品本身。消息、工具、模型请求、事件、检查点、artifact、policy 和 verification evidence 都应该是 provider-neutral 的契约，连接应用代码和运行时代码。
-
-运行时优先于 agent 模式：ReAct、plan-execute、supervisor、多 agent 流程都应该是建立在同一套执行、事件、检查点和中断原语之上的 graph template。
-
-[FEATURES.md](FEATURES.md) 提供 core SDK 的可执行能力矩阵；包状态、template 过程记录、Dev Agent release evidence 和外部仓库 scaffold 细节都放在 design docs 中维护。README 只保留 SDK 用户入口，避免把研发流水账当成公开文档。
+- [doc/README.md](doc/README.md)：完整文档索引。
+- [doc/FEATURES.md](doc/FEATURES.md)：core SDK 可执行能力覆盖矩阵；ext/examples 仓库各自维护对应矩阵。
+- [doc/design/index.md](doc/design/index.md)：总体设计入口、模块关系和路线图。
+- [doc/design/development-plan.md](doc/design/development-plan.md)：研发计划、自举门槛和开源化发布手册。
+- [doc/design/public-api-examples.json](doc/design/public-api-examples.json)：root public API executable example 契约。
+- [doc/design/migration-guide.md](doc/design/migration-guide.md)：v1 前后 public API、adapter split、checkpoint/resume 和 verification 迁移要求。
+- [doc/design/template-guide.md](doc/design/template-guide.md)：外部 graph template 的边界、step export/resume、events/verification 和 conformance 要求。
+- [doc/design/deprecation-policy.md](doc/design/deprecation-policy.md)：root public API 的废弃、迁移和移除策略。
+- [doc/design/versioning-policy.md](doc/design/versioning-policy.md)：core SDK、schema 和外部 extension 的版本策略。
+- [doc/design/ecosystem-topology.json](doc/design/ecosystem-topology.json)：官方三仓拓扑。
+- [doc/design/v1-migration-plan.json](doc/design/v1-migration-plan.json)：v1 前 core 边界收敛和 release gate 计划；每个 gate 声明 `release_gate_checks` 和 `required_check_ids`。
+- [doc/design/milestone-readiness.json](doc/design/milestone-readiness.json)：阶段性 readiness evidence。
+- [doc/design/templates.md](doc/design/templates.md)：ReAct、Agent-as-Tool、Dev Agent 等 graph template 边界。
+- [doc/design/modules.md](doc/design/modules.md)：provider、tool、sandbox、memory、skill、MCP、A2A 等运行时模块设计。
+- [doc/design/external-integration-roadmap.json](doc/design/external-integration-roadmap.json)：生产 adapter/plugin/template 的外部仓库路线。
+- [doc/design/extension-scaffold-spec.json](doc/design/extension-scaffold-spec.json)：旧外部仓库 scaffold 蓝图；实现入口在 `internal/extensionscaffold`、`LoadRepositoriesFromDesign`、`WriteRepositoriesFromDesign`、`RenderSyncPlanFromDesign` 和 `cmd/gopact-extscaffold`，并维护 `V1 Migration Ownership`、`go.work`、`sync-plan.json`、`-verify`、`-plan-json` 和 `-remote-status-json` 流程。
+- [doc/design/core-ci-gates.json](doc/design/core-ci-gates.json)：core repo CI gate 清单；`gopacttest.RecordCIGateSuiteCheck` 可把已观察 gate suite 记录为 `ci_gate` evidence。
+- [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md)：公开仓库的 PR、CI、自动合并和发布前检查规则。
 
 ## 贡献与安全
 
-贡献入口见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全策略见 [SECURITY.md](SECURITY.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。本仓库采用 [MIT 协议](LICENSE)。
+贡献入口见 [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md)，安全策略见 [doc/SECURITY.md](doc/SECURITY.md)，变更记录见 [doc/CHANGELOG.md](doc/CHANGELOG.md)。本仓库采用 [MIT 协议](LICENSE)。
 
 ## 开发
 
@@ -88,4 +83,22 @@ make test
 make vet
 ```
 
-当前模块路径是 `github.com/gopact-ai/gopact`。如果最终 GitHub owner 不同，请在第一次公开发布前替换。
+## English
+
+`gopact` is a Go-first, provider-neutral agent SDK skeleton for explicit contracts, typed workflow/graph execution, observable event streams, and export/import/resume at stable step boundaries.
+
+This repository contains the core SDK: public contracts, runtime facades, lightweight reference implementations, conformance helpers, and release-gate evidence. Production providers, storage backends, channels, observability adapters, and reusable agent templates live in [gopact-ext](https://github.com/gopact-ai/gopact-ext). Runnable examples live in [gopact-examples](https://github.com/gopact-ai/gopact-examples).
+
+Install:
+
+```bash
+go get github.com/gopact-ai/gopact
+```
+
+Start with `Example_graphRun`:
+
+```bash
+go test -run Example_graphRun .
+```
+
+The main documentation index is [doc/README.md](doc/README.md). The capability matrix is [doc/FEATURES.md](doc/FEATURES.md). Contribution, security, and changelog documents are under [doc/](doc/).

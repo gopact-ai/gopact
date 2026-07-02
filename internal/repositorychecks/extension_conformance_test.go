@@ -197,7 +197,7 @@ type movedRepositoryBoundaryTarget struct {
 func loadExtensionConformanceManifest(t *testing.T) extensionConformanceManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "extension-conformance.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "extension-conformance.json"))
 	var manifest extensionConformanceManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode extension conformance manifest: %v", err)

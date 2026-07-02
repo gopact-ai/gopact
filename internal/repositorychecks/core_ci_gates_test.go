@@ -107,8 +107,8 @@ func TestCoreCIGatesDocumentedAndConfigured(t *testing.T) {
 func TestCoreCIGateEvidenceBridgeIsDocumented(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
-		filepath.Join("docs", "design", "index.md"),
-		filepath.Join("docs", "design", "development-plan.md"),
+		filepath.Join("doc", "design", "index.md"),
+		filepath.Join("doc", "design", "development-plan.md"),
 	} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "RecordCIGateSuiteCheck") {
@@ -162,7 +162,7 @@ func TestRepositoryPublicReadinessAndPRGovernanceAreConfigured(t *testing.T) {
 	readiness := readTextFile(t, filepath.Join("scripts", "public-readiness-check.sh"))
 	prGovernance := readTextFile(t, filepath.Join(".github", "workflows", "pr-governance.yml"))
 	adminAutomerge := readTextFile(t, filepath.Join(".github", "workflows", "admin-automerge.yml"))
-	governanceDoc := readTextFile(t, filepath.Join("docs", "maintainers", "repository-governance.md"))
+	governanceDoc := readTextFile(t, filepath.Join("doc", "maintainers", "repository-governance.md"))
 
 	for _, want := range []string{
 		"permissions:",
@@ -305,7 +305,7 @@ type coreCIGatesManifest struct {
 func loadCoreCIGatesManifest(t *testing.T) coreCIGatesManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "core-ci-gates.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "core-ci-gates.json"))
 	var manifest coreCIGatesManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode core CI gates manifest: %v", err)

@@ -306,6 +306,6 @@ func visibilityRemediation(expected string) (string, string) {
 	case "public":
 		return "repository visibility is not public", "set repository visibility to public"
 	default:
-		return "repository visibility expectation is invalid", "fix repository visibility in docs/design/external-repositories.json"
+		return "repository visibility expectation is invalid", "fix repository visibility in doc/design/external-repositories.json"
 	}
 }

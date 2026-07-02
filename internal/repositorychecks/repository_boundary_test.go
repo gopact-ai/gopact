@@ -89,7 +89,7 @@ var repositoryBoundaryDispositions = map[string]struct{}{
 func loadRepositoryBoundaryManifest(t *testing.T) repositoryBoundaryManifest {
 	t.Helper()
 
-	raw := readFile(t, filepath.Join("docs", "design", "repository-boundary.json"))
+	raw := readFile(t, filepath.Join("doc", "design", "repository-boundary.json"))
 	var manifest repositoryBoundaryManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode repository boundary manifest: %v", err)

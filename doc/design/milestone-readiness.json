@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "overall_status": "in-progress",
+  "current_bootstrap_level": "level-2",
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Runtime Spine",
+      "status": "complete",
+      "objective": "稳定 root SDK defaults、runtime identity、message/event/step/export/import/checkpoint/resume 基础契约，让 graph 可以在稳定 step 边界恢复。",
+      "evidence_docs": [
+        "doc/superpowers/plans/2026-06-23-gopact-runtime-spine.md",
+        "doc/design/contracts.md",
+        "doc/design/sdk.md",
+        "doc/design/events.md",
+        "doc/design/checkpoint-resume.md"
+      ],
+      "open_items": []
+    },
+    {
+      "id": "M2",
+      "name": "Model Spine",
+      "status": "first-slice-complete",
+      "objective": "提供 provider-neutral model contract、provider registry/router、route set、fallback decision、middleware、fake provider 和 OpenAI-compatible reference adapter。",
+      "evidence_docs": [
+        "doc/superpowers/plans/2026-06-23-gopact-model-spine.md",
+        "doc/design/modules.md",
+        "doc/design/repository-boundary.json",
+        "doc/design/extension-conformance.json",
+        "doc/design/external-repositories.json"
+      ],
+      "open_items": [
+        "真实 OpenAI/Anthropic provider adapter 作为外部 gopact-adapters-model 仓库优先目标；OpenAI-compatible generic adapter 继续通过 provider profile 覆盖 GLM/BigModel、Z.AI、Volcengine Ark、Alibaba DashScope/Model Studio、OpenRouter 和企业网关；models.dev catalog adapter 可作为能力/价格/上下文窗口 hint，但不能替代真实 conformance",
+        "生产级 provider 健康检查、预算策略和评测治理继续由 adapter/plugin 深化"
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "Tool and Sandbox Spine",
+      "status": "first-slice-complete",
+      "objective": "提供 visible/deferred tool registry、artifact、sandbox、policy、tool middleware、retry/effect/replay 和 verification evidence 第一片。",
+      "evidence_docs": [
+        "doc/superpowers/plans/2026-06-23-gopact-tool-sandbox-spine.md",
+        "doc/design/security.md",
+        "doc/design/checkpoint-resume.md",
+        "doc/design/events.md"
+      ],
+      "open_items": [
+        "生产级 tool exactly-once ledger 仍需持久化 adapter、跨 worker 冲突处理和外部 commit store conformance 接入。",
+        "Secret、prompt-injection 与 sandbox profile 仍需生产级后端、继承授权模型、classifier 实现和策略调参。"
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "Integration and Extensibility Spine",
+      "status": "first-slice-complete",
+      "objective": "提供 memory、skill、MCP、A2A、TurnLoop、middleware、plugin、channel/transfer、policy/redaction 和外部集成路线第一片。",
+      "evidence_docs": [
+        "doc/superpowers/plans/2026-06-23-gopact-integration-spine.md",
+        "doc/superpowers/plans/2026-06-23-gopact-turnloop-extensibility.md",
+        "doc/design/extensibility.md",
+        "doc/design/channels.md",
+        "doc/design/external-integration-roadmap.json",
+        "doc/design/external-repositories.json"
+      ],
+      "open_items": [
+        "MCP/A2A production transport、Lark 真实 client/OAuth、A2UI renderer、AG-UI WebSocket/plugin 仍在外部仓库路线中",
+        "真实 LangSmith SDK、LangGraph exporter policy/redaction 深化和插件级治理仍需外部 plugin/adapter 完成"
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Agent Template and Evidence Layer",
+      "status": "partial",
+      "objective": "在原子能力之上验证 ReAct、Agent-as-Tool、Dev Agent template contract、trajectory golden、verification evidence、entropy audit 和 reviewer/release gate。",
+      "evidence_docs": [
+        "doc/design/templates.md",
+        "doc/design/template-guide.md",
+        "doc/design/development-plan.md",
+        "doc/research/harness-loop-engineering.md"
+      ],
+      "open_items": [
+        "self-bootstrap workflow release evidence 仍需更多真实场景，覆盖 template-specific golden trajectory、Dev Agent workflow process record 和 step export/import 场景。",
+        "ReAct deferred memory 仍需 durable queue adapter、distributed leasing、生产调度策略、真实 retry/DLQ storage 和高级 memory 压缩/合并策略。",
+        "review、CI、release gate 与 governance evidence 仍需真实 model review 评测治理、CI provider 拉取/重跑/secret 治理和人工 release gate 生产化。"
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "Production Hardening",
+      "status": "in-progress",
+      "objective": "让 core SDK、public API、schema、CI、release gate、文档、迁移策略和外部扩展仓库达到可长期依赖的状态。",
+      "evidence_docs": [
+        "doc/design/core-ci-gates.json",
+        "doc/design/versioning-policy.md",
+        "doc/design/deprecation-policy.md",
+        "doc/design/migration-guide.md",
+        "doc/design/v1-migration-plan.json",
+        "doc/design/external-repositories.json",
+        "doc/design/extension-scaffold-spec.json",
+        "doc/design/development-plan.md"
+      ],
+      "evidence_records": [
+        {
+          "type": "github_actions_run",
+          "scope": "core-ci",
+          "repository": "gopact-ai/gopact",
+          "workflow": "ci",
+          "run_id": 28345830731,
+          "head_branch": "main",
+          "head_sha": "8656be374676cc43ff5d7b6efaa2355934185b36",
+          "conclusion": "success",
+          "observed_at": "2026-06-29T11:14:55+08:00",
+          "required_gates": [
+            "whitespace",
+            "unit",
+            "race",
+            "vet",
+            "lint",
+            "coverage",
+            "examples",
+            "security"
+          ],
+          "notes": "GitHub Actions run 28345830731 completed successfully on main for test: harden provider roadmap targets; run steps Check whitespace, Test, Race, Vet, Lint, Coverage, Examples, and Security were all success."
+        },
+        {
+          "type": "remote_extension_ci_readiness",
+          "scope": "external-repositories",
+          "repository": "gopact-ai/*",
+          "workflow": "ci",
+          "conclusion": "success",
+          "observed_at": "2026-06-29T11:43:47+08:00",
+          "notes": "Remote audit shows ready=11 / not_ready=0 / missing=0: all 11 private external scaffold repositories exist, remain private, have CI workflows, have GOPACT_GITHUB_TOKEN configured, and their latest ci workflow runs completed successfully. The -remote-status-json gate now reports the passed ready state, internal/extensionscaffold.RecordRemoteStatusCheck and -remote-status-evidence-json emit passed external_repository_readiness evidence, and internal/extensionscaffold.RecordRemoteCIRunSetCheck plus -remote-ci-evidence-json emit the external-ci:gopact-ai cross-repository ci_gate check required by release automation."
+        }
+      ],
+      "open_items": [
+        "外部仓库 readiness 与迁移责任需要由 release gate、远端 CI evidence 和周期性审计持续防回归。",
+        "v1 migration 仍需 release 前按 v1-migration-plan.json 执行最终 gate，确认 public API、repository boundary、migration guide 与 external CI evidence 同步。"
+      ]
+    }
+  ],
+  "bootstrap_levels": [
+    {
+      "level": "level-1",
+      "allowed_modes": [
+        "read-only analysis",
+        "plan generation",
+        "restricted tests"
+      ],
+      "required_milestones": [
+        "M3"
+      ],
+      "required_gates": [
+        "step export records",
+        "tool-call graph records",
+        "no write-mode patch apply"
+      ]
+    },
+    {
+      "level": "level-2",
+      "allowed_modes": [
+        "docs changes",
+        "examples changes",
+        "tests changes",
+        "reference adapter changes",
+        "conformance scaffold changes"
+      ],
+      "required_milestones": [
+        "M4"
+      ],
+      "required_gates": [
+        "run export",
+        "verification report",
+        "observed diff evidence",
+        "human or reviewer decision before release"
+      ]
+    },
+    {
+      "level": "level-3",
+      "allowed_modes": [
+        "low-risk core issue fixes"
+      ],
+      "required_milestones": [
+        "M5",
+        "M6"
+      ],
+      "required_gates": [
+        "trajectory golden",
+        "verification report",
+        "run export",
+        "entropy audit",
+        "review approval",
+        "human release gate"
+      ]
+    }
+  ]
+}
