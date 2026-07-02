@@ -61,12 +61,16 @@ func TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore(t *tes
 		if entry.TargetRepo != extensionRepo.Name {
 			t.Fatalf("external integration roadmap entry %q target_repo = %q, want %q", entry.ID, entry.TargetRepo, extensionRepo.Name)
 		}
-		if strings.TrimSpace(entry.TargetModule) == "" {
+		targetModule := strings.TrimSpace(entry.TargetModule)
+		if targetModule == "" {
 			t.Fatalf("external integration roadmap entry %q target_module is empty", entry.ID)
 		}
-		if strings.HasPrefix(entry.TargetModule, "/") ||
-			strings.HasPrefix(entry.TargetModule, ".") ||
-			strings.Contains(entry.TargetModule, "..") {
+		if targetModule != entry.TargetModule {
+			t.Fatalf("external integration roadmap entry %q target_module %q has surrounding whitespace", entry.ID, entry.TargetModule)
+		}
+		if strings.HasPrefix(targetModule, "/") ||
+			strings.HasPrefix(targetModule, ".") ||
+			strings.Contains(targetModule, "..") {
 			t.Fatalf("external integration roadmap entry %q target_module %q is unsafe", entry.ID, entry.TargetModule)
 		}
 		if len(entry.Integrations) == 0 {
