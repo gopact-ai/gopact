@@ -126,8 +126,8 @@ func main() {
 }
 
 func TestDefaultSDKVersionFallbackTracksLatestTag(t *testing.T) {
-	if got := defaultSDKVersion(); got != "v0.0.28" {
-		t.Fatalf("defaultSDKVersion() = %q, want v0.0.28", got)
+	if got := defaultSDKVersion(); got != "v0.0.29" {
+		t.Fatalf("defaultSDKVersion() = %q, want v0.0.29", got)
 	}
 }
 
