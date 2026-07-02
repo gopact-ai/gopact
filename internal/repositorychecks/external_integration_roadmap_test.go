@@ -11,6 +11,7 @@ import (
 func TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore(t *testing.T) {
 	roadmap := loadExternalIntegrationRoadmap(t)
 	conformance := loadExtensionConformanceManifest(t)
+	topology := loadEcosystemTopology(t)
 
 	if roadmap.Scope != "production-integrations" {
 		t.Fatalf("external integration roadmap scope = %q, want production-integrations", roadmap.Scope)
@@ -18,8 +19,16 @@ func TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore(t *tes
 	if len(roadmap.AllowedRoutes) == 0 {
 		t.Fatal("external integration roadmap allowed_routes is empty")
 	}
+	if !slices.Contains(roadmap.AllowedRoutes, "ext-submodule") {
+		t.Fatal("external integration roadmap must allow ext-submodule as the official extension route")
+	}
 	if slices.Contains(roadmap.AllowedRoutes, "core-repo") {
 		t.Fatal("external integration roadmap must not allow core-repo as a production integration route")
+	}
+	for _, legacyRoute := range []string{"adapter-repo", "plugin-repo", "template-repo"} {
+		if slices.Contains(roadmap.AllowedRoutes, legacyRoute) {
+			t.Fatalf("external integration roadmap still allows legacy route %q", legacyRoute)
+		}
 	}
 
 	entries := map[string]externalIntegrationRoadmapEntry{}
@@ -28,6 +37,7 @@ func TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore(t *tes
 	for _, target := range conformance.Targets {
 		conformanceTargets[target.Name] = true
 	}
+	extensionRepo := topologyRepositoryByRole(t, topology, "extensions")
 
 	for _, entry := range roadmap.Entries {
 		if entry.ID == "" {
@@ -48,8 +58,16 @@ func TestExternalIntegrationRoadmapKeepsProductionIntegrationsOutsideCore(t *tes
 		if entry.Route == "core-repo" {
 			t.Fatalf("external integration roadmap entry %q routes production integration into core repo", entry.ID)
 		}
-		if !strings.HasPrefix(entry.TargetRepo, "gopact-") {
-			t.Fatalf("external integration roadmap entry %q target_repo %q must use a gopact-* external repo", entry.ID, entry.TargetRepo)
+		if entry.TargetRepo != extensionRepo.Name {
+			t.Fatalf("external integration roadmap entry %q target_repo = %q, want %q", entry.ID, entry.TargetRepo, extensionRepo.Name)
+		}
+		if strings.TrimSpace(entry.TargetModule) == "" {
+			t.Fatalf("external integration roadmap entry %q target_module is empty", entry.ID)
+		}
+		if strings.HasPrefix(entry.TargetModule, "/") ||
+			strings.HasPrefix(entry.TargetModule, ".") ||
+			strings.Contains(entry.TargetModule, "..") {
+			t.Fatalf("external integration roadmap entry %q target_module %q is unsafe", entry.ID, entry.TargetModule)
 		}
 		if len(entry.Integrations) == 0 {
 			t.Fatalf("external integration roadmap entry %q integrations is empty", entry.ID)
@@ -229,6 +247,7 @@ type externalIntegrationRoadmapEntry struct {
 	Area                  string   `json:"area"`
 	Route                 string   `json:"route"`
 	TargetRepo            string   `json:"target_repo"`
+	TargetModule          string   `json:"target_module"`
 	Integrations          []string `json:"integrations"`
 	ExtensionTargets      []string `json:"extension_targets"`
 	CoreContracts         []string `json:"core_contracts"`
@@ -237,6 +256,18 @@ type externalIntegrationRoadmapEntry struct {
 	Rationale             string   `json:"rationale"`
 	ScaffoldStatus        string   `json:"scaffold_status"`
 	ScaffoldPendingReason string   `json:"scaffold_pending_reason"`
+}
+
+func topologyRepositoryByRole(t *testing.T, topology ecosystemTopologyManifest, role string) ecosystemTopologyRepository {
+	t.Helper()
+
+	for _, repo := range topology.Repositories {
+		if repo.Role == role {
+			return repo
+		}
+	}
+	t.Fatalf("ecosystem topology missing repository role %q", role)
+	return ecosystemTopologyRepository{}
 }
 
 func loadExternalIntegrationRoadmap(t *testing.T) externalIntegrationRoadmap {
