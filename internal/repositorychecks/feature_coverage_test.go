@@ -2,8 +2,11 @@ package repositorychecks
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/gopact-ai/gopact/gopacttest"
 )
 
 func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
@@ -103,5 +106,48 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSelfBootstrapReleaseGateTracksFeatureCoverageCommands(t *testing.T) {
+	var featureCoverageRequirement gopacttest.VerificationEvidenceRequirement
+	for _, requirement := range gopacttest.SelfBootstrapReleaseGateRequirements() {
+		if requirement.Name == "self-bootstrap-feature-coverage" {
+			featureCoverageRequirement = requirement
+			break
+		}
+	}
+	if featureCoverageRequirement.Name == "" {
+		t.Fatal("self-bootstrap release gate missing self-bootstrap-feature-coverage requirement")
+	}
+	if !slices.Contains(featureCoverageRequirement.RequiredEvidenceTypes, gopacttest.VerificationEvidenceTypeCommand) {
+		t.Fatalf(
+			"self-bootstrap-feature-coverage evidence types = %v, want command evidence",
+			featureCoverageRequirement.RequiredEvidenceTypes,
+		)
+	}
+
+	for _, command := range featureCoverageCommands() {
+		id := "command:" + command
+		if !slices.Contains(featureCoverageRequirement.RequiredCheckIDs, id) {
+			t.Fatalf("self-bootstrap-feature-coverage required check IDs missing %q", id)
+		}
+	}
+}
+
+func featureCoverageCommands() []string {
+	return []string{
+		"go test -count=1 ./graph ./gopacttest/graphconformance",
+		"go test -count=1 ./checkpoint ./gopacttest/checkpointconformance",
+		"go test -count=1 . ./provider ./gopacttest/providerconformance",
+		"go test -count=1 ./tools ./gopacttest/toolconformance",
+		"go test -count=1 ./mcp",
+		"go test -count=1 ./a2a ./gopacttest/a2aconformance",
+		"go test -count=1 -run ExampleNewHTTPRegistryHandler ./a2a",
+		"go test -count=1 ./cmd/gopact",
+		"go test -count=1 -run Channel . ./gopacttest",
+		"go test -count=1 . ./sandbox ./gopacttest/secretconformance ./gopacttest/promptinjectionconformance",
+		"go test -count=1 ./gopacttest",
+		"go test -count=1 -run SelfBootstrap ./gopacttest",
 	}
 }

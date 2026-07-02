@@ -199,8 +199,8 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 		},
 		{
 			Name:                  "self-bootstrap-feature-coverage",
-			RequiredCheckIDs:      []string{SelfBootstrapCheckFeatureCoverage},
-			RequiredEvidenceTypes: []string{VerificationEvidenceTypeFileSnapshot},
+			RequiredCheckIDs:      append([]string{SelfBootstrapCheckFeatureCoverage}, selfBootstrapFeatureCoverageCommandCheckIDs()...),
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeFileSnapshot, VerificationEvidenceTypeCommand},
 		},
 		{
 			Name:                  "self-bootstrap-repository-boundary",
@@ -340,6 +340,7 @@ func selfBootstrapReleaseGateChecks(
 		selfBootstrapExternalCIGatesCheck(cfg.externalCIGates),
 	}
 	checks = append(checks, selfBootstrapCoreCICommandChecks()...)
+	checks = appendSelfBootstrapCommandChecks(checks, selfBootstrapFeatureCoverageCommands())
 	checks = append(checks, []gopact.VerificationCheck{
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesProviderIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesAgentTemplatesIntegration),
@@ -402,6 +403,25 @@ func selfBootstrapReleaseGateChecks(
 		},
 	}...)
 	return append(checks, cfg.additionalChecks...)
+}
+
+func appendSelfBootstrapCommandChecks(
+	checks []gopact.VerificationCheck,
+	commands []string,
+) []gopact.VerificationCheck {
+	seen := make(map[string]bool, len(checks))
+	for _, check := range checks {
+		seen[check.ID] = true
+	}
+	for _, command := range commands {
+		id := "command:" + command
+		if seen[id] {
+			continue
+		}
+		checks = append(checks, selfBootstrapCommandEvidenceCheck(command))
+		seen[id] = true
+	}
+	return checks
 }
 
 func selfBootstrapCIGatesCheck(gates []string) gopact.VerificationCheck {
@@ -486,6 +506,32 @@ func selfBootstrapCoreCICommands() []string {
 		"go test -count=1 ./graph ./gopacttest/graphconformance",
 		"go test -count=1 ./a2a ./gopacttest/a2aconformance",
 		"govulncheck ./...",
+	}
+}
+
+func selfBootstrapFeatureCoverageCommandCheckIDs() []string {
+	commands := selfBootstrapFeatureCoverageCommands()
+	ids := make([]string, 0, len(commands))
+	for _, command := range commands {
+		ids = append(ids, "command:"+command)
+	}
+	return ids
+}
+
+func selfBootstrapFeatureCoverageCommands() []string {
+	return []string{
+		"go test -count=1 ./graph ./gopacttest/graphconformance",
+		"go test -count=1 ./checkpoint ./gopacttest/checkpointconformance",
+		"go test -count=1 . ./provider ./gopacttest/providerconformance",
+		"go test -count=1 ./tools ./gopacttest/toolconformance",
+		"go test -count=1 ./mcp",
+		"go test -count=1 ./a2a ./gopacttest/a2aconformance",
+		"go test -count=1 -run ExampleNewHTTPRegistryHandler ./a2a",
+		"go test -count=1 ./cmd/gopact",
+		"go test -count=1 -run Channel . ./gopacttest",
+		"go test -count=1 . ./sandbox ./gopacttest/secretconformance ./gopacttest/promptinjectionconformance",
+		"go test -count=1 ./gopacttest",
+		"go test -count=1 -run SelfBootstrap ./gopacttest",
 	}
 }
 
