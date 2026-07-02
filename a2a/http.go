@@ -244,6 +244,9 @@ func (a *HTTPAgent) ListCards(ctx context.Context) ([]AgentCard, error) {
 
 // ListCards returns all cards from the HTTP registry document in document order.
 func (r *HTTPRegistry) ListCards(ctx context.Context) ([]AgentCard, error) {
+	if ctx == nil {
+		ctx = context.TODO()
+	}
 	doc, err := r.readDocument(ctx)
 	if err != nil {
 		return nil, err
@@ -252,6 +255,11 @@ func (r *HTTPRegistry) ListCards(ctx context.Context) ([]AgentCard, error) {
 	for _, card := range doc.Agents {
 		if card.Name == "" {
 			return nil, ErrCardNameRequired
+		}
+		if ok, err := r.cardReady(ctx, card); err != nil {
+			return nil, err
+		} else if !ok {
+			continue
 		}
 		cards = append(cards, copyAgentCard(card))
 	}
@@ -282,6 +290,13 @@ func (r *HTTPRegistry) Discover(ctx context.Context, query DiscoveryQuery) (Disc
 		}
 		if card.Name == "" {
 			return DiscoveryResult{}, ErrCardNameRequired
+		}
+		ok, err := r.cardReady(ctx, card)
+		if err != nil {
+			return DiscoveryResult{}, err
+		}
+		if !ok {
+			continue
 		}
 		return DiscoveryResult{
 			Card:     copyAgentCard(card),
@@ -455,6 +470,27 @@ func (r *HTTPRegistry) doRegistryJSON(ctx context.Context, path string, input an
 		return ErrHTTPRegistryURLRequired
 	}
 	return r.client.doJSON(ctx, http.MethodPost, strings.TrimRight(r.url, "/")+path, input, output)
+}
+
+func (r *HTTPRegistry) cardReady(ctx context.Context, card AgentCard) (bool, error) {
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+	if r == nil || r.client == nil || !r.client.readinessCheck {
+		return true, nil
+	}
+	endpoint := strings.TrimRight(strings.TrimSpace(card.URL), "/")
+	if endpoint == "" {
+		return false, nil
+	}
+	err := r.client.checkReadiness(ctx, endpoint, card)
+	if err == nil {
+		return true, nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return false, ctxErr
+	}
+	return false, nil
 }
 
 func (a *HTTPAgent) doJSON(ctx context.Context, method string, url string, input any, output any) error {
