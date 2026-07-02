@@ -276,6 +276,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingFeatureCoverage(t *tes
 	}
 }
 
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingFeatureCoverageCommand(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheckIfPresent(&report, "command:go test -count=1 ./checkpoint ./gopacttest/checkpointconformance")
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-feature-coverage/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing feature coverage command: %+v", results)
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingCoreCICommand(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheckIfPresent(&report, "command:go vet ./...")
