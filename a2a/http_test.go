@@ -293,6 +293,83 @@ func TestHTTPRegistryBootstrapsMultipleAgentCards(t *testing.T) {
 	}
 }
 
+func TestHTTPRegistryReadinessCheckFiltersNotReadyCards(t *testing.T) {
+	ctx := context.Background()
+	readyHits := map[string]int{}
+	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/planner/readyz":
+			readyHits["planner"]++
+			writeHTTPJSON(w, http.StatusOK, httpStatusResponse{Status: "ready"})
+		case "/reviewer/readyz":
+			readyHits["reviewer"]++
+			writeHTTPJSON(w, http.StatusServiceUnavailable, httpStatusResponse{Status: "not_ready"})
+		case "/planner/a2a/task/send":
+			var task Task
+			if err := decodeHTTPJSON(r, &task); err != nil {
+				writeHTTPError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeHTTPJSON(w, http.StatusOK, Result{TaskID: task.ID, Output: "planned"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer agentServer.Close()
+	registryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeHTTPJSON(w, http.StatusOK, map[string]any{
+			"agents": []AgentCard{
+				{
+					Name:         "planner",
+					URL:          agentServer.URL + "/planner",
+					Capabilities: []string{"planning"},
+					Health:       &HealthHints{ReadinessPath: "/readyz"},
+				},
+				{
+					Name:         "reviewer",
+					URL:          agentServer.URL + "/reviewer",
+					Capabilities: []string{"code.review"},
+					Health:       &HealthHints{ReadinessPath: "/readyz"},
+				},
+			},
+		})
+	}))
+	defer registryServer.Close()
+	registry, err := NewHTTPRegistry(registryServer.URL, WithHTTPClient(registryServer.Client()), WithHTTPReadinessCheck())
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+
+	cards, err := registry.ListCards(ctx)
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if len(cards) != 1 || cards[0].Name != "planner" {
+		t.Fatalf("ListCards() = %+v, want only ready planner", cards)
+	}
+	if readyHits["planner"] != 1 || readyHits["reviewer"] != 1 {
+		t.Fatalf("readiness hits = %+v, want planner/reviewer checked once", readyHits)
+	}
+
+	if _, err := registry.Discover(ctx, DiscoveryQuery{Require: []string{"code.review"}}); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Discover(not ready) error = %v, want %v", err, ErrAgentNotFound)
+	}
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	bootstrap, err := mesh.Bootstrap(ctx, registry)
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if len(bootstrap.Cards) != 1 || bootstrap.Cards[0].Name != "planner" {
+		t.Fatalf("Bootstrap() cards = %+v, want only ready planner", bootstrap.Cards)
+	}
+	if _, err := mesh.Route(ctx, RouteQuery{Require: []string{"code.review"}, Task: Task{ID: "task-1"}}); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Route(not ready) error = %v, want %v", err, ErrAgentNotFound)
+	}
+}
+
 func TestHTTPRegistryHandlerServesCardsForBootstrap(t *testing.T) {
 	ctx := context.Background()
 	server := httptest.NewServer(NewHTTPRegistryHandler(NewStaticDiscoverer(
