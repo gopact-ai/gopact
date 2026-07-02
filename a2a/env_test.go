@@ -70,6 +70,49 @@ func TestNewEnvCardListersBootstrapsConfiguredSources(t *testing.T) {
 	}
 }
 
+func TestMeshBootstrapEnvBootstrapsConfiguredSources(t *testing.T) {
+	ctx := context.Background()
+	filePath := filepath.Join(t.TempDir(), "agents.json")
+	if err := os.WriteFile(filePath, []byte(`[{"name":"file-agent"}]`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	bootstrap, sources, err := mesh.BootstrapEnv(ctx, func(key string) string {
+		if key == EnvA2ARegistryFile {
+			return filePath
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatalf("BootstrapEnv() error = %v", err)
+	}
+	if got, want := sources, []string{"file registry"}; !equalStrings(got, want) {
+		t.Fatalf("sources = %v, want %v", got, want)
+	}
+	if got, want := cardNames(bootstrap.Cards), []string{"file-agent"}; !equalStrings(got, want) {
+		t.Fatalf("BootstrapEnv() cards = %v, want %v", got, want)
+	}
+}
+
+func TestMeshBootstrapEnvReturnsEmptyResultForEmptyEnv(t *testing.T) {
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+
+	bootstrap, sources, err := mesh.BootstrapEnv(context.Background(), func(string) string { return " " })
+	if err != nil {
+		t.Fatalf("BootstrapEnv() error = %v", err)
+	}
+	if len(sources) != 0 || len(bootstrap.Cards) != 0 || len(bootstrap.Events) != 0 {
+		t.Fatalf("BootstrapEnv() = %+v, %v; want empty no-op", bootstrap, sources)
+	}
+}
+
 func TestNewEnvCardListersReturnsNoSourcesForEmptyEnv(t *testing.T) {
 	listers, sources, err := NewEnvCardListers(func(string) string { return " " })
 	if err != nil {
