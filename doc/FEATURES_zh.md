@@ -10,7 +10,7 @@
 
 | Capability | Package or contract | Offline proof | Boundary |
 | --- | --- | --- | --- |
-| workflow graph execution | `graph` | `go test -count=1 ./graph ./gopacttest/graphconformance` | Typed graph runtime, node/edge execution, middleware, event stream, and reusable graph conformance |
+| workflow graph execution | `graph` | `go test -count=1 ./graph ./gopacttest/graphconformance` | Typed graph runtime, node/edge execution, branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, middleware, event stream, and reusable graph conformance |
 | checkpoint and resume | `checkpoint` | `go test -count=1 ./checkpoint ./gopacttest/checkpointconformance` | Checkpoint records, codecs, store interfaces, import/export, and resume validation |
 | provider-neutral model contract | `model.go` | `go test -count=1 . ./provider ./gopacttest/providerconformance` | Model request/response, routing metadata, streaming events, tool choice, fake providers, and provider conformance |
 | tool registry and replay | `tools` | `go test -count=1 ./tools ./gopacttest/toolconformance` | Visible/deferred tools, tool result effects, replay commit records, and registry conformance |
