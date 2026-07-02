@@ -716,7 +716,7 @@ func writeManifestFixture(t *testing.T, root, path, body string) {
 func tempDirWithRetryCleanup(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gopact-extscaffold-*")
+	dir, err := os.MkdirTemp("", "gopact-extension-scaffold-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}
