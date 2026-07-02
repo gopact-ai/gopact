@@ -10,11 +10,11 @@ func TestDeprecationPolicyDocumentedAndIndexed(t *testing.T) {
 	policy := readTextFile(t, filepath.Join("doc", "design", "deprecation-policy.md"))
 
 	requiredPhrases := []string{
-		"# gopact Public API 废弃策略",
-		"## 稳定性等级",
-		"## 废弃标记",
-		"## 移除窗口",
-		"## 兼容性审查",
+		"# gopact Public API Deprecation Policy",
+		"## Stability Levels",
+		"## Deprecation Markers",
+		"## Removal Windows",
+		"## Compatibility Review",
 		"Deprecated:",
 		"public-api-boundary.json",
 		"public-api-examples.json",
