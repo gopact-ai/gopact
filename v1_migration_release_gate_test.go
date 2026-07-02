@@ -45,7 +45,7 @@ type v1ReleaseGateCheck struct {
 func loadV1ReleaseGatePlan(t *testing.T) v1ReleaseGatePlan {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("docs", "design", "v1-migration-plan.json"))
+	raw, err := os.ReadFile(filepath.Join("doc", "design", "v1-migration-plan.json"))
 	if err != nil {
 		t.Fatalf("read v1 migration plan: %v", err)
 	}
