@@ -91,6 +91,35 @@ func TestAgentCardJSONContractIncludesMeshFields(t *testing.T) {
 	}
 }
 
+func TestSyncResultJSONOmitZeroPhases(t *testing.T) {
+	raw, err := json.Marshal(SyncResult{})
+	if err != nil {
+		t.Fatalf("Marshal(SyncResult{}) error = %v", err)
+	}
+	var zero map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &zero); err != nil {
+		t.Fatalf("Unmarshal(SyncResult{}) error = %v", err)
+	}
+	if _, ok := zero["bootstrap"]; ok {
+		t.Fatalf("SyncResult{} JSON = %s, want no bootstrap field", raw)
+	}
+	if _, ok := zero["eviction"]; ok {
+		t.Fatalf("SyncResult{} JSON = %s, want no eviction field", raw)
+	}
+
+	raw, err = json.Marshal(SyncResult{Bootstrap: BootstrapResult{Cards: []AgentCard{{Name: "planner"}}}})
+	if err != nil {
+		t.Fatalf("Marshal(SyncResult{Bootstrap}) error = %v", err)
+	}
+	var withBootstrap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &withBootstrap); err != nil {
+		t.Fatalf("Unmarshal(SyncResult{Bootstrap}) error = %v", err)
+	}
+	if _, ok := withBootstrap["bootstrap"]; !ok {
+		t.Fatalf("SyncResult with bootstrap JSON = %s, want bootstrap field", raw)
+	}
+}
+
 func TestRegistryCardReturnsDefensiveCopiesForAgentCardContract(t *testing.T) {
 	ctx := context.Background()
 	registry := NewRegistry()
