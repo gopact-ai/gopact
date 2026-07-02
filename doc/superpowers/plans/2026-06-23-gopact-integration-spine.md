@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 > **For agentic workers:** Continue from M3 Tool and Sandbox Spine. Keep external protocols as contracts and fakes until concrete adapters need to bind real network formats.
 
 **Goal:** Build the first M4 Integration Spine slice so `gopact` has testable memory, skill, MCP, and A2A module boundaries before TurnLoop orchestration is implemented.
@@ -65,3 +58,7 @@ go test ./... -count=1
 go vet ./...
 git diff --check
 ```
+
+## English
+
+Historical implementation plan for the first integration-spine slice: memory, skill, MCP, and A2A boundaries.

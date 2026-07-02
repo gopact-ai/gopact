@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 本文是 `doc/design` 的入口。它把设计哲学、运行时模块、扩展性模型和后续 milestone 整合成一张完整地图。
@@ -559,3 +552,7 @@ M5 canceled release evidence：`TestSelfBootstrapCanceledReleaseMatchesGoldenTra
 - `../research/harness-loop-engineering.md` 只作为业务层设计启发：后续 core 设计必须回到 step、event、checkpoint、import/export、resume 这些原子过程能力。
 
 后续新增设计文档时，必须先更新本文的文档地图和 milestone 影响，再进入具体子文档。
+
+## English
+
+Main architecture map for gopact. It links design philosophy, runtime modules, template boundaries, release gates, migration documents, and research background.

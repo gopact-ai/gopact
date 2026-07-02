@@ -4,64 +4,54 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
-All notable changes to `gopact` will be documented here.
-
-This project is pre-v1. Entries describe user-visible SDK, schema, conformance,
-template, adapter-boundary, and release-process changes.
+本文件记录 `gopact` core 的用户可见变化。内部重排、纯测试搬迁和没有行为影响的维护任务通常只保留在 Git 历史中。
 
 ## Unreleased
 
 ### Added
 
-- `a2a.NewHTTPCardListers` for bootstrapping a mesh from multiple HTTP agent
-  card endpoints.
-- `a2a.WithHTTPReadinessCheck` for opt-in readiness-gated HTTP agent discovery.
-- `gopact agent init` for generating a standalone, testable A2A HTTP agent
-  scaffold.
-- Public readiness checks for tracked files and commit messages before changing
-  repository visibility.
-- PR governance workflows that allow admin-authored PRs to auto-merge after CI
-  and require admin approval for non-admin-authored PRs.
-- MIT license in `LICENSE`.
-- Open-source release checklist in `doc/design/development-plan.md`.
-- Model reviewer governance field requirements through
-  `adapters/devagent/modelreview.WithRequiredGovernanceFields`.
-- CI reviewer required `ci_gate` checks through
-  `github.com/gopact-ai/gopact-templates-devagent/cireview.WithRequiredCIGates`.
-- External repository readiness evidence export and remote CI gate evidence for
-  `gopact-ai` extension repositories.
-- Core feature coverage matrix in `FEATURES.md`.
-- Provider-neutral `ToolChoice` request contract with options for auto,
-  required, named, and disabled tool selection.
+- A2A HTTP agent-card discovery with readiness checks for mesh bootstrap.
+- `gopact agent init` and `gopact agent run` for generating and running a standalone A2A HTTP agent scaffold.
+- Core feature coverage matrix in [FEATURES.md](FEATURES.md).
+- Public repository governance: PR-only `main`, required CI gates, admin auto-merge, non-admin admin-approval gate, and public readiness checks.
+- MIT license.
+- Provider-neutral tool choice contract for automatic, required, named, and disabled tool selection.
 
 ### Changed
 
-- `a2a.FileDiscoverer` now accepts either `{"agents":[...]}` documents or a
-  bare agent-card JSON array for lower-friction local mesh registries.
-- v1 migration release gate now consumes explicit core and external CI gate
-  requirements.
-- CI now runs independent hygiene, unit, race, static-analysis, coverage,
-  conformance, and security gates in parallel while preserving `ci/test` as the
-  required aggregate status check.
-- Self-bootstrap release gate now requires the core feature coverage snapshot.
-- Self-bootstrap release gate now requires A2A mesh conformance command
-  evidence.
-- Self-bootstrap release gate now requires explicit local Agnes integration
-  command evidence for provider, agent template, and example coverage.
-- Development docs now distinguish core SDK readiness from external
-  adapter/plugin/template readiness.
-- `gopact agent init` development-build fallback now targets `gopact v0.0.21`.
-- Generated A2A agent scaffolds now handle interrupt/terminate signals with graceful HTTP shutdown.
-- Generated A2A agent scaffold tests now verify the advertised health and readiness endpoints.
+- README and `doc/` structure now separate first-reader documentation, design records, maintainer process, and historical execution plans.
+- CI runs hygiene, unit, race, static analysis, coverage, conformance, and security gates in parallel while preserving a required aggregate `test` job.
+- A2A file discovery accepts both `{"agents":[...]}` documents and bare agent-card arrays.
+- Generated A2A agent scaffolds include health/readiness tests and graceful HTTP shutdown.
 
-### Known Blockers
+### Known Limitations
 
-- Branch protection or repository rulesets must be applied after the repository
-  is public so `main` requires the `ci` and `author-policy` checks.
+- The project is pre-v1; public API may still change under the documented migration and deprecation policies.
+- Production provider, storage, channel, observability, and agent-template integrations live in `gopact-ext`, not this core repository.
+
+## English
+
+This file records user-visible changes to `gopact` core. Internal reshuffling, pure test movement, and maintenance changes without behavior impact usually belong in Git history only.
+
+## Unreleased
+
+### Added
+
+- A2A HTTP agent-card discovery with readiness checks for mesh bootstrap.
+- `gopact agent init` and `gopact agent run` for generating and running a standalone A2A HTTP agent scaffold.
+- Core feature coverage matrix in [FEATURES.md](FEATURES.md).
+- Public repository governance: PR-only `main`, required CI gates, admin auto-merge, non-admin admin-approval gate, and public readiness checks.
+- MIT license.
+- Provider-neutral tool choice contract for automatic, required, named, and disabled tool selection.
+
+### Changed
+
+- README and `doc/` structure now separate first-reader documentation, design records, maintainer process, and historical execution plans.
+- CI runs hygiene, unit, race, static analysis, coverage, conformance, and security gates in parallel while preserving a required aggregate `test` job.
+- A2A file discovery accepts both `{"agents":[...]}` documents and bare agent-card arrays.
+- Generated A2A agent scaffolds include health/readiness tests and graceful HTTP shutdown.
+
+### Known Limitations
+
+- The project is pre-v1; public API may still change under the documented migration and deprecation policies.
+- Production provider, storage, channel, observability, and agent-template integrations live in `gopact-ext`, not this core repository.

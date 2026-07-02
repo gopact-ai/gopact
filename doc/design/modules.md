@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -1126,3 +1119,7 @@ plugins/channel/tui
 - Anthropic Agent Skills article：https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills
 - LangGraph memory overview：https://docs.langchain.com/oss/python/concepts/memory
 - LangGraph persistence：https://docs.langchain.com/oss/python/langgraph/persistence
+
+## English
+
+Runtime module design. It covers provider routing, tool registry, sandbox, memory, skill, MCP, and A2A boundaries and their default testable contracts.

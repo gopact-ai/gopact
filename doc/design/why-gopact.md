@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-30
 
 `gopact` 是面向生产交付的 Go Agent SDK。它的核心目标不是复刻某一种 agent template，也不是绑定某一家模型服务，而是提供一套可观察、可恢复、可审计、可验证的 agent 运行时契约。
@@ -110,3 +103,6 @@ Agent 执行完成后，宿主系统应能回答：
 
 常见路径必须简洁，生产能力必须显式。用户应能先用少量代码跑通，再按需要逐步接入 policy、checkpoint、memory、artifact、verification 和 external adapters。
 
+## English
+
+Positioning document for gopact. It explains the evidence-first runtime focus, target users, differentiators, and what the project deliberately does not optimize for.

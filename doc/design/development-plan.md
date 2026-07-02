@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -508,3 +501,7 @@ This document is part of the gopact open-source documentation set. The English s
 - 没有把新的生产级 adapter/plugin/template 沉入主仓，外部扩展通过 contract/conformance 接入；
 - README 和设计文档状态同步；
 - `go test ./... -count=1`、`go test -race ./... -count=1`、`go vet ./...`、`golangci-lint run ./...`、`go test -coverprofile=coverage.out ./...`、`go test -run '^Example' ./...`、`govulncheck ./...`、`git diff --check` 本地和 GitHub CI 通过；后续 release 仍必须持续保留这些 gate。
+
+## English
+
+Engineering plan and release-readiness record. It tracks staged SDK work, self-bootstrap goals, repository governance, and public-release criteria.

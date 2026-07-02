@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 本文定义外部 `gopact-templates-*` 仓库应如何组织 graph template。Template 是业务 harness 的可复用组合，不是 SDK core 的原子能力。
 
 ## Template Boundary
@@ -67,3 +60,7 @@ Template 可以提供 memory 抽取、压缩、合并或后台提交，但必须
 - `CONFORMANCE.md` 记录 required suites、CI commands、integration tags 和安全边界。
 
 Template 可以更聪明，但不能更隐形。过程边界比最终答案更重要。
+
+## English
+
+Guide for building external graph templates. It defines template boundaries, step export/resume, event and verification expectations, memory handling, and conformance.

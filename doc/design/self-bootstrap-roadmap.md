@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-30
 
 本文定义 `gopact` 从当前 SDK 形态推进到可自举 production-grade Agent SDK 的阶段性目标、验收门槛和测试标准。
@@ -182,3 +175,7 @@ failure attribution、已封存同一份 verification report，verification repo
 - 私有部署平台。
 
 这些能力通过 ext、adapter、plugin、example 或宿主应用接入。
+
+## English
+
+Roadmap for making gopact self-bootstrapping. It defines staged goals, release evidence, testing standards, and the level at which gopact can maintain itself.

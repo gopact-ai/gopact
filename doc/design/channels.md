@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -297,3 +290,7 @@ runner, err := gopact.NewRunner(
 - artifact export 到 channel 前经过 policy；
 - redaction 早于 transfer；
 - channel plugin close 时释放连接。
+
+## English
+
+Design notes for channel and transfer adapters. It explains how runtime events become surface messages for TUI, web, IM, and other user-facing clients.

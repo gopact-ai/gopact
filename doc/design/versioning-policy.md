@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 本文定义 `gopact` core SDK、可序列化 schema 和外部 extension 的版本策略。它和 [deprecation-policy.md](deprecation-policy.md) 配套使用：deprecation policy 管理“如何废弃”，versioning policy 管理“什么时候能发布”。
 
 ## Module Version
@@ -85,3 +78,7 @@ schema 变化分三类：
 - breaking：旧 checkpoint/run export/step export 无法恢复或校验，只能进入 `major`，或在 `v0` 明确标为 transitional 收敛。
 
 涉及 checkpoint/resume 的变化必须优先保证失败可解释。不能悄悄忽略旧状态，也不能自动重复执行已经完成的 model/tool/sandbox/effect。
+
+## English
+
+Versioning policy for the core module, serialized schemas, and official extensions. It explains semver, stability states, release gates, and compatibility rules.

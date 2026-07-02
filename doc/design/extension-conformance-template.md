@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 This file documents the compatibility contract for one external gopact extension repository.
 
 ## Extension Target
@@ -66,3 +59,7 @@ Describe the extension trust boundary:
 - What data is redacted before events, checkpoints, run exports, logs, traces, or model-visible context.
 
 The SDK core must remain configuration-file free. Host applications inject configuration through typed constructors, options, clients, providers, adapters, or plugins.
+
+## English
+
+Template for extension conformance documentation. External modules use it to declare target kind, required suites, CI commands, examples, and security boundaries.

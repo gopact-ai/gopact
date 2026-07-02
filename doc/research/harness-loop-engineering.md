@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 范围：AI Harness Engineering、Agentic Harness Engineering、HarnessX、Loop Engineering、turn-control、MCP overthinking loop、long-horizon iterative coding degradation。目标是判断这些概念对 `gopact` 的 SDK 设计有什么实际启发，而不是追随术语热度。
@@ -278,3 +271,7 @@ Start
 - Overthinking Loops in Agents: A Structural Risk via MCP Tools：https://arxiv.org/abs/2602.14798
 - SlopCodeBench: Benchmarking How Coding Agents Degrade Over Long-Horizon Iterative Tasks：https://arxiv.org/html/2603.24755
 - Business Insider, Forget prompt engineering: "Loop engineering" is all the rage now：https://www.businessinsider.com/what-are-loops-ai-engineering-tips-2026-6
+
+## English
+
+Research notes on harness engineering, loop engineering, turn control, MCP loop risk, and long-horizon agent quality degradation.

@@ -4,13 +4,6 @@
 
 ## 中文
 
-本文档是 gopact 开源文档集的一部分，中文内容用于说明当前仓库约束、能力或维护流程。
-
-## English
-
-This document is part of the gopact open-source documentation set. The English section gives an entry point for readers who prefer English, while the remaining sections preserve the maintained technical details.
-
-
 日期：2026-06-23
 
 设计入口：[index.md](index.md)
@@ -765,3 +758,7 @@ adapters/channel/tui
 - 它是否保留 Go 类型安全？
 - 它是否引入隐藏全局状态？
 - 它是否需要 provider-specific 类型？如果需要，是否应该放到 adapter？
+
+## English
+
+Extensibility design for hooks, middleware, plugins, and adapters. It explains what may extend runtime behavior and what must remain explicit application code.

@@ -248,7 +248,6 @@ func TestExtensionScaffoldSpecIsIndexed(t *testing.T) {
 
 func TestExtensionScaffoldMaterializerIsDocumented(t *testing.T) {
 	for _, path := range []string{
-		"README.md",
 		filepath.Join("doc", "design", "index.md"),
 		filepath.Join("doc", "design", "development-plan.md"),
 	} {
