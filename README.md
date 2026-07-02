@@ -79,7 +79,7 @@ The core repository intentionally does not ship production model providers, clou
 - [doc/design/v1-migration-plan.json](doc/design/v1-migration-plan.json): v1 release-gate and migration manifest.
 - [doc/design/milestone-readiness.json](doc/design/milestone-readiness.json): milestone readiness evidence.
 - [doc/design/external-integration-roadmap.json](doc/design/external-integration-roadmap.json): provider/backend/channel/template extension roadmap.
-- [doc/design/extension-scaffold-spec.json](doc/design/extension-scaffold-spec.json): extension scaffold specification.
+- [doc/design/extension-scaffold-spec.json](doc/design/extension-scaffold-spec.json): legacy external scaffold record.
 - [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md): PR, CI, auto-merge, and public repository governance.
 
 ## Contributing

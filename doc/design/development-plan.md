@@ -21,9 +21,9 @@ Engineering plan and release-readiness record. It tracks staged SDK work, self-b
 - [../maintainers/repository-governance.md](../maintainers/repository-governance.md)
 - LICENSE
 
-Core CI evidence is recorded through `gopacttest.RecordCIGateSuiteCheck` as `ci_gate` evidence. Extension scaffold materialization is owned by `internal/extensionscaffold`, including `LoadRepositoriesFromDesign`, `WriteRepositoriesFromDesign`, and `RenderSyncPlanFromDesign`. The command entry point is `cmd/gopact-extscaffold`, and generated material must preserve `V1 Migration Ownership`.
+Core CI evidence is recorded through `gopacttest.RecordCIGateSuiteCheck` as `ci_gate` evidence. Legacy extension scaffold materialization is retained in `internal/extensionscaffold`, including `LoadRepositoriesFromDesign`, `WriteRepositoriesFromDesign`, and `RenderSyncPlanFromDesign`; generated material must preserve `V1 Migration Ownership`.
 
-Extension scaffold sync uses `go.work`, `sync-plan.json`, `-verify`, `-plan-json`, and `-remote-status-json`.
+Legacy extension scaffold sync records include `go.work` and `sync-plan.json`. New official extensions live in `gopact-ext`.
 
 The v1 migration release gate documents `release_gate_checks` and `required_check_ids`.
 

@@ -130,7 +130,7 @@
           "workflow": "ci",
           "conclusion": "success",
           "observed_at": "2026-06-29T11:43:47+08:00",
-          "notes": "Remote audit shows ready=11 / not_ready=0 / missing=0: all 11 private external scaffold repositories exist, remain private, have CI workflows, have GOPACT_GITHUB_TOKEN configured, and their latest ci workflow runs completed successfully. The -remote-status-json gate now reports the passed ready state, internal/extensionscaffold.RecordRemoteStatusCheck and -remote-status-evidence-json emit passed external_repository_readiness evidence, and internal/extensionscaffold.RecordRemoteCIRunSetCheck plus -remote-ci-evidence-json emit the external-ci:gopact-ai cross-repository ci_gate check required by release automation."
+          "notes": "Remote audit historically showed ready=11 / not_ready=0 / missing=0 for the legacy private external scaffold repositories. That evidence is now retained as migration history; internal/extensionscaffold.RecordRemoteStatusCheck can still record observed remote readiness reports as external_repository_readiness evidence, and internal/extensionscaffold.RecordRemoteCIRunSetCheck can still record observed Actions runs as the external-ci:gopact-ai cross-repository ci_gate evidence required by release automation."
         }
       ],
       "open_items": [

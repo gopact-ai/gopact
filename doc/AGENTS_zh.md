@@ -37,8 +37,8 @@ public API changes.
 - `gopacttest` contains conformance helpers and verification utilities used by
   this repo and external extension repos.
 - `internal/repositorychecks` enforces design-manifest and release-readiness
-  guarantees. `internal/extensionscaffold` and `cmd/gopact-extscaffold` generate
-  and audit external repository scaffolds.
+  guarantees. `internal/extensionscaffold` retains legacy external scaffold
+  materialization and audit helpers.
 - `doc/design` is the source of truth for module boundaries, public API policy,
   migration status, extension readiness, and CI/release gates.
 

@@ -18,14 +18,14 @@ Main architecture map for gopact. It links design philosophy, runtime modules, t
 - [ecosystem-topology.json](ecosystem-topology.json): official core/ext/examples repository topology.
 - [v1-migration-plan.json](v1-migration-plan.json): v1 migration and release gate manifest.
 - [milestone-readiness.json](milestone-readiness.json): milestone readiness evidence.
-- [extension-scaffold-spec.json](extension-scaffold-spec.json): external extension scaffold specification.
+- [extension-scaffold-spec.json](extension-scaffold-spec.json): legacy external scaffold record superseded by `ecosystem-topology.json`.
 - [self-bootstrap-roadmap.md](self-bootstrap-roadmap.md): long-running self-bootstrap phase goal, test standards, and release gates.
 
 ## Release Evidence
 
-Core CI evidence is recorded through `gopacttest.RecordCIGateSuiteCheck` as `ci_gate` evidence. Extension scaffold materialization is owned by `internal/extensionscaffold`, including `LoadRepositoriesFromDesign`, `WriteRepositoriesFromDesign`, and `RenderSyncPlanFromDesign`. The command entry point is `cmd/gopact-extscaffold`, and generated material must preserve `V1 Migration Ownership`.
+Core CI evidence is recorded through `gopacttest.RecordCIGateSuiteCheck` as `ci_gate` evidence. Legacy extension scaffold materialization is retained in `internal/extensionscaffold`, including `LoadRepositoriesFromDesign`, `WriteRepositoriesFromDesign`, and `RenderSyncPlanFromDesign`; generated material must preserve `V1 Migration Ownership`.
 
-Extension scaffold sync uses `go.work`, `sync-plan.json`, `-verify`, `-plan-json`, and `-remote-status-json`.
+Legacy extension scaffold sync records include `go.work` and `sync-plan.json`. New official extensions live in `gopact-ext`.
 
 The v1 migration release gate documents `release_gate_checks` and `required_check_ids`.
 
