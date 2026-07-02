@@ -291,6 +291,35 @@ func (m *Mesh) Sync(ctx context.Context, listers ...CardLister) (SyncResult, err
 	return result, nil
 }
 
+// SyncEvery runs Sync immediately and then again every interval until ctx is canceled.
+func (m *Mesh) SyncEvery(ctx context.Context, interval time.Duration, listers ...CardLister) iter.Seq2[SyncResult, error] {
+	return func(yield func(SyncResult, error) bool) {
+		if interval <= 0 {
+			yield(SyncResult{}, ErrSyncIntervalRequired)
+			return
+		}
+		if ctx == nil {
+			ctx = context.TODO()
+		}
+		for {
+			if err := ctx.Err(); err != nil {
+				return
+			}
+			result, err := m.Sync(ctx, listers...)
+			if !yield(result, err) || err != nil {
+				return
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+	}
+}
+
 // Cards returns known agent cards in first-seen mesh order.
 func (m *Mesh) Cards(ctx context.Context) ([]AgentCard, error) {
 	return m.ListCards(ctx)

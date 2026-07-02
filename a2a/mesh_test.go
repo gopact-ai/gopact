@@ -466,6 +466,55 @@ func TestMeshBootstrapAndRoute(t *testing.T) {
 	}
 }
 
+func TestMeshSyncEveryRunsImmediatelyAndRepeats(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	cards := []AgentCard{{Name: "planner-agent"}}
+	lister := cardListerFunc(func(context.Context) ([]AgentCard, error) {
+		return append([]AgentCard(nil), cards...), nil
+	})
+
+	var results []SyncResult
+	for result, err := range mesh.SyncEvery(ctx, time.Millisecond, lister) {
+		if err != nil {
+			t.Fatalf("SyncEvery() error = %v", err)
+		}
+		results = append(results, result)
+		switch len(results) {
+		case 1:
+			if got, want := cardNames(result.Cards), []string{"planner-agent"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("first SyncEvery() cards = %v, want %v", got, want)
+			}
+			cards = append(cards, AgentCard{Name: "review-agent"})
+		case 2:
+			if got, want := cardNames(result.Cards), []string{"planner-agent", "review-agent"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("second SyncEvery() cards = %v, want %v", got, want)
+			}
+			cancel()
+			return
+		}
+	}
+	t.Fatalf("SyncEvery() yielded %d results, want 2", len(results))
+}
+
+func TestMeshSyncEveryRejectsNonPositiveInterval(t *testing.T) {
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+	for _, err := range mesh.SyncEvery(context.Background(), 0) {
+		if !errors.Is(err, ErrSyncIntervalRequired) {
+			t.Fatalf("SyncEvery() error = %v, want ErrSyncIntervalRequired", err)
+		}
+		return
+	}
+	t.Fatal("SyncEvery() yielded no error for zero interval")
+}
+
 func TestMeshRouteStreamPropagatesContextRuntimeIDs(t *testing.T) {
 	want := gopact.RuntimeIDs{
 		RunID:   "ctx-run",
