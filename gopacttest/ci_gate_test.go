@@ -335,18 +335,18 @@ func TestRecordCIRunCheckRecordsRemoteRunAsCIGateEvidence(t *testing.T) {
 	}
 }
 
-func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T) {
+func TestRecordCIRunSetCheckRecordsExtensionEcosystemRunsAsSingleCIGateCheck(t *testing.T) {
 	recorder := gopact.NewVerificationRecorder()
 
 	err := RecordCIRunSetCheck(recorder, CIRunSet{
-		ID:                   "external-ci:gopact-ai",
-		Name:                 "external repository CI",
-		RequiredRepositories: []string{"gopact-ai/gopact-adapters-model", "gopact-ai/gopact-adapters-channel"},
+		ID:                   "extension-ecosystem-ci:gopact-ai",
+		Name:                 "extension ecosystem CI",
+		RequiredRepositories: []string{"gopact-ai/gopact-ext", "gopact-ai/gopact-examples"},
 		RequiredGates:        []string{"test", "vet"},
 		Runs: []CIRun{
 			{
 				Provider:   "github-actions",
-				Repository: "gopact-ai/gopact-adapters-model",
+				Repository: "gopact-ai/gopact-ext",
 				Workflow:   "ci",
 				RunID:      "1001",
 				Status:     "completed",
@@ -366,7 +366,7 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 			},
 			{
 				Provider:   "github-actions",
-				Repository: "gopact-ai/gopact-adapters-channel",
+				Repository: "gopact-ai/gopact-examples",
 				Workflow:   "ci",
 				RunID:      "1002",
 				Status:     "completed",
@@ -378,7 +378,7 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 			},
 		},
 		Metadata: map[string]any{
-			"scope":         "m6-external-ci",
+			"scope":         "extension-ecosystem",
 			"metadata_keys": []string{"forged"},
 		},
 	})
@@ -391,11 +391,11 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 		t.Fatalf("check count = %d, want 1", len(checks))
 	}
 	check := checks[0]
-	if check.ID != "external-ci:gopact-ai" ||
-		check.Name != "external repository CI" ||
+	if check.ID != "extension-ecosystem-ci:gopact-ai" ||
+		check.Name != "extension ecosystem CI" ||
 		check.Status != gopact.VerificationStatusPassed ||
 		check.Summary != "CI gates passed: 4 passed" {
-		t.Fatalf("check = %+v, want passed external CI run set check", check)
+		t.Fatalf("check = %+v, want passed extension ecosystem CI run set check", check)
 	}
 	if len(check.Evidence) != 4 {
 		t.Fatalf("evidence = %+v, want one evidence item per run gate", check.Evidence)
@@ -406,14 +406,14 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 		check.Metadata["passed_run_count"] != 2 ||
 		check.Metadata["failed_run_count"] != 0 ||
 		check.Metadata["passed_gate_count"] != 4 ||
-		check.Metadata["scope"] != "m6-external-ci" {
-		t.Fatalf("metadata = %+v, want external CI run set counts", check.Metadata)
+		check.Metadata["scope"] != "extension-ecosystem" {
+		t.Fatalf("metadata = %+v, want extension ecosystem CI run set counts", check.Metadata)
 	}
 	if got, want := check.Metadata["metadata_keys"], []string{"scope"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("metadata metadata_keys = %#v, want %#v", got, want)
 	}
 	if got, ok := check.Metadata["required_repositories"].([]string); !ok ||
-		!reflect.DeepEqual(got, []string{"gopact-ai/gopact-adapters-model", "gopact-ai/gopact-adapters-channel"}) {
+		!reflect.DeepEqual(got, []string{"gopact-ai/gopact-ext", "gopact-ai/gopact-examples"}) {
 		t.Fatalf("required repositories = %#v, want copied required repositories", check.Metadata["required_repositories"])
 	}
 	if got, ok := check.Metadata["required_gates"].([]string); !ok ||
@@ -422,9 +422,9 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 	}
 	evidence := check.Evidence[0]
 	if evidence.Type != VerificationEvidenceTypeCIGate ||
-		evidence.Ref != "ci-gate:gopact-ai/gopact-adapters-model:test" ||
+		evidence.Ref != "ci-gate:gopact-ai/gopact-ext:test" ||
 		evidence.Metadata["gate"] != "test" ||
-		evidence.Metadata["repository"] != "gopact-ai/gopact-adapters-model" ||
+		evidence.Metadata["repository"] != "gopact-ai/gopact-ext" ||
 		evidence.Metadata["run_id"] != "1001" ||
 		evidence.Metadata["status"] != string(gopact.VerificationStatusPassed) ||
 		evidence.Metadata["provider_result"] != "observed" {
@@ -443,8 +443,8 @@ func TestRecordCIRunSetCheckRecordsExternalRunsAsSingleCIGateCheck(t *testing.T)
 	}
 	RequireVerificationEvidenceRequirements(t, report, []VerificationEvidenceRequirement{
 		{
-			Name:                  "external-ci",
-			RequiredCheckIDs:      []string{"external-ci:gopact-ai"},
+			Name:                  "extension-ecosystem-ci",
+			RequiredCheckIDs:      []string{"extension-ecosystem-ci:gopact-ai"},
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
 			RequiredCIGates:       []string{"test", "vet"},
 		},

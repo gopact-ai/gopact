@@ -72,12 +72,13 @@ func CheckVerificationEvidenceRequirements(
 	var results []VerificationEvidenceConformanceResult
 	for i, requirement := range requirements {
 		name := verificationEvidenceRequirementName(i, requirement.Name)
-		requirementResults := CheckVerificationEvidenceConformance(ctx, VerificationEvidenceConformanceHarness{
-			Report:                report,
-			RequiredCheckIDs:      requirement.RequiredCheckIDs,
-			RequiredEvidenceTypes: requirement.RequiredEvidenceTypes,
-			RequiredCIGates:       requirement.RequiredCIGates,
-		})
+		evidenceReport := verificationReportScopedToChecks(report, requirement.RequiredCheckIDs)
+		requirementResults := []VerificationEvidenceConformanceResult{
+			checkVerificationReportValid(report),
+			checkVerificationRequiredCheckIDs(report, requirement.RequiredCheckIDs),
+			checkVerificationRequiredEvidenceTypes(evidenceReport, requirement.RequiredEvidenceTypes),
+			checkVerificationRequiredCIGates(evidenceReport, requirement.RequiredCIGates),
+		}
 		for _, result := range requirementResults {
 			result.Case = name + "/" + result.Case
 			results = append(results, result)
@@ -184,6 +185,25 @@ func verificationReportCheckByID(report gopact.VerificationReport, id string) (g
 		}
 	}
 	return gopact.VerificationCheck{}, false
+}
+
+func verificationReportScopedToChecks(
+	report gopact.VerificationReport,
+	requiredCheckIDs []string,
+) gopact.VerificationReport {
+	if len(requiredCheckIDs) == 0 {
+		return report
+	}
+
+	scoped := report
+	scoped.Checks = make([]gopact.VerificationCheck, 0, len(requiredCheckIDs))
+	for _, id := range requiredCheckIDs {
+		check, ok := verificationReportCheckByID(report, id)
+		if ok {
+			scoped.Checks = append(scoped.Checks, check)
+		}
+	}
+	return scoped
 }
 
 func verificationReportEvidenceTypes(report gopact.VerificationReport) []string {

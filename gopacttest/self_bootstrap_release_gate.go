@@ -71,14 +71,24 @@ const (
 	SelfBootstrapCheckV1MigrationPlan = "file-snapshot:doc/design/v1-migration-plan.json"
 	// SelfBootstrapCheckMigrationGuide is the standard migration guide snapshot check.
 	SelfBootstrapCheckMigrationGuide = "file-snapshot:doc/design/migration-guide.md"
-	// SelfBootstrapCheckExternalRepositories is the standard external repository readiness check.
-	SelfBootstrapCheckExternalRepositories = "external-repositories:gopact-ai"
-	// SelfBootstrapCheckExternalCI is the standard external repository CI readiness check.
-	SelfBootstrapCheckExternalCI = "external-ci:gopact-ai"
+	// SelfBootstrapCheckExtensionEcosystemTopology is the standard extension ecosystem topology snapshot check.
+	SelfBootstrapCheckExtensionEcosystemTopology = "file-snapshot:doc/design/ecosystem-topology.json"
+	// SelfBootstrapCheckExtensionIntegrationRoadmap is the standard extension integration roadmap snapshot check.
+	SelfBootstrapCheckExtensionIntegrationRoadmap = "file-snapshot:doc/design/external-integration-roadmap.json"
+	// SelfBootstrapCheckExtensionConformance is the standard extension conformance snapshot check.
+	SelfBootstrapCheckExtensionConformance = "file-snapshot:doc/design/extension-conformance.json"
+	// SelfBootstrapCheckExtensionEcosystemCI is the standard gopact-ext/gopact-examples CI readiness check.
+	SelfBootstrapCheckExtensionEcosystemCI = "extension-ecosystem-ci:gopact-ai"
 	// SelfBootstrapCheckReleaseBundle is the standard self-bootstrap release bundle check.
 	SelfBootstrapCheckReleaseBundle = "release-bundle:self-bootstrap"
-	// SelfBootstrapEvidenceTypeExternalRepositoryReadiness is the external repository readiness evidence type.
-	SelfBootstrapEvidenceTypeExternalRepositoryReadiness = "external_repository_readiness"
+	// SelfBootstrapCheckCheckpoint is the standard self-bootstrap checkpoint evidence check.
+	SelfBootstrapCheckCheckpoint = "checkpoint:self-bootstrap"
+	// SelfBootstrapCheckArtifactIntegrity is the standard self-bootstrap artifact integrity check.
+	SelfBootstrapCheckArtifactIntegrity = "artifact-integrity:self-bootstrap"
+	// SelfBootstrapCheckRunEffectReplay is the standard self-bootstrap run effect replay check.
+	SelfBootstrapCheckRunEffectReplay = "run-effect-replay:self-bootstrap"
+	// SelfBootstrapCheckA2ATask is the standard self-bootstrap A2A task evidence check.
+	SelfBootstrapCheckA2ATask = "a2a-task:self-bootstrap-agent-cluster"
 	// SelfBootstrapEvidenceTypeReleaseBundle is the external Dev Agent release bundle evidence type.
 	SelfBootstrapEvidenceTypeReleaseBundle = "release_bundle"
 	// SelfBootstrapEvidenceTypeA2ATask is the cross-agent task evidence type.
@@ -95,9 +105,9 @@ type SelfBootstrapReleaseGateBundle struct {
 type SelfBootstrapReleaseGateOption func(*selfBootstrapReleaseGateConfig)
 
 type selfBootstrapReleaseGateConfig struct {
-	ciGates          []string
-	externalCIGates  []string
-	additionalChecks []gopact.VerificationCheck
+	ciGates                   []string
+	extensionEcosystemCIGates []string
+	additionalChecks          []gopact.VerificationCheck
 }
 
 // WithSelfBootstrapCIGates replaces the standard self-bootstrap CI gate names.
@@ -107,10 +117,10 @@ func WithSelfBootstrapCIGates(gates ...string) SelfBootstrapReleaseGateOption {
 	}
 }
 
-// WithSelfBootstrapExternalCIGates replaces the standard external repository CI gate names.
-func WithSelfBootstrapExternalCIGates(gates ...string) SelfBootstrapReleaseGateOption {
+// WithSelfBootstrapExtensionEcosystemCIGates replaces the standard extension ecosystem CI gate names.
+func WithSelfBootstrapExtensionEcosystemCIGates(gates ...string) SelfBootstrapReleaseGateOption {
 	return func(cfg *selfBootstrapReleaseGateConfig) {
-		cfg.externalCIGates = append([]string(nil), gates...)
+		cfg.extensionEcosystemCIGates = append([]string(nil), gates...)
 	}
 }
 
@@ -155,6 +165,10 @@ func BuildSelfBootstrapReleaseGateBundle(
 // SelfBootstrapReleaseGateRequirements returns the minimum evidence required for a self-bootstrap release gate.
 func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 	return []VerificationEvidenceRequirement{
+		{
+			Name:                  "self-bootstrap-run-export",
+			RequiredEvidenceTypes: []string{gopact.VerificationEvidenceTypeRunExport},
+		},
 		{
 			Name:                  "self-bootstrap-ci",
 			RequiredCheckIDs:      append([]string{VerificationCheckCIGates}, selfBootstrapCoreCICommandCheckIDs()...),
@@ -216,29 +230,31 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeFileSnapshot},
 		},
 		{
-			Name: "self-bootstrap-external-repository-readiness",
+			Name: "self-bootstrap-extension-ecosystem-readiness",
 			RequiredCheckIDs: []string{
-				SelfBootstrapCheckExternalRepositories,
-				SelfBootstrapCheckExternalCI,
+				SelfBootstrapCheckExtensionEcosystemTopology,
+				SelfBootstrapCheckExtensionIntegrationRoadmap,
+				SelfBootstrapCheckExtensionConformance,
+				SelfBootstrapCheckExtensionEcosystemCI,
 			},
 			RequiredEvidenceTypes: []string{
-				SelfBootstrapEvidenceTypeExternalRepositoryReadiness,
+				VerificationEvidenceTypeFileSnapshot,
 				VerificationEvidenceTypeCIGate,
 			},
 			RequiredCIGates: []string{
-				SelfBootstrapCIGateWhitespace,
-				SelfBootstrapCIGateModuleTidiness,
-				SelfBootstrapCIGateUnit,
-				SelfBootstrapCIGateVet,
+				SelfBootstrapCIGateExtMock,
+				SelfBootstrapCIGateExamplesMock,
 			},
 		},
 		{
 			Name:                  "self-bootstrap-secret-scan",
+			RequiredCheckIDs:      []string{VerificationCheckCIGates},
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
 			RequiredCIGates:       []string{SelfBootstrapCIGateSecretScan},
 		},
 		{
-			Name:                  "self-bootstrap-external-ci",
+			Name:                  "self-bootstrap-extension-ci",
+			RequiredCheckIDs:      []string{VerificationCheckCIGates},
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
 			RequiredCIGates: []string{
 				SelfBootstrapCIGateExtMock,
@@ -260,9 +276,13 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 			RequiredCheckIDs: []string{
 				SelfBootstrapCheckGraphConformanceCommand,
 				SelfBootstrapCheckA2AConformanceCommand,
+				SelfBootstrapCheckCheckpoint,
+				SelfBootstrapCheckArtifactIntegrity,
+				SelfBootstrapCheckRunEffectReplay,
+				SelfBootstrapCheckA2ATask,
+				VerificationCheckTrajectoryGolden,
 			},
 			RequiredEvidenceTypes: []string{
-				gopact.VerificationEvidenceTypeRunExport,
 				gopact.VerificationEvidenceTypeRunEffectReplay,
 				"checkpoint",
 				"artifact",
@@ -288,8 +308,8 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 
 func defaultSelfBootstrapReleaseGateConfig() selfBootstrapReleaseGateConfig {
 	return selfBootstrapReleaseGateConfig{
-		ciGates:         defaultSelfBootstrapCIGates(),
-		externalCIGates: defaultSelfBootstrapExternalRepositoryCIGates(),
+		ciGates:                   defaultSelfBootstrapCIGates(),
+		extensionEcosystemCIGates: defaultSelfBootstrapExtensionEcosystemCIGates(),
 	}
 }
 
@@ -330,14 +350,10 @@ func selfBootstrapReleaseGateChecks(
 		selfBootstrapSnapshotCheck("doc/design/repository-boundary.json"),
 		selfBootstrapSnapshotCheck("doc/design/v1-migration-plan.json"),
 		selfBootstrapSnapshotCheck("doc/design/migration-guide.md"),
-		{
-			ID:     SelfBootstrapCheckExternalRepositories,
-			Status: gopact.VerificationStatusPassed,
-			Evidence: []gopact.VerificationEvidence{
-				{Type: SelfBootstrapEvidenceTypeExternalRepositoryReadiness, Ref: "gopact-ai", Summary: "external repositories ready"},
-			},
-		},
-		selfBootstrapExternalCIGatesCheck(cfg.externalCIGates),
+		selfBootstrapSnapshotCheck("doc/design/ecosystem-topology.json"),
+		selfBootstrapSnapshotCheck("doc/design/external-integration-roadmap.json"),
+		selfBootstrapSnapshotCheck("doc/design/extension-conformance.json"),
+		selfBootstrapExtensionEcosystemCIGatesCheck(cfg.extensionEcosystemCIGates),
 	}
 	checks = append(checks, selfBootstrapCoreCICommandChecks()...)
 	checks = appendSelfBootstrapCommandChecks(checks, selfBootstrapFeatureCoverageCommands())
@@ -346,28 +362,28 @@ func selfBootstrapReleaseGateChecks(
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesAgentTemplatesIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExamplesIntegration),
 		{
-			ID:     "checkpoint:" + checkpointRef,
+			ID:     SelfBootstrapCheckCheckpoint,
 			Status: gopact.VerificationStatusPassed,
 			Evidence: []gopact.VerificationEvidence{
 				{Type: "checkpoint", Ref: checkpointRef, Summary: "checkpoint captured"},
 			},
 		},
 		{
-			ID:     "artifact-integrity:self-bootstrap",
+			ID:     SelfBootstrapCheckArtifactIntegrity,
 			Status: gopact.VerificationStatusPassed,
 			Evidence: []gopact.VerificationEvidence{
 				{Type: "artifact", Ref: "artifact:self-bootstrap", Summary: "artifact verified"},
 			},
 		},
 		{
-			ID:     gopact.VerificationCheckRunEffectReplay + ":" + export.IDs.RunID,
+			ID:     SelfBootstrapCheckRunEffectReplay,
 			Status: gopact.VerificationStatusPassed,
 			Evidence: []gopact.VerificationEvidence{
 				{Type: gopact.VerificationEvidenceTypeRunEffectReplay, Ref: export.IDs.RunID, Summary: "run effect replay verified"},
 			},
 		},
 		{
-			ID:     "a2a-task:self-bootstrap-agent-cluster",
+			ID:     SelfBootstrapCheckA2ATask,
 			Status: gopact.VerificationStatusPassed,
 			Evidence: []gopact.VerificationEvidence{
 				{Type: SelfBootstrapEvidenceTypeA2ATask, Ref: "self-bootstrap-agent-cluster", Summary: "agent mesh task completed"},
@@ -431,10 +447,10 @@ func selfBootstrapCIGatesCheck(gates []string) gopact.VerificationCheck {
 	})
 }
 
-func selfBootstrapExternalCIGatesCheck(gates []string) gopact.VerificationCheck {
+func selfBootstrapExtensionEcosystemCIGatesCheck(gates []string) gopact.VerificationCheck {
 	return ciGateSuiteCheck(CIGateSuite{
-		ID:            SelfBootstrapCheckExternalCI,
-		Name:          "external repository CI gates",
+		ID:            SelfBootstrapCheckExtensionEcosystemCI,
+		Name:          "extension ecosystem CI gates",
 		RequiredGates: gates,
 		Results:       passedSelfBootstrapCIGateResults(gates),
 	})
@@ -559,12 +575,10 @@ func defaultSelfBootstrapCIGates() []string {
 	}
 }
 
-func defaultSelfBootstrapExternalRepositoryCIGates() []string {
+func defaultSelfBootstrapExtensionEcosystemCIGates() []string {
 	return []string{
-		SelfBootstrapCIGateWhitespace,
-		SelfBootstrapCIGateModuleTidiness,
-		SelfBootstrapCIGateUnit,
-		SelfBootstrapCIGateVet,
+		SelfBootstrapCIGateExtMock,
+		SelfBootstrapCIGateExamplesMock,
 	}
 }
 
