@@ -23,7 +23,7 @@ func TestDocumentationFilesStayUnderDocExceptReadmes(t *testing.T) {
 		}
 
 		slashPath := filepath.ToSlash(path)
-		if entry.Name() == "README.md" || strings.HasPrefix(slashPath, "doc/") {
+		if entry.Name() == "README.md" || entry.Name() == "README_zh.md" || strings.HasPrefix(slashPath, "doc/") {
 			return nil
 		}
 		t.Fatalf("%s is a Markdown document outside doc/ and is not a README", slashPath)
@@ -34,7 +34,7 @@ func TestDocumentationFilesStayUnderDocExceptReadmes(t *testing.T) {
 	}
 }
 
-func TestMarkdownDocsAreBilingual(t *testing.T) {
+func TestMarkdownDocsUseSeparatedLanguageFiles(t *testing.T) {
 	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -50,14 +50,21 @@ func TestMarkdownDocsAreBilingual(t *testing.T) {
 		}
 
 		body := readTextFile(t, path)
-		for _, want := range []string{
-			"<!-- gopact:doc-language: zh,en -->",
-			"## 中文",
-			"## English",
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("%s missing bilingual documentation marker %q", filepath.ToSlash(path), want)
+		slashPath := filepath.ToSlash(path)
+		if strings.HasSuffix(entry.Name(), "_zh.md") {
+			if !strings.Contains(body, "<!-- gopact:doc-language: zh -->") {
+				t.Fatalf("%s missing Chinese documentation marker", slashPath)
 			}
+			if strings.Contains(body, "## English") {
+				t.Fatalf("%s must not embed English content", slashPath)
+			}
+			return nil
+		}
+		if !strings.Contains(body, "<!-- gopact:doc-language: en -->") {
+			t.Fatalf("%s missing English documentation marker", slashPath)
+		}
+		if strings.Contains(body, "## 中文") {
+			t.Fatalf("%s must not embed Chinese content", slashPath)
 		}
 		return nil
 	})

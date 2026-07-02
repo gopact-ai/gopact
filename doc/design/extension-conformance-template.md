@@ -1,65 +1,31 @@
 # gopact Extension Conformance
 
-<!-- gopact:doc-language: zh,en -->
+<!-- gopact:doc-language: en -->
 
-## 中文
+Chinese documentation: [extension-conformance-template_zh.md](extension-conformance-template_zh.md)
 
-This file documents the compatibility contract for one external gopact extension repository.
+Template for extension conformance documentation. External modules use it to declare target kind, required suites, CI commands, examples, and security boundaries.
 
 ## Extension Target
 
-- Target name: `<fill from doc/design/extension-conformance.json>`
-- Kind: `adapter | plugin | template`
-- Module path: `github.com/gopact-ai/<target-name>`
-- Core paths replaced or extended: `<fill source_paths>`
-- SDK module: `github.com/gopact-ai/gopact`
-- Supported Go versions: `<fill sdk_compatibility.go_versions>`
+Declare the target name, kind, source paths, required suites, examples, and ownership.
 
 ## Required Suites
 
-List every required conformance suite from the target entry in `doc/design/extension-conformance.json`.
-
-- `<suite-name>`
-
-Default conformance suites must run offline. Live provider, platform, cloud, or network checks belong behind explicit integration build tags.
+List each conformance suite and its runnable command.
 
 ## CI Commands
 
-The default external repository CI must run:
+Document required checks such as `git diff --check`, `go mod tidy && git diff --exit-code`, `go test -count=1 ./...`, and `go vet ./...`.
 
-```bash
-git diff --check
-go mod tidy && git diff --exit-code
-go test -count=1 ./...
-go vet ./...
-```
+## Examples
 
-The default offline suite should also call `gopacttest.RequireExtensionScaffoldConformance` with the repository module path, required scaffold files, and already-observed file contents. When a target suite has a known gopacttest helper, `CONFORMANCE.md` should record that helper reference and the offline suite should machine-check that the reference stays present.
-
-While the core SDK repository is private, CI should set `GOPACT_GITHUB_TOKEN` to a token with read access to `github.com/gopact-ai/gopact`; the generated workflow falls back to `github.token` when organization settings allow cross-repository private reads. Local scaffold sync must materialize `go.sum` with `GOWORK=off go mod tidy` before pushing.
+Link runnable examples that exercise the target.
 
 ## Integration Tests
 
-Document any optional live-service tests here.
-
-- Build tag: `<integration tag, if any>`
-- Required host-owned credentials or clients: `<none by default>`
-- Services touched: `<none by default>`
-- How to run manually: `go test -tags=<tag> ./...`
-
-Integration tests must not run in the offline default CI path unless the repository explicitly owns the required service fixtures.
+Real-service integration tests must stay opt-in and must not run in default CI.
 
 ## Security Boundary
 
-Describe the extension trust boundary:
-
-- Who owns credentials, clients, endpoints, stores, and policies.
-- What outbound network calls can happen.
-- What persistence is used.
-- What data is redacted before events, checkpoints, run exports, logs, traces, or model-visible context.
-
-The SDK core must remain configuration-file free. Host applications inject configuration through typed constructors, options, clients, providers, adapters, or plugins.
-
-## English
-
-Template for extension conformance documentation. External modules use it to declare target kind, required suites, CI commands, examples, and security boundaries.
+Document how credentials, prompts, artifacts, and provider responses are redacted or avoided.

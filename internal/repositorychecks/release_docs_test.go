@@ -159,21 +159,22 @@ func TestPublicReleaseDocsAvoidPrivateOnlyLanguage(t *testing.T) {
 func TestReadmeHasPublicSDKEntryPath(t *testing.T) {
 	body := readReleaseDoc(t, "README.md")
 	requirements := []string{
-		"## 安装",
+		"## Installation",
 		"go get github.com/gopact-ai/gopact",
-		"## 快速开始",
+		"## Usage",
 		"Example_graphRun",
 		"go test -run Example_graphRun",
-		"## 核心概念",
-		"## 当前稳定性",
-		"## 文档地图",
+		"## Features",
+		"## Stability",
+		"## Documentation",
 		"doc/design/index.md",
 		"doc/design/public-api-examples.json",
 		"doc/maintainers/repository-governance.md",
-		"## 贡献与安全",
+		"## Contributing",
 		"doc/CONTRIBUTING.md",
 		"doc/SECURITY.md",
 		"doc/CHANGELOG.md",
+		"README_zh.md",
 	}
 
 	for _, requirement := range requirements {
