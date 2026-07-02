@@ -170,12 +170,56 @@ func runAgentRun(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	cmd.Dir = dir
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Env = os.Environ()
+	env, err := agentRunEnv(dir, os.Environ())
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "agent run: %v\n", err)
+		return exitError
+	}
+	cmd.Env = env
 	if err := cmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(stderr, "agent run: %v\n", err)
 		return exitError
 	}
 	return exitOK
+}
+
+func agentRunEnv(dir string, env []string) ([]string, error) {
+	body, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if errors.Is(err, os.ErrNotExist) {
+		return env, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load .env: %w", err)
+	}
+
+	seen := make(map[string]struct{}, len(env))
+	for _, item := range env {
+		key, _, ok := strings.Cut(item, "=")
+		if ok {
+			seen[key] = struct{}{}
+		}
+	}
+	for lineNo, raw := range strings.Split(string(body), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("parse .env line %d: missing =", lineNo+1)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" || strings.ContainsAny(key, " \t\r\n") {
+			return nil, fmt.Errorf("parse .env line %d: invalid key", lineNo+1)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		env = append(env, key+"="+strings.TrimSpace(value))
+		seen[key] = struct{}{}
+	}
+	return env, nil
 }
 
 func validateAgentInit(name, modulePath, sdkVersion string) error {
@@ -684,5 +728,5 @@ go test ./...
 GOPACT_AGENT_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
-The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed.
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
 `
