@@ -92,3 +92,28 @@ func TestReadmeBadgesAndDocIndexAreConfigured(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentMeshDesignDocCoversPublicContract(t *testing.T) {
+	doc := readTextFile(t, "doc/design/agent-mesh.md")
+
+	for _, want := range []string{
+		"## Goals",
+		"domain agents",
+		"standard agent card",
+		"A2A",
+		"## Agent Card",
+		"## Discovery",
+		"HTTP card registry",
+		"## Server Scaffold",
+		"## Client And Router",
+		"## Trust Boundary",
+		"## Evidence",
+		"RunExport",
+		"## Example Cluster",
+		"## Success Criteria",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("agent-mesh.md missing %q", want)
+		}
+	}
+}
