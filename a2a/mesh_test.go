@@ -621,6 +621,50 @@ func TestMeshBootstrapRegistersHTTPCardForRouting(t *testing.T) {
 	}
 }
 
+func TestMeshBootstrapDuplicateHTTPCardsUsesLatestSource(t *testing.T) {
+	ctx := context.Background()
+	oldServer := httptest.NewServer(NewHTTPHandler(FakeAgent{
+		CardValue: AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			return Result{TaskID: task.ID, Output: "old: " + task.Input}, nil
+		},
+	}))
+	defer oldServer.Close()
+	newServer := httptest.NewServer(NewHTTPHandler(FakeAgent{
+		CardValue: AgentCard{Name: "reviewer", Capabilities: []string{"code.review"}},
+		SendFunc: func(ctx context.Context, task Task) (Result, error) {
+			return Result{TaskID: task.ID, Output: "new: " + task.Input}, nil
+		},
+	}))
+	defer newServer.Close()
+	mesh, err := NewMesh()
+	if err != nil {
+		t.Fatalf("NewMesh() error = %v", err)
+	}
+
+	bootstrap, err := mesh.Bootstrap(ctx,
+		NewStaticDiscoverer(AgentCard{Name: "reviewer", URL: oldServer.URL, Capabilities: []string{"code.review"}}),
+		NewStaticDiscoverer(AgentCard{Name: "reviewer", URL: newServer.URL, Capabilities: []string{"code.review"}}),
+	)
+	if err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if len(bootstrap.Cards) != 1 || bootstrap.Cards[0].URL != newServer.URL {
+		t.Fatalf("Bootstrap() cards = %+v, want latest duplicate card only", bootstrap.Cards)
+	}
+
+	result, err := mesh.Route(ctx, RouteQuery{
+		Require: []string{"code.review"},
+		Task:    Task{ID: "task-1", Input: "diff"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != "new: diff" {
+		t.Fatalf("Route() output = %q, want latest source endpoint", result.Output)
+	}
+}
+
 func TestMeshPruneUnreadyHTTPAgentsEvictsAndPublishesEvidence(t *testing.T) {
 	ctx := context.Background()
 	ready := true
