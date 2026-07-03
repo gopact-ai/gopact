@@ -24,7 +24,7 @@
 | channel and surface transfer | `channel_policy.go` | `go test -count=1 -run Channel . ./gopacttest` | Surface messages, transfer policy, channel events, and verification evidence |
 | policy, redaction, and safety contracts | `policy.go` | `go test -count=1 . ./sandbox ./gopacttest/secretconformance ./gopacttest/promptinjectionconformance` | Policy gates, redaction, sandbox profiles, secret handling, and prompt-injection conformance |
 | verification evidence and release gate | `gopacttest` | `go test -count=1 ./gopacttest` | Verification reports, evidence bridges, CI gate evidence, file snapshots, review evidence, and command evidence |
-| self-bootstrap release bundle | `gopacttest` | `go test -count=1 -run SelfBootstrap ./gopacttest` | Run export plus embedded report, release bundle checks, and self-bootstrap gate coverage |
+| self-bootstrap release bundle | `gopacttest` | `go test -count=1 -run SelfBootstrap ./gopacttest` | Run export plus embedded report, replay plan evidence, release bundle checks, and self-bootstrap gate coverage |
 
 Downstream matrices:
 

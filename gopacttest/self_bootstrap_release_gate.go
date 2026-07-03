@@ -87,10 +87,14 @@ const (
 	SelfBootstrapCheckArtifactIntegrity = "artifact-integrity:self-bootstrap"
 	// SelfBootstrapCheckRunEffectReplay is the standard self-bootstrap run effect replay check.
 	SelfBootstrapCheckRunEffectReplay = "run-effect-replay:self-bootstrap"
+	// SelfBootstrapCheckReplayPlan is the standard self-bootstrap run effect replay plan check.
+	SelfBootstrapCheckReplayPlan = "replay-plan:self-bootstrap"
 	// SelfBootstrapCheckA2ATask is the standard self-bootstrap A2A task evidence check.
 	SelfBootstrapCheckA2ATask = "a2a-task:self-bootstrap-agent-cluster"
 	// SelfBootstrapEvidenceTypeReleaseBundle is the external Dev Agent release bundle evidence type.
 	SelfBootstrapEvidenceTypeReleaseBundle = "release_bundle"
+	// SelfBootstrapEvidenceTypeReplayPlan is the self-bootstrap run replay plan evidence type.
+	SelfBootstrapEvidenceTypeReplayPlan = "run_effect_replay_plan"
 	// SelfBootstrapEvidenceTypeA2ATask is the cross-agent task evidence type.
 	SelfBootstrapEvidenceTypeA2ATask = "a2a_task"
 )
@@ -278,11 +282,13 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 				SelfBootstrapCheckA2AConformanceCommand,
 				SelfBootstrapCheckCheckpoint,
 				SelfBootstrapCheckArtifactIntegrity,
+				SelfBootstrapCheckReplayPlan,
 				SelfBootstrapCheckRunEffectReplay,
 				SelfBootstrapCheckA2ATask,
 				VerificationCheckTrajectoryGolden,
 			},
 			RequiredEvidenceTypes: []string{
+				SelfBootstrapEvidenceTypeReplayPlan,
 				gopact.VerificationEvidenceTypeRunEffectReplay,
 				"checkpoint",
 				"artifact",
@@ -375,6 +381,7 @@ func selfBootstrapReleaseGateChecks(
 				{Type: "artifact", Ref: "artifact:self-bootstrap", Summary: "artifact verified"},
 			},
 		},
+		selfBootstrapReplayPlanCheck(export),
 		{
 			ID:     SelfBootstrapCheckRunEffectReplay,
 			Status: gopact.VerificationStatusPassed,
@@ -419,6 +426,95 @@ func selfBootstrapReleaseGateChecks(
 		},
 	}...)
 	return append(checks, cfg.additionalChecks...)
+}
+
+func selfBootstrapReplayPlanCheck(export gopact.RunExport) gopact.VerificationCheck {
+	ref := export.IDs.RunID
+	if ref == "" {
+		ref = SelfBootstrapCheckReplayPlan
+	}
+	plan, err := gopact.PlanRunEffectReplay(export)
+	status := gopact.VerificationStatusPassed
+	summary := "replay plan captured"
+	evidenceSummary := selfBootstrapReplayPlanEvidenceSummary(plan)
+	metadata := selfBootstrapReplayPlanMetadata(plan, ref)
+	if err != nil {
+		status = gopact.VerificationStatusFailed
+		summary = "replay plan failed: " + err.Error()
+		evidenceSummary = err.Error()
+		metadata["error"] = err.Error()
+	}
+	return gopact.VerificationCheck{
+		ID:      SelfBootstrapCheckReplayPlan,
+		Name:    "self-bootstrap replay plan",
+		Status:  status,
+		Summary: summary,
+		Evidence: []gopact.VerificationEvidence{
+			{
+				Type:     SelfBootstrapEvidenceTypeReplayPlan,
+				Ref:      ref,
+				Summary:  evidenceSummary,
+				Metadata: metadata,
+			},
+		},
+		Metadata: metadata,
+	}
+}
+
+func selfBootstrapReplayPlanEvidenceSummary(plan gopact.RunEffectReplayPlan) string {
+	if len(plan.Decisions) == 1 {
+		return "1 replay decision planned"
+	}
+	return fmt.Sprintf("%d replay decisions planned", len(plan.Decisions))
+}
+
+func selfBootstrapReplayPlanMetadata(plan gopact.RunEffectReplayPlan, ref string) map[string]any {
+	metadata := map[string]any{
+		"ref":               ref,
+		"decision_count":    len(plan.Decisions),
+		"replay_count":      plan.ReplayCount,
+		"skip_count":        plan.SkipCount,
+		"record_only_count": plan.RecordOnlyCount,
+	}
+	if plan.RunID != "" {
+		metadata["run_id"] = plan.RunID
+	}
+	if plan.ThreadID != "" {
+		metadata["thread_id"] = plan.ThreadID
+	}
+	if ids := selfBootstrapReplayPlanEffectIDs(plan); len(ids) > 0 {
+		metadata["planned_effect_ids"] = ids
+	}
+	if ids := selfBootstrapReplayPlanStepIDs(plan); len(ids) > 0 {
+		metadata["planned_step_ids"] = ids
+	}
+	return metadata
+}
+
+func selfBootstrapReplayPlanEffectIDs(plan gopact.RunEffectReplayPlan) []string {
+	ids := make([]string, 0, len(plan.Decisions))
+	for _, decision := range plan.Decisions {
+		if id := decision.Decision.Effect.ID; id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func selfBootstrapReplayPlanStepIDs(plan gopact.RunEffectReplayPlan) []string {
+	ids := make([]string, 0, len(plan.Decisions))
+	seen := make(map[string]struct{}, len(plan.Decisions))
+	for _, decision := range plan.Decisions {
+		if decision.StepID == "" {
+			continue
+		}
+		if _, ok := seen[decision.StepID]; ok {
+			continue
+		}
+		seen[decision.StepID] = struct{}{}
+		ids = append(ids, decision.StepID)
+	}
+	return ids
 }
 
 func appendSelfBootstrapCommandChecks(

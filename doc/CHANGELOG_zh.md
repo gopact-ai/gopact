@@ -24,6 +24,7 @@
 - MIT license.
 - Provider-neutral tool choice contract for automatic, required, named, and disabled tool selection.
 - `graph.EmitNodeEvent` and `graph.ErrNodeEventYieldStopped` for adapter nodes that need to publish child runtime events into the parent graph stream.
+- Self-bootstrap release gates now require run replay plan evidence derived from the run export.
 
 ### Changed
 
