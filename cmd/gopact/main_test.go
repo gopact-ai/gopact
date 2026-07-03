@@ -366,8 +366,8 @@ GOPACT_EXISTING=from-dotenv
 }
 
 func TestDefaultSDKVersionFallbackUsesCurrentReleasedTag(t *testing.T) {
-	if got := defaultSDKVersion(); got != "v0.0.46" {
-		t.Fatalf("defaultSDKVersion() = %q, want v0.0.46", got)
+	if got := defaultSDKVersion(); got != "v0.0.47" {
+		t.Fatalf("defaultSDKVersion() = %q, want v0.0.47", got)
 	}
 }
 
