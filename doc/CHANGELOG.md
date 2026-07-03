@@ -19,7 +19,7 @@ This file records user-visible changes to `gopact` core. Internal reshuffling, p
 - `gopact agent init` and `gopact agent run` for generating and running a standalone A2A HTTP agent scaffold.
 - `gopact agent init-cluster` for generating a local planner/worker/reviewer A2A HTTP cluster scaffold with registry, mesh bootstrap, routing, streaming, cancel, health, and shutdown tests.
 - `gopact agent verify` for mock-only scaffold validation of required files, A2A registry shape, and `go test ./...`.
-- `gopact release-bundle -run-export <file>` for producing self-bootstrap release evidence bundles from recorded run exports.
+- `gopact release-bundle -run-export <file> -report <file>` for producing self-bootstrap release evidence bundles from recorded run exports and observed verification reports.
 - Core feature coverage matrix in [FEATURES.md](FEATURES.md).
 - Public repository governance: PR-only `main`, required CI gates, admin auto-merge, non-admin admin-approval gate, and public readiness checks.
 - MIT license.

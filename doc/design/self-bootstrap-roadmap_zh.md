@@ -78,7 +78,7 @@ workflow 切片本身不调用模型，也不判断 patch 是否可接受。patc
 - `gopact agent init-cluster <name> [-module <module>] [-out <dir>]` 创建本地 planner/worker/reviewer A2A HTTP cluster，包含 HTTP registry bootstrap、mesh routing、streaming、cancel、health/readiness、graceful shutdown 和 bare-array `agents.json` 测试；未传 `-module` 时默认使用 `example.com/<name>`。
 - `gopact agent verify [dir]` 校验 scaffold 必需文件、A2A registry 结构，并运行 `go test ./...`；该命令不加载 `.env`，也不读取 provider credentials。
 - `gopact agent run [dir]` 执行生成的 module，只在运行期读取本地 `.env` 中的地址或 public URL 覆盖。
-- `gopact release-bundle -run-export <file>` 基于已记录的 `RunExport` 构建 self-bootstrap release evidence bundle，嵌入生成的 verification report，校验 self-bootstrap release gate，并向 stdout 输出稳定 JSON。
+- `gopact release-bundle -run-export <file> -report <file>` 基于已记录的 `RunExport` 和已观察 `VerificationReport` 构建 self-bootstrap release evidence bundle，嵌入调用方提供的 report，校验 self-bootstrap release gate，并向 stdout 输出稳定 JSON。
 
 这样 core 保留零凭据 bootstrap path；provider-backed 行为、生产 agent template 和 Dev Agent 实现仍放在 `gopact-ext`，可运行 workflow 仍放在 `gopact-examples`。
 

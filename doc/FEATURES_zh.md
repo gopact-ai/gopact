@@ -26,7 +26,7 @@ workflow orchestration 的已完成能力和规划缺口记录在 [doc/design/wo
 | channel and surface transfer | `channel_policy.go` | `go test -count=1 -run Channel . ./gopacttest` | Surface messages, transfer policy, channel events, and verification evidence |
 | policy, redaction, and safety contracts | `policy.go` | `go test -count=1 . ./sandbox ./gopacttest/secretconformance ./gopacttest/promptinjectionconformance` | Policy gates, redaction, sandbox profiles, secret handling, and prompt-injection conformance |
 | verification evidence and release gate | `gopacttest` | `go test -count=1 ./gopacttest` | Verification reports, evidence bridges, CI gate evidence, file snapshots, review evidence, and command evidence |
-| self-bootstrap release bundle | `gopacttest`, `cmd/gopact` | `go test -count=1 -run SelfBootstrap ./gopacttest`; `go test -count=1 ./cmd/gopact` | Run export plus embedded report, replay plan evidence, release bundle checks, self-bootstrap gate coverage, and `gopact release-bundle -run-export <file>` JSON output |
+| self-bootstrap release bundle | `gopacttest`, `cmd/gopact` | `go test -count=1 -run SelfBootstrap ./gopacttest`; `go test -count=1 ./cmd/gopact` | Run export plus embedded observed report, replay plan evidence, release bundle checks, self-bootstrap gate coverage, and `gopact release-bundle -run-export <file> -report <file>` JSON output |
 
 Downstream matrices:
 
