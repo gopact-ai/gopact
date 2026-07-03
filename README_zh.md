@@ -51,10 +51,10 @@ go run ./cmd/gopact agent init-cluster support-cluster -module example.com/suppo
 go run ./cmd/gopact agent verify /tmp/support-cluster
 ```
 
-从已记录的 run export 构建 self-bootstrap release evidence bundle：
+从已记录的 run export 和已观察 verification report 构建 self-bootstrap release evidence bundle：
 
 ```bash
-go run ./cmd/gopact release-bundle -run-export /path/to/run-export.json > release-bundle.json
+go run ./cmd/gopact release-bundle -run-export /path/to/run-export.json -report /path/to/verification-report.json > release-bundle.json
 ```
 
 需要模型 provider 或完整 agent template 时，从 [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) 开始；core 仓库只保留 provider-neutral 契约和离线可测实现。
