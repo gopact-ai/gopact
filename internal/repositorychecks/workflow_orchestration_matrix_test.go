@@ -62,8 +62,34 @@ func TestWorkflowOrchestrationMatrixDocumentsImplementedAndPlannedCapabilities(t
 		}
 	}
 
+	for _, expected := range expectedCompletedExternalWorkflowCapabilities() {
+		capability, ok := capabilities[expected.id]
+		if !ok {
+			t.Fatalf("workflow orchestration matrix missing external completed capability %q", expected.id)
+		}
+		if capability.Status != "completed" {
+			t.Fatalf("workflow orchestration capability %q status = %q, want completed", expected.id, capability.Status)
+		}
+		if capability.Package != expected.packageName {
+			t.Fatalf("workflow orchestration capability %q package = %q, want %q", expected.id, capability.Package, expected.packageName)
+		}
+		if capability.TargetRepo != expected.targetRepo {
+			t.Fatalf("workflow orchestration capability %q target_repo = %q, want %q", expected.id, capability.TargetRepo, expected.targetRepo)
+		}
+		if capability.OfflineProof != expected.offlineProof {
+			t.Fatalf("workflow orchestration capability %q proof = %q, want %q", expected.id, capability.OfflineProof, expected.offlineProof)
+		}
+		if capability.Boundary == "" {
+			t.Fatalf("workflow orchestration capability %q boundary is empty", expected.id)
+		}
+		for _, conformanceCase := range expected.conformanceCases {
+			if !slices.Contains(capability.ConformanceCases, conformanceCase) {
+				t.Fatalf("workflow orchestration capability %q missing conformance case %q", expected.id, conformanceCase)
+			}
+		}
+	}
+
 	for _, id := range []string{
-		"human-review-node-template",
 		"durable-background-scheduler",
 	} {
 		capability, ok := capabilities[id]
@@ -230,6 +256,36 @@ func expectedCompletedWorkflowCapabilities() []struct {
 				"schema-guard-rejects-invalid-node-output",
 				"schema-guard-rejects-invalid-resume-state",
 				"schema-guard-exports-topology-contracts",
+			},
+		},
+	}
+}
+
+func expectedCompletedExternalWorkflowCapabilities() []struct {
+	id               string
+	packageName      string
+	targetRepo       string
+	offlineProof     string
+	conformanceCases []string
+} {
+	return []struct {
+		id               string
+		packageName      string
+		targetRepo       string
+		offlineProof     string
+		conformanceCases []string
+	}{
+		{
+			id:           "human-review-node-template",
+			packageName:  "agents/humanreview",
+			targetRepo:   "gopact-ext",
+			offlineProof: "gopact-ext: (cd agents/humanreview && go test -count=1 ./...) && (cd tests/agents && go test -count=1 ./...)",
+			conformanceCases: []string{
+				"approval-gate-step-export-resume",
+				"approval-gate-checkpoint-resume",
+				"default-approval-resume-schema",
+				"custom-schema-and-metadata-defensive-copy",
+				"cross-module-graph-composition",
 			},
 		},
 	}

@@ -144,12 +144,18 @@
     },
     {
       "id": "human-review-node-template",
-      "status": "planned",
-      "package": "graph",
+      "status": "completed",
+      "package": "agents/humanreview",
       "target_repo": "gopact-ext",
-      "offline_proof": "",
-      "conformance_cases": [],
-      "gap": "Core has interrupt/resume contracts, but reusable human-review and approval node templates belong in gopact-ext and need template conformance."
+      "offline_proof": "gopact-ext: (cd agents/humanreview && go test -count=1 ./...) && (cd tests/agents && go test -count=1 ./...)",
+      "conformance_cases": [
+        "approval-gate-step-export-resume",
+        "approval-gate-checkpoint-resume",
+        "default-approval-resume-schema",
+        "custom-schema-and-metadata-defensive-copy",
+        "cross-module-graph-composition"
+      ],
+      "boundary": "gopact-ext provides a provider-neutral approval gate that maps typed graph state to a gopact.InterruptRecord, uses a default approval resume schema, preserves custom schema and metadata by defensive copy, resumes from step export or checkpoint without rerunning the gate, and has cross-module graph composition coverage."
     },
     {
       "id": "graph-state-schema-guards",
