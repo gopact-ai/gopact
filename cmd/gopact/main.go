@@ -117,7 +117,7 @@ func runAgentInit(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	fs := flag.NewFlagSet("gopact agent init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&out, "out", "", "output directory for the generated agent")
-	fs.StringVar(&modulePath, "module", "", "Go module path for the generated agent")
+	fs.StringVar(&modulePath, "module", "", "Go module path for the generated agent (default example.com/<name>)")
 	fs.StringVar(&sdkVersion, "sdk-version", sdkVersion, "github.com/gopact-ai/gopact version required by the generated agent")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -136,6 +136,9 @@ func runAgentInit(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	modulePath = strings.TrimSpace(modulePath)
 	sdkVersion = strings.TrimSpace(sdkVersion)
 	out = strings.TrimSpace(out)
+	if modulePath == "" {
+		modulePath = defaultAgentModulePath(name)
+	}
 	if err := validateAgentInit(name, modulePath, sdkVersion); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return exitUsage
@@ -176,7 +179,7 @@ func runAgentInitCluster(ctx context.Context, args []string, stdout, stderr io.W
 	fs := flag.NewFlagSet("gopact agent init-cluster", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&out, "out", "", "output directory for the generated agent cluster")
-	fs.StringVar(&modulePath, "module", "", "Go module path for the generated agent cluster")
+	fs.StringVar(&modulePath, "module", "", "Go module path for the generated agent cluster (default example.com/<name>)")
 	fs.StringVar(&sdkVersion, "sdk-version", sdkVersion, "github.com/gopact-ai/gopact version required by the generated agent cluster")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -195,6 +198,9 @@ func runAgentInitCluster(ctx context.Context, args []string, stdout, stderr io.W
 	modulePath = strings.TrimSpace(modulePath)
 	sdkVersion = strings.TrimSpace(sdkVersion)
 	out = strings.TrimSpace(out)
+	if modulePath == "" {
+		modulePath = defaultAgentModulePath(name)
+	}
 	if err := validateAgentInit(name, modulePath, sdkVersion); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return exitUsage
@@ -462,9 +468,6 @@ func validateAgentInit(name, modulePath, sdkVersion string) error {
 	if strings.ContainsAny(name, `/\`) {
 		return errors.New("agent name must not contain path separators")
 	}
-	if modulePath == "" {
-		return errors.New("-module is required")
-	}
 	if strings.ContainsAny(modulePath, " \t\r\n") {
 		return errors.New("-module must not contain whitespace")
 	}
@@ -472,6 +475,10 @@ func validateAgentInit(name, modulePath, sdkVersion string) error {
 		return errors.New("-sdk-version is required")
 	}
 	return nil
+}
+
+func defaultAgentModulePath(name string) string {
+	return "example.com/" + name
 }
 
 func defaultSDKVersion() string {
@@ -648,8 +655,8 @@ func writeAgentScaffold(ctx context.Context, out string, files map[string][]byte
 
 func printUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
-  gopact agent init <name> -module <module> [-out <dir>] [-sdk-version <version>]
-  gopact agent init-cluster <name> -module <module> [-out <dir>] [-sdk-version <version>]
+  gopact agent init <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
+  gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
   gopact agent run [dir]
   gopact agent verify [dir]
 
@@ -663,8 +670,8 @@ Commands:
 
 func printAgentUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
-  gopact agent init <name> -module <module> [-out <dir>] [-sdk-version <version>]
-  gopact agent init-cluster <name> -module <module> [-out <dir>] [-sdk-version <version>]
+  gopact agent init <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
+  gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
   gopact agent run [dir]
   gopact agent verify [dir]
 `)

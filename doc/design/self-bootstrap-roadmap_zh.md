@@ -74,8 +74,8 @@ workflow 切片本身不调用模型，也不判断 patch 是否可接受。patc
 
 第一段自举 CLI 面保持小而稳定：
 
-- `gopact agent init <name> -module <module> [-out <dir>]` 创建独立的 A2A HTTP agent module，包含测试、health/readiness endpoint、`agents.json` bare-array registry、`.env.example` 和本地 README。
-- `gopact agent init-cluster <name> -module <module> [-out <dir>]` 创建本地 planner/worker/reviewer A2A HTTP cluster，包含 HTTP registry bootstrap、mesh routing、streaming、cancel、health/readiness、graceful shutdown 和 bare-array `agents.json` 测试。
+- `gopact agent init <name> [-module <module>] [-out <dir>]` 创建独立的 A2A HTTP agent module，包含测试、health/readiness endpoint、`agents.json` bare-array registry、`.env.example` 和本地 README；未传 `-module` 时默认使用 `example.com/<name>`。
+- `gopact agent init-cluster <name> [-module <module>] [-out <dir>]` 创建本地 planner/worker/reviewer A2A HTTP cluster，包含 HTTP registry bootstrap、mesh routing、streaming、cancel、health/readiness、graceful shutdown 和 bare-array `agents.json` 测试；未传 `-module` 时默认使用 `example.com/<name>`。
 - `gopact agent verify [dir]` 校验 scaffold 必需文件、A2A registry 结构，并运行 `go test ./...`；该命令不加载 `.env`，也不读取 provider credentials。
 - `gopact agent run [dir]` 执行生成的 module，只在运行期读取本地 `.env` 中的地址或 public URL 覆盖。
 
