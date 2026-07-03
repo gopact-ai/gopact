@@ -34,7 +34,7 @@
 - CI runs hygiene, unit, race, static analysis, coverage, conformance, and security gates in parallel while preserving a required aggregate `test` job.
 - A2A file discovery accepts both `{"agents":[...]}` documents and bare agent-card arrays.
 - Generated A2A agent scaffolds include health/readiness tests and graceful HTTP shutdown.
-- Local `gopact agent init` fallback SDK version now tracks the current released core tag.
+- Local `gopact agent init` fallback SDK version is pinned to the current released core tag.
 
 ### Known Limitations
 

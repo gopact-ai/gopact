@@ -196,7 +196,7 @@ GOPACT_EXISTING=from-dotenv
 	}
 }
 
-func TestDefaultSDKVersionFallbackTracksLatestTag(t *testing.T) {
+func TestDefaultSDKVersionFallbackUsesCurrentReleasedTag(t *testing.T) {
 	if got := defaultSDKVersion(); got != "v0.0.44" {
 		t.Fatalf("defaultSDKVersion() = %q, want v0.0.44", got)
 	}
