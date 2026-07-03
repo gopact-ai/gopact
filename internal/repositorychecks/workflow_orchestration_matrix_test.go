@@ -65,7 +65,6 @@ func TestWorkflowOrchestrationMatrixDocumentsImplementedAndPlannedCapabilities(t
 	for _, id := range []string{
 		"parallel-fanout-executor",
 		"human-review-node-template",
-		"graph-state-schema-guards",
 		"durable-background-scheduler",
 	} {
 		capability, ok := capabilities[id]
@@ -215,6 +214,15 @@ func expectedCompletedWorkflowCapabilities() []struct {
 		{
 			id:               "workflow-visualization-export",
 			conformanceCases: []string{"topology-export-stable"},
+		},
+		{
+			id: "graph-state-schema-guards",
+			conformanceCases: []string{
+				"schema-guard-rejects-invalid-node-input",
+				"schema-guard-rejects-invalid-node-output",
+				"schema-guard-rejects-invalid-resume-state",
+				"schema-guard-exports-topology-contracts",
+			},
 		},
 	}
 }

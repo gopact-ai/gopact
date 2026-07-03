@@ -31,6 +31,10 @@ var ErrNodeEventYieldStopped = errors.New("graph: nested event yield stopped")
 
 var errNestedEventYieldStopped = ErrNodeEventYieldStopped
 
+// ErrSchemaGuardFailed marks graph state or node boundary data that does not
+// satisfy its configured JSON Schema guard.
+var ErrSchemaGuardFailed = errors.New("graph: schema guard failed")
+
 // NodeFunc 表示 graph 中一步状态转换。
 type NodeFunc[S any] func(ctx context.Context, state S) (S, error)
 
@@ -85,19 +89,24 @@ func (f ArtifactVerifierFunc) VerifyRefs(ctx context.Context, refs []gopact.Arti
 
 // Graph 是一个小型的类型化执行 graph。
 type Graph[S any] struct {
-	nodes         map[string]NodeFunc[S]
-	runnableNodes map[string]*Runnable[S]
-	edges         map[string][]string
-	branches      map[string][]BranchFunc[S]
+	nodes             map[string]NodeFunc[S]
+	runnableNodes     map[string]*Runnable[S]
+	edges             map[string][]string
+	branches          map[string][]BranchFunc[S]
+	stateSchema       gopact.JSONSchema
+	nodeInputSchemas  map[string]gopact.JSONSchema
+	nodeOutputSchemas map[string]gopact.JSONSchema
 }
 
 // New 创建一个空 graph。
 func New[S any]() *Graph[S] {
 	return &Graph[S]{
-		nodes:         make(map[string]NodeFunc[S]),
-		runnableNodes: make(map[string]*Runnable[S]),
-		edges:         make(map[string][]string),
-		branches:      make(map[string][]BranchFunc[S]),
+		nodes:             make(map[string]NodeFunc[S]),
+		runnableNodes:     make(map[string]*Runnable[S]),
+		edges:             make(map[string][]string),
+		branches:          make(map[string][]BranchFunc[S]),
+		nodeInputSchemas:  make(map[string]gopact.JSONSchema),
+		nodeOutputSchemas: make(map[string]gopact.JSONSchema),
 	}
 }
 
@@ -135,6 +144,28 @@ func (g *Graph[S]) AddEdge(from, to string) {
 // AddBranch registers dynamic successors for a node.
 func (g *Graph[S]) AddBranch(from string, branch BranchFunc[S]) {
 	g.branches[from] = append(g.branches[from], branch)
+}
+
+// SetStateSchema registers a graph-wide JSON Schema guard for state values at
+// node input, node output, and resume boundaries.
+func (g *Graph[S]) SetStateSchema(schema gopact.JSONSchema) {
+	g.stateSchema = copyJSONSchema(schema)
+}
+
+// SetNodeInputSchema registers a JSON Schema guard for the state entering one node.
+func (g *Graph[S]) SetNodeInputSchema(name string, schema gopact.JSONSchema) {
+	if g.nodeInputSchemas == nil {
+		g.nodeInputSchemas = make(map[string]gopact.JSONSchema)
+	}
+	setNodeSchema(g.nodeInputSchemas, name, schema)
+}
+
+// SetNodeOutputSchema registers a JSON Schema guard for the state leaving one node.
+func (g *Graph[S]) SetNodeOutputSchema(name string, schema gopact.JSONSchema) {
+	if g.nodeOutputSchemas == nil {
+		g.nodeOutputSchemas = make(map[string]gopact.JSONSchema)
+	}
+	setNodeSchema(g.nodeOutputSchemas, name, schema)
 }
 
 // Compile 校验 graph 结构，并返回不可变 runnable。
@@ -175,6 +206,16 @@ func (g *Graph[S]) Compile() (*Runnable[S], error) {
 			}
 		}
 	}
+	for name := range g.nodeInputSchemas {
+		if _, ok := g.nodes[name]; !ok {
+			return nil, fmt.Errorf("graph: input schema node %q is missing", name)
+		}
+	}
+	for name := range g.nodeOutputSchemas {
+		if _, ok := g.nodes[name]; !ok {
+			return nil, fmt.Errorf("graph: output schema node %q is missing", name)
+		}
+	}
 
 	nodes := make(map[string]NodeFunc[S], len(g.nodes))
 	for name, node := range g.nodes {
@@ -193,23 +234,29 @@ func (g *Graph[S]) Compile() (*Runnable[S], error) {
 		branches[from] = append([]BranchFunc[S](nil), branchList...)
 	}
 	return &Runnable[S]{
-		nodes:     nodes,
-		nodeKinds: topologyNodeKinds(g.nodes, g.runnableNodes),
-		edges:     edges,
-		branches:  branches,
-		joins:     joins,
-		maxSteps:  1024,
+		nodes:             nodes,
+		nodeKinds:         topologyNodeKinds(g.nodes, g.runnableNodes),
+		edges:             edges,
+		branches:          branches,
+		joins:             joins,
+		stateSchema:       copyJSONSchema(g.stateSchema),
+		nodeInputSchemas:  copyNodeSchemas(g.nodeInputSchemas),
+		nodeOutputSchemas: copyNodeSchemas(g.nodeOutputSchemas),
+		maxSteps:          1024,
 	}, nil
 }
 
 // Runnable 是编译后的 graph。
 type Runnable[S any] struct {
-	nodes     map[string]NodeFunc[S]
-	nodeKinds map[string]TopologyNodeKind
-	edges     map[string][]string
-	branches  map[string][]BranchFunc[S]
-	joins     map[string][]string
-	maxSteps  int
+	nodes             map[string]NodeFunc[S]
+	nodeKinds         map[string]TopologyNodeKind
+	edges             map[string][]string
+	branches          map[string][]BranchFunc[S]
+	joins             map[string][]string
+	stateSchema       gopact.JSONSchema
+	nodeInputSchemas  map[string]gopact.JSONSchema
+	nodeOutputSchemas map[string]gopact.JSONSchema
+	maxSteps          int
 }
 
 type nestedEventSinkContextKey struct{}
@@ -552,7 +599,8 @@ func (r *Runnable[S]) execute(ctx context.Context, initial S, yield func(gopact.
 				emit(yield, graphEvent(gopact.EventRunInterrupted, ids, snapshot.Node, snapshot.Step, &snapshot, interruptErr), interruptErr)
 				return state, interruptErr
 			}
-			emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, "", step, nil, err), err)
+			ids := cfg.ids.WithDefaults(cfg.stepExport.Step.IDs)
+			emit(yield, graphEvent(gopact.EventRunFailed, ids, cfg.stepExport.Step.Node, cfg.stepExport.Step.Step, nil, err), err)
 			return state, err
 		}
 		state = resumedState
@@ -588,7 +636,8 @@ func (r *Runnable[S]) execute(ctx context.Context, initial S, yield func(gopact.
 					emit(yield, graphEvent(gopact.EventRunInterrupted, snapshot.IDs, snapshot.Node, snapshot.Step, &snapshot, interruptErr), interruptErr)
 					return state, interruptErr
 				}
-				emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, "", step, nil, err), err)
+				ids := cfg.ids.WithDefaults(checkpointIDs(checkpoint))
+				emit(yield, graphEvent(gopact.EventRunFailed, ids, checkpoint.Node, checkpoint.Step, nil, err), err)
 				return state, err
 			}
 			state = resumedState
@@ -710,6 +759,14 @@ func (r *Runnable[S]) execute(ctx context.Context, initial S, yield func(gopact.
 		if !emit(yield, graphEvent(startEvent, cfg.ids, name, nextStep, &startSnapshot, nil), nil) {
 			return state, nil
 		}
+		if err := r.validateNodeInput(ctx, cfg.schemaValidator, name, state); err != nil {
+			failedSnapshot := stepSnapshot(nextStep, name, cfg.ids, gopact.StepFailed, state, nil, err.Error(), startedAt, time.Now())
+			if !emit(yield, graphEvent(gopact.EventNodeFailed, cfg.ids, name, nextStep, &failedSnapshot, err), nil) {
+				return state, err
+			}
+			emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, name, nextStep, nil, err), err)
+			return state, err
+		}
 
 		nodeCtxContext := ctx
 		if !cfg.ids.IsZero() {
@@ -819,6 +876,15 @@ func (r *Runnable[S]) execute(ctx context.Context, initial S, yield func(gopact.
 			}
 			emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, name, step, nil, err), wrapped)
 			return state, wrapped
+		}
+		if err := r.validateNodeOutput(ctx, cfg.schemaValidator, name, next); err != nil {
+			failedSnapshot := stepSnapshot(nextStep, name, cfg.ids, gopact.StepFailed, nodeCtx.Input, nodeCtx.Output, err.Error(), startedAt, time.Now())
+			attachEffects(&failedSnapshot, nodeCtx.Effects)
+			if !emit(yield, graphEvent(gopact.EventNodeFailed, cfg.ids, name, nextStep, &failedSnapshot, err), nil) {
+				return state, err
+			}
+			emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, name, nextStep, nil, err), err)
+			return state, err
 		}
 		state = next
 		completed[name] = struct{}{}
@@ -964,6 +1030,9 @@ func (r *Runnable[S]) resumeFromStepExport(ctx context.Context, export gopact.St
 	if !ok {
 		return zero, nil, 0, gopact.RuntimeIDs{}, nil, fmt.Errorf("graph: resume state type mismatch: got %T", export.Step.Output)
 	}
+	if err := r.validateResumedState(ctx, validator, export.Step.Node, state); err != nil {
+		return zero, nil, 0, gopact.RuntimeIDs{}, nil, fmt.Errorf("graph: resume state: %w", err)
+	}
 	queue := append([]string(nil), export.Step.Queue...)
 	if len(queue) == 0 {
 		queue = append(queue, r.edges[export.Step.Node]...)
@@ -1021,6 +1090,9 @@ func (r *Runnable[S]) resumeFromCheckpoint(ctx context.Context, checkpoint Check
 		if _, ok := r.nodes[checkpoint.Node]; !ok {
 			return zero, nil, 0, gopact.RuntimeIDs{}, nil, fmt.Errorf("graph: checkpoint node %q is missing", checkpoint.Node)
 		}
+	}
+	if err := r.validateResumedState(ctx, validator, checkpoint.Node, checkpoint.State); err != nil {
+		return zero, nil, 0, gopact.RuntimeIDs{}, nil, fmt.Errorf("graph: checkpoint state: %w", err)
 	}
 	queue := append([]string(nil), checkpoint.Queue...)
 	if len(queue) == 0 {

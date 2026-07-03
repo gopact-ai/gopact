@@ -148,12 +148,17 @@
     },
     {
       "id": "graph-state-schema-guards",
-      "status": "planned",
+      "status": "completed",
       "package": "graph",
       "target_repo": "gopact",
-      "offline_proof": "",
-      "conformance_cases": [],
-      "gap": "Resume payload schema validation exists, but graph state and per-node input/output schema guards are not yet first-class orchestration contracts."
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "schema-guard-rejects-invalid-node-input",
+        "schema-guard-rejects-invalid-node-output",
+        "schema-guard-rejects-invalid-resume-state",
+        "schema-guard-exports-topology-contracts"
+      ],
+      "boundary": "Graph and compiled Runnable values support first-class JSON Schema guards for graph state, per-node input, per-node output, and resumed state boundaries; guards reuse the injected root JSONSchemaValidator and topology exports include defensive copies of schema contracts."
     },
     {
       "id": "durable-background-scheduler",

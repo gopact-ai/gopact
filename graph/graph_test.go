@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,6 +20,20 @@ func traceNode(label string) NodeFunc[traceState] {
 	return func(_ context.Context, state traceState) (traceState, error) {
 		state.Trace = append(state.Trace, label)
 		return state, nil
+	}
+}
+
+func traceMinItemsSchema(minItems int) gopact.JSONSchema {
+	return gopact.JSONSchema{
+		"type":     "object",
+		"required": []any{"Trace"},
+		"properties": map[string]any{
+			"Trace": map[string]any{
+				"type":     "array",
+				"minItems": minItems,
+				"items":    map[string]any{"type": "string"},
+			},
+		},
 	}
 }
 
@@ -422,6 +437,226 @@ func TestRunnableTopologyExportIsStableAndDefensive(t *testing.T) {
 		again.Edges[0].From == "mutated" ||
 		again.Joins[0].Predecessors[0] == "mutated" {
 		t.Fatalf("Topology() returned mutable internal state: %#v", again)
+	}
+}
+
+func TestGraphSchemaGuardRejectsInvalidNodeInput(t *testing.T) {
+	ctx := context.Background()
+	called := false
+	g := New[traceState]()
+	g.AddNode("guarded", func(_ context.Context, state traceState) (traceState, error) {
+		called = true
+		state.Trace = append(state.Trace, "guarded")
+		return state, nil
+	})
+	g.SetNodeInputSchema("guarded", traceMinItemsSchema(1))
+	g.AddEdge(Start, "guarded")
+	g.AddEdge("guarded", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}))
+	if !errors.Is(err, ErrSchemaGuardFailed) {
+		t.Fatalf("Run() error = %v, want ErrSchemaGuardFailed", err)
+	}
+	if !errors.Is(err, gopact.ErrJSONSchemaValidationFailed) {
+		t.Fatalf("Run() error = %v, want ErrJSONSchemaValidationFailed", err)
+	}
+	if called {
+		t.Fatal("guarded node was called after invalid input")
+	}
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeFailed,
+		gopact.EventRunFailed,
+	)
+	if events[2].StepSnapshot == nil || events[2].StepSnapshot.Phase != gopact.StepFailed {
+		t.Fatalf("failed event snapshot = %+v, want failed step snapshot", events[2].StepSnapshot)
+	}
+}
+
+func TestGraphSchemaGuardRejectsInvalidNodeOutput(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+	g.AddNode("guarded", traceNode("guarded"))
+	g.SetNodeOutputSchema("guarded", traceMinItemsSchema(2))
+	g.AddEdge(Start, "guarded")
+	g.AddEdge("guarded", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}))
+	if !errors.Is(err, ErrSchemaGuardFailed) {
+		t.Fatalf("Run() error = %v, want ErrSchemaGuardFailed", err)
+	}
+	if !errors.Is(err, gopact.ErrJSONSchemaValidationFailed) {
+		t.Fatalf("Run() error = %v, want ErrJSONSchemaValidationFailed", err)
+	}
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeFailed,
+		gopact.EventRunFailed,
+	)
+	output, ok := events[2].StepSnapshot.Output.(traceState)
+	if !ok {
+		t.Fatalf("failed output type = %T, want traceState", events[2].StepSnapshot.Output)
+	}
+	if !reflect.DeepEqual(output.Trace, []string{"guarded"}) {
+		t.Fatalf("failed output trace = %v, want [guarded]", output.Trace)
+	}
+}
+
+func TestGraphStateSchemaGuardRejectsInvalidStepExportResume(t *testing.T) {
+	ctx := context.Background()
+	called := false
+	g := New[traceState]()
+	g.SetStateSchema(traceMinItemsSchema(2))
+	g.AddNode("one", traceNode("one"))
+	g.AddNode("next", func(_ context.Context, state traceState) (traceState, error) {
+		called = true
+		state.Trace = append(state.Trace, "next")
+		return state, nil
+	})
+	g.AddEdge(Start, "one")
+	g.AddEdge("one", "next")
+	g.AddEdge("next", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}, WithStepExport(gopact.StepExport{
+		Version: 1,
+		Step: gopact.StepSnapshot{
+			ID:     "run-1:1",
+			Step:   1,
+			Node:   "one",
+			Phase:  gopact.StepCompleted,
+			IDs:    gopact.RuntimeIDs{RunID: "run-1"},
+			Output: traceState{Trace: []string{"one"}},
+			Queue:  []string{"next"},
+		},
+	})))
+	if !errors.Is(err, ErrSchemaGuardFailed) {
+		t.Fatalf("Run() error = %v, want ErrSchemaGuardFailed", err)
+	}
+	if !errors.Is(err, gopact.ErrJSONSchemaValidationFailed) {
+		t.Fatalf("Run() error = %v, want ErrJSONSchemaValidationFailed", err)
+	}
+	if called {
+		t.Fatal("next node was called after invalid resumed state")
+	}
+	gopacttest.RequireEventTypes(t, events, gopact.EventRunFailed)
+	if events[0].Node != "one" || events[0].Step != 1 {
+		t.Fatalf("run failed event = %+v, want resumed node one step 1", events[0])
+	}
+}
+
+func TestGraphSchemaGuardsUseInjectedValidatorAndExportTopology(t *testing.T) {
+	ctx := context.WithValue(context.Background(), schemaValidatorTestKey{}, "ctx-1")
+	var calls int
+	validator := gopact.JSONSchemaValidatorFunc(func(ctx context.Context, schema gopact.JSONSchema, value any) error {
+		calls++
+		if got := ctx.Value(schemaValidatorTestKey{}); got != "ctx-1" {
+			return errors.New("validator context marker missing")
+		}
+		marker, _ := schema["x-test"].(string)
+		if marker == "" {
+			return nil
+		}
+		if marker != "node-output" {
+			return fmt.Errorf("schema marker = %v, want node-output", marker)
+		}
+		return gopact.ErrJSONSchemaValidationFailed
+	})
+	outputSchema := traceMinItemsSchema(1)
+	outputSchema["x-test"] = "node-output"
+	outputSchema["required"] = []string{"Trace"}
+
+	g := New[traceState]()
+	g.SetStateSchema(traceMinItemsSchema(0))
+	g.AddNode("guarded", traceNode("guarded"))
+	g.SetNodeOutputSchema("guarded", outputSchema)
+	g.AddEdge(Start, "guarded")
+	g.AddEdge("guarded", End)
+
+	topology := g.Topology()
+	var exportedSchema gopact.JSONSchema
+	for _, node := range topology.Nodes {
+		if node.Name == "guarded" {
+			exportedSchema = node.OutputSchema
+		}
+	}
+	if exportedSchema["x-test"] != "node-output" {
+		t.Fatalf("topology output schema = %#v, want node-output marker", exportedSchema)
+	}
+	exportedSchema["x-test"] = "mutated"
+	exportedRequired, ok := exportedSchema["required"].([]string)
+	if !ok {
+		t.Fatalf("topology required type = %T, want []string", exportedSchema["required"])
+	}
+	exportedRequired[0] = "mutated"
+	if again := g.Topology(); again.Nodes[1].OutputSchema["x-test"] != "node-output" {
+		t.Fatalf("Topology() returned mutable schema state: %#v", again.Nodes[1].OutputSchema)
+	} else if again.Nodes[1].OutputSchema["required"].([]string)[0] != "Trace" {
+		t.Fatalf("Topology() returned mutable required schema slice: %#v", again.Nodes[1].OutputSchema["required"])
+	}
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	_, err = run.Invoke(ctx, traceState{}, WithJSONSchemaValidator(validator))
+	if !errors.Is(err, ErrSchemaGuardFailed) {
+		t.Fatalf("Invoke() error = %v, want ErrSchemaGuardFailed", err)
+	}
+	if !errors.Is(err, gopact.ErrJSONSchemaValidationFailed) {
+		t.Fatalf("Invoke() error = %v, want ErrJSONSchemaValidationFailed", err)
+	}
+	if calls != 3 {
+		t.Fatalf("validator calls = %d, want 3", calls)
+	}
+}
+
+type schemaValidatorTestKey struct{}
+
+func TestGraphCompileRejectsSchemaGuardForMissingNode(t *testing.T) {
+	tests := []struct {
+		name  string
+		apply func(*Graph[traceState])
+	}{
+		{
+			name: "input schema",
+			apply: func(g *Graph[traceState]) {
+				g.SetNodeInputSchema("missing", traceMinItemsSchema(1))
+			},
+		},
+		{
+			name: "output schema",
+			apply: func(g *Graph[traceState]) {
+				g.SetNodeOutputSchema("missing", traceMinItemsSchema(1))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := New[traceState]()
+			g.AddNode("present", traceNode("present"))
+			g.AddEdge(Start, "present")
+			g.AddEdge("present", End)
+			tt.apply(g)
+
+			if _, err := g.Compile(); err == nil {
+				t.Fatal("Compile() error = nil, want missing schema node error")
+			}
+		})
 	}
 }
 
