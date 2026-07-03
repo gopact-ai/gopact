@@ -67,7 +67,6 @@ func TestWorkflowOrchestrationMatrixDocumentsImplementedAndPlannedCapabilities(t
 		"human-review-node-template",
 		"graph-state-schema-guards",
 		"durable-background-scheduler",
-		"workflow-visualization-export",
 	} {
 		capability, ok := capabilities[id]
 		if !ok {
@@ -212,6 +211,10 @@ func expectedCompletedWorkflowCapabilities() []struct {
 				"failed-node-stops-successors",
 				"canceled-node-stops-successors",
 			},
+		},
+		{
+			id:               "workflow-visualization-export",
+			conformanceCases: []string{"topology-export-stable"},
 		},
 	}
 }

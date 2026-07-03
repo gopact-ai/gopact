@@ -166,12 +166,14 @@
     },
     {
       "id": "workflow-visualization-export",
-      "status": "planned",
+      "status": "completed",
       "package": "graph",
       "target_repo": "gopact",
-      "offline_proof": "",
-      "conformance_cases": [],
-      "gap": "Compiled graphs do not yet expose a stable inspectable topology export for diagrams, audits, or UI visualization."
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "topology-export-stable"
+      ],
+      "boundary": "Graph and compiled Runnable values expose stable topology exports with virtual boundary nodes, node kinds, static edges, branch counts, join predecessors, and compiled max-step limits for diagrams, audits, and tooling."
     }
   ]
 }
