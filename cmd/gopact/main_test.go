@@ -54,6 +54,7 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	assertFileContains(t, filepath.Join(out, "README.md"),
 		"# support-agent",
 		"gopact agent run .",
+		"gopact agent verify .",
 		"GOPACT_AGENT_ADDR",
 		"loads `.env`",
 	)
@@ -168,6 +169,77 @@ GOPACT_DOTENV_EXISTING=from-dotenv
 	}
 }
 
+func TestRunAgentVerifyChecksScaffoldAndRunsTests(t *testing.T) {
+	dir := t.TempDir()
+	writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, validVerifyRegistry("verify-agent"))
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, exitOK, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "ok  \texample.com/verify-agent") {
+		t.Fatalf("stdout missing go test output:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "verified agent scaffold verify-agent") {
+		t.Fatalf("stdout missing verify summary:\n%s", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunAgentVerifyRejectsWrappedRegistryObject(t *testing.T) {
+	dir := t.TempDir()
+	writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, `{"agents":[]}`)
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("run() code = %d, want %d", code, exitError)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "agents.json must be a bare array registry") {
+		t.Fatalf("stderr missing registry error:\n%s", stderr.String())
+	}
+}
+
+func TestRunAgentVerifyReportsGoTestFailure(t *testing.T) {
+	dir := t.TempDir()
+	writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyFails(t *testing.T) {
+	t.Fatal("boom")
+}
+`, validVerifyRegistry("verify-agent"))
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("run() code = %d, want %d", code, exitError)
+	}
+	if !strings.Contains(stdout.String(), "boom") {
+		t.Fatalf("stdout missing failing test output:\n%s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "agent verify: go test ./...") {
+		t.Fatalf("stderr missing verify command error:\n%s", stderr.String())
+	}
+}
+
 func TestAgentRunEnvSupportsExportAndRejectsInvalidDotEnv(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(`
@@ -219,6 +291,14 @@ func TestGeneratedAgentScaffoldPassesGoTest(t *testing.T) {
 	runGeneratedCommand(t, out, "go", "mod", "edit", "-replace", "github.com/gopact-ai/gopact="+repoRoot(t))
 	runGeneratedCommand(t, out, "go", "mod", "tidy")
 	runGeneratedCommand(t, out, "go", "test", "./...")
+
+	code = run(context.Background(), []string{"agent", "verify", out}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("agent verify code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, exitOK, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "verified agent scaffold support-agent") {
+		t.Fatalf("agent verify stdout missing summary:\n%s", stdout.String())
+	}
 }
 
 func assertFileContains(t *testing.T, path string, wants ...string) {
@@ -265,4 +345,36 @@ func runGeneratedCommand(t *testing.T, dir string, name string, args ...string) 
 	if err != nil {
 		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, string(out))
 	}
+}
+
+func writeVerifyAgentModule(t *testing.T, dir string, testBody string, registry string) {
+	t.Helper()
+	files := map[string]string{
+		"go.mod":       "module example.com/verify-agent\n\ngo 1.25\n",
+		"main.go":      "package main\n\nfunc main() {}\n",
+		"main_test.go": testBody,
+		"README.md":    "# verify-agent\n",
+		".env.example": "GOPACT_AGENT_ADDR=:8080\n",
+		".gitignore":   ".env\n.env.*\n!.env.example\n",
+		"agents.json":  registry,
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+}
+
+func validVerifyRegistry(name string) string {
+	return `[
+  {
+    "name": "` + name + `",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  }
+]
+`
 }

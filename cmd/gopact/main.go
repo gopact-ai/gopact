@@ -82,6 +82,8 @@ func runAgent(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return runAgentInit(ctx, args[1:], stdout, stderr)
 	case "run":
 		return runAgentRun(ctx, args[1:], stdout, stderr)
+	case "verify":
+		return runAgentVerify(ctx, args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		printAgentUsage(stdout)
 		return exitOK
@@ -181,6 +183,134 @@ func runAgentRun(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return exitError
 	}
 	return exitOK
+}
+
+func runAgentVerify(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("gopact agent verify", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() > 1 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %s\n", strings.Join(fs.Args()[1:], " "))
+		return exitUsage
+	}
+	dir := "."
+	if fs.NArg() == 1 {
+		dir = fs.Arg(0)
+	}
+
+	report, err := verifyAgentScaffold(ctx, dir, stdout, stderr)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "agent verify: %v\n", err)
+		return exitError
+	}
+	_, _ = fmt.Fprintf(stdout, "verified agent scaffold %s checks=%d\n", report.AgentName, report.Checks)
+	return exitOK
+}
+
+type agentVerifyReport struct {
+	AgentName string
+	Checks    int
+}
+
+var agentVerifyRequiredFiles = []string{
+	"go.mod",
+	"main.go",
+	"main_test.go",
+	"agents.json",
+	".env.example",
+	".gitignore",
+	"README.md",
+}
+
+func verifyAgentScaffold(ctx context.Context, dir string, stdout, stderr io.Writer) (agentVerifyReport, error) {
+	if err := ctx.Err(); err != nil {
+		return agentVerifyReport{}, err
+	}
+	for _, name := range agentVerifyRequiredFiles {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return agentVerifyReport{}, fmt.Errorf("missing %s", name)
+			}
+			return agentVerifyReport{}, err
+		}
+	}
+
+	agentName, err := verifyAgentRegistry(filepath.Join(dir, "agents.json"))
+	if err != nil {
+		return agentVerifyReport{}, err
+	}
+
+	cmd := exec.CommandContext(ctx, "go", "test", "./...")
+	cmd.Dir = dir
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Env = os.Environ()
+	if err := cmd.Run(); err != nil {
+		return agentVerifyReport{}, fmt.Errorf("go test ./...: %w", err)
+	}
+	return agentVerifyReport{
+		AgentName: agentName,
+		Checks:    len(agentVerifyRequiredFiles) + 2,
+	}, nil
+}
+
+type agentRegistryCard struct {
+	Name         string                  `json:"name"`
+	URL          string                  `json:"url"`
+	Protocols    []agentRegistryProtocol `json:"protocols"`
+	Capabilities []string                `json:"capabilities"`
+	Streaming    bool                    `json:"streaming"`
+	Health       *agentRegistryHealth    `json:"health"`
+}
+
+type agentRegistryProtocol struct {
+	Name      string `json:"name"`
+	Transport string `json:"transport"`
+}
+
+type agentRegistryHealth struct {
+	HealthPath    string `json:"health_path"`
+	ReadinessPath string `json:"readiness_path"`
+}
+
+func verifyAgentRegistry(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(body)), "[") {
+		return "", errors.New("agents.json must be a bare array registry")
+	}
+
+	var cards []agentRegistryCard
+	if err := json.Unmarshal(body, &cards); err != nil {
+		return "", fmt.Errorf("parse agents.json: %w", err)
+	}
+	if len(cards) == 0 {
+		return "", errors.New("agents.json must contain at least one agent card")
+	}
+	card := cards[0]
+	if card.Name == "" {
+		return "", errors.New("agents.json first card missing name")
+	}
+	if card.URL == "" {
+		return "", errors.New("agents.json first card missing url")
+	}
+	if len(card.Protocols) == 0 {
+		return "", errors.New("agents.json first card missing protocols")
+	}
+	if len(card.Capabilities) == 0 {
+		return "", errors.New("agents.json first card missing capabilities")
+	}
+	if !card.Streaming {
+		return "", errors.New("agents.json first card must enable streaming")
+	}
+	if card.Health == nil || card.Health.HealthPath == "" || card.Health.ReadinessPath == "" {
+		return "", errors.New("agents.json first card missing health and readiness paths")
+	}
+	return card.Name, nil
 }
 
 func agentRunEnv(dir string, env []string) ([]string, error) {
@@ -350,10 +480,12 @@ func printUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
   gopact agent init <name> -module <module> [-out <dir>] [-sdk-version <version>]
   gopact agent run [dir]
+  gopact agent verify [dir]
 
 Commands:
   agent init   Create a runnable A2A HTTP agent scaffold.
   agent run    Run an agent module with go run.
+  agent verify Verify an agent scaffold with local mock-only checks.
 `)
 }
 
@@ -361,6 +493,7 @@ func printAgentUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
   gopact agent init <name> -module <module> [-out <dir>] [-sdk-version <version>]
   gopact agent run [dir]
+  gopact agent verify [dir]
 `)
 }
 
@@ -725,8 +858,9 @@ Generated gopact A2A HTTP agent scaffold.
 
 ` + "```bash" + `
 go test ./...
+gopact agent verify .
 GOPACT_AGENT_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
-The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. ` + "`gopact agent verify`" + ` checks the scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
 `

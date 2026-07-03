@@ -49,6 +49,18 @@ This implies three product constraints:
 
 The workflow slice intentionally does not call models or decide which patch is acceptable by itself. Patch authorization, patch apply, workspace reads, and command execution are available only through explicit host-created policy and adapter boundaries so policy, sandbox, checkpoint, and release-gate automation remain visible runtime boundaries.
 
+## Next CLI and Scaffold API
+
+The first self-bootstrap CLI surface is intentionally small:
+
+- `gopact agent init <name> -module <module> [-out <dir>]` creates a standalone A2A HTTP agent module with tests, health/readiness endpoints, an `agents.json` bare-array registry, `.env.example`, and a local README.
+- `gopact agent verify [dir]` validates the required scaffold files, checks the A2A registry shape, and runs `go test ./...` without loading `.env` or provider credentials.
+- `gopact agent run [dir]` executes the generated module and loads local `.env` only for runtime address or public URL overrides.
+
+This keeps the zero-credential bootstrap path in core while leaving provider-backed behavior, production agent templates, and Dev Agent implementations in `gopact-ext` and runnable workflows in `gopact-examples`.
+
+The next scaffold increments are agent-cluster generation, registry/mesh env wiring, and a release-bundle command that records run export, diff, command, CI, review, and policy evidence without depending on real providers in CI.
+
 ## Testing Standard
 
 Coverage is a baseline, not a completion criterion. Every expected feature point must have tests that pin behavior, failure modes, and public API ergonomics.
