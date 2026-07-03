@@ -78,10 +78,11 @@ workflow 切片本身不调用模型，也不判断 patch 是否可接受。patc
 - `gopact agent init-cluster <name> [-module <module>] [-out <dir>]` 创建本地 planner/worker/reviewer A2A HTTP cluster，包含 HTTP registry bootstrap、mesh routing、streaming、cancel、health/readiness、graceful shutdown 和 bare-array `agents.json` 测试；未传 `-module` 时默认使用 `example.com/<name>`。
 - `gopact agent verify [dir]` 校验 scaffold 必需文件、A2A registry 结构，并运行 `go test ./...`；该命令不加载 `.env`，也不读取 provider credentials。
 - `gopact agent run [dir]` 执行生成的 module，只在运行期读取本地 `.env` 中的地址或 public URL 覆盖。
+- `gopact release-bundle -run-export <file>` 基于已记录的 `RunExport` 构建 self-bootstrap release evidence bundle，嵌入生成的 verification report，校验 self-bootstrap release gate，并向 stdout 输出稳定 JSON。
 
 这样 core 保留零凭据 bootstrap path；provider-backed 行为、生产 agent template 和 Dev Agent 实现仍放在 `gopact-ext`，可运行 workflow 仍放在 `gopact-examples`。
 
-生成的 cluster 已将 `GOPACT_A2A_REGISTRY_URL` 接入 mesh bootstrap，方便在不改 scaffold 代码的情况下切换本地或外部 registry。下一批 scaffold 增量是 examples 仓库对生成 cluster 的 smoke 覆盖，以及能够记录 run export、diff、command、CI、review 和 policy evidence 的 release-bundle 命令；这些能力在 CI 中仍不能依赖真实 provider。
+生成的 cluster 已将 `GOPACT_A2A_REGISTRY_URL` 接入 mesh bootstrap，方便在不改 scaffold 代码的情况下切换本地或外部 registry。release bundle 生成保持 core 的零凭据边界，在 CI 中只依赖已记录 evidence，不依赖真实 provider。
 
 ## 可自举定义
 

@@ -18,6 +18,9 @@ import (
 	"strings"
 	"syscall"
 	"text/template"
+
+	"github.com/gopact-ai/gopact"
+	"github.com/gopact-ai/gopact/gopacttest"
 )
 
 const (
@@ -45,6 +48,11 @@ type agentClusterScaffoldData struct {
 	GoVersion          string
 }
 
+type releaseBundleOutput struct {
+	RunExport gopact.RunExport          `json:"run_export"`
+	Report    gopact.VerificationReport `json:"report"`
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -65,6 +73,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "agent":
 		return runAgent(ctx, args[1:], stdout, stderr)
+	case "release-bundle":
+		return runReleaseBundle(ctx, args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		printUsage(stdout)
 		return exitOK
@@ -73,6 +83,64 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runReleaseBundle(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	var runExportPath string
+
+	fs := flag.NewFlagSet("gopact release-bundle", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&runExportPath, "run-export", "", "path to a gopact RunExport JSON file")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() > 0 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %s\n", strings.Join(fs.Args(), " "))
+		return exitUsage
+	}
+	runExportPath = strings.TrimSpace(runExportPath)
+	if runExportPath == "" {
+		_, _ = fmt.Fprintln(stderr, "-run-export is required")
+		return exitUsage
+	}
+
+	bundle, err := buildSelfBootstrapReleaseBundle(ctx, runExportPath)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "release-bundle: %v\n", err)
+		return exitError
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(releaseBundleOutput{RunExport: bundle.RunExport, Report: bundle.Report}); err != nil {
+		_, _ = fmt.Fprintf(stderr, "release-bundle: write JSON: %v\n", err)
+		return exitError
+	}
+	return exitOK
+}
+
+func buildSelfBootstrapReleaseBundle(ctx context.Context, runExportPath string) (gopacttest.SelfBootstrapReleaseGateBundle, error) {
+	if err := ctx.Err(); err != nil {
+		return gopacttest.SelfBootstrapReleaseGateBundle{}, err
+	}
+
+	body, err := os.ReadFile(runExportPath)
+	if err != nil {
+		return gopacttest.SelfBootstrapReleaseGateBundle{}, fmt.Errorf("read run export: %w", err)
+	}
+	var export gopact.RunExport
+	if err := json.Unmarshal(body, &export); err != nil {
+		return gopacttest.SelfBootstrapReleaseGateBundle{}, fmt.Errorf("parse run export: %w", err)
+	}
+	bundle, err := gopacttest.BuildSelfBootstrapReleaseGateBundle(export)
+	if err != nil {
+		return gopacttest.SelfBootstrapReleaseGateBundle{}, err
+	}
+	for _, result := range gopacttest.CheckSelfBootstrapReleaseGate(ctx, bundle.RunExport, bundle.Report) {
+		if !result.Passed {
+			return gopacttest.SelfBootstrapReleaseGateBundle{}, fmt.Errorf("release gate case %q failed: %w", result.Case, result.Err)
+		}
+	}
+	return bundle, nil
 }
 
 func runAgent(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -659,12 +727,14 @@ func printUsage(w io.Writer) {
   gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
   gopact agent run [dir]
   gopact agent verify [dir]
+  gopact release-bundle -run-export <file>
 
 Commands:
   agent init         Create a runnable A2A HTTP agent scaffold.
   agent init-cluster Create a runnable local A2A agent cluster scaffold.
   agent run          Run an agent module with go run.
   agent verify       Verify an agent scaffold with local mock-only checks.
+  release-bundle     Build a self-bootstrap release evidence bundle.
 `)
 }
 
