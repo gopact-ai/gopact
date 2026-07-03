@@ -81,22 +81,38 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	}
 }
 
-func TestRunAgentInitRejectsMissingModule(t *testing.T) {
+func TestRunAgentInitDefaultsModulePath(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "support-agent")
 	var stdout, stderr bytes.Buffer
 
 	code := run(context.Background(), []string{
 		"agent", "init", "support-agent",
-		"-out", filepath.Join(t.TempDir(), "support-agent"),
+		"-out", out,
 	}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("run() code = %d, want %d", code, exitUsage)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "-module is required") {
-		t.Fatalf("stderr missing module error:\n%s", stderr.String())
+	assertFileContains(t, filepath.Join(out, "go.mod"), "module example.com/support-agent")
+}
+
+func TestRunAgentInitClusterDefaultsModulePath(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "support-cluster")
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"agent", "init-cluster", "support-cluster",
+		"-out", out,
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
 	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	assertFileContains(t, filepath.Join(out, "go.mod"), "module example.com/support-cluster")
 }
 
 func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
@@ -175,24 +191,6 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 		if cards[i].Name != want || cards[i].URL == "" || len(cards[i].Capabilities) == 0 || !cards[i].Streaming {
 			t.Fatalf("agents.json card[%d] = %+v, want streaming %s card", i, cards[i], want)
 		}
-	}
-}
-
-func TestRunAgentInitClusterRejectsMissingModule(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-
-	code := run(context.Background(), []string{
-		"agent", "init-cluster", "support-cluster",
-		"-out", filepath.Join(t.TempDir(), "support-cluster"),
-	}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("run() code = %d, want %d", code, exitUsage)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
-	}
-	if !strings.Contains(stderr.String(), "-module is required") {
-		t.Fatalf("stderr missing module error:\n%s", stderr.String())
 	}
 }
 

@@ -85,7 +85,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			capability: "agent scaffold generator",
 			path:       "cmd/gopact",
 			command:    "go test -count=1 ./cmd/gopact",
-			boundary:   "gopact agent verify rejects scaffolds that do not ignore .env",
+			boundary:   "module paths default to example.com/<name>; `gopact agent verify` checks required scaffold files, bare-array A2A registry shape, `.gitignore` credential boundaries",
 		},
 		{
 			capability: "channel and surface transfer",

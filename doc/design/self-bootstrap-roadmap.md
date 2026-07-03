@@ -53,8 +53,8 @@ The workflow slice intentionally does not call models or decide which patch is a
 
 The first self-bootstrap CLI surface is intentionally small:
 
-- `gopact agent init <name> -module <module> [-out <dir>]` creates a standalone A2A HTTP agent module with tests, health/readiness endpoints, an `agents.json` bare-array registry, `.env.example`, and a local README.
-- `gopact agent init-cluster <name> -module <module> [-out <dir>]` creates a local planner/worker/reviewer A2A HTTP cluster with tests for HTTP registry bootstrap, mesh routing, streaming, cancel, health/readiness, graceful shutdown, and a bare-array `agents.json`.
+- `gopact agent init <name> [-module <module>] [-out <dir>]` creates a standalone A2A HTTP agent module with tests, health/readiness endpoints, an `agents.json` bare-array registry, `.env.example`, and a local README. When `-module` is omitted, the scaffold uses `example.com/<name>`.
+- `gopact agent init-cluster <name> [-module <module>] [-out <dir>]` creates a local planner/worker/reviewer A2A HTTP cluster with tests for HTTP registry bootstrap, mesh routing, streaming, cancel, health/readiness, graceful shutdown, and a bare-array `agents.json`. When `-module` is omitted, the scaffold uses `example.com/<name>`.
 - `gopact agent verify [dir]` validates the required scaffold files, checks the A2A registry shape, and runs `go test ./...` without loading `.env` or provider credentials.
 - `gopact agent run [dir]` executes the generated module and loads local `.env` only for runtime address or public URL overrides.
 

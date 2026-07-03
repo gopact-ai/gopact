@@ -39,7 +39,7 @@ go test -run Example_graphRun .
 Generate and test an A2A HTTP agent scaffold:
 
 ```bash
-go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
+go run ./cmd/gopact agent init support-agent -out /tmp/support-agent
 (cd /tmp/support-agent && go test ./...)
 go run ./cmd/gopact agent verify /tmp/support-agent
 go run ./cmd/gopact agent run /tmp/support-agent
@@ -48,7 +48,7 @@ go run ./cmd/gopact agent run /tmp/support-agent
 Generate a local A2A agent cluster scaffold:
 
 ```bash
-go run ./cmd/gopact agent init-cluster support-cluster -module example.com/support-cluster -out /tmp/support-cluster
+go run ./cmd/gopact agent init-cluster support-cluster -out /tmp/support-cluster
 (cd /tmp/support-cluster && go test ./...)
 go run ./cmd/gopact agent verify /tmp/support-cluster
 ```
