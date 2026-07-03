@@ -579,6 +579,8 @@ func (r *Registry) Bootstrap(ctx context.Context, ids gopact.RuntimeIDs, listers
 		imported = append(imported, cards...)
 	}
 
+	cards := latestCardsByName(imported)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.importCardsLocked(imported)
@@ -593,7 +595,7 @@ func (r *Registry) Bootstrap(ctx context.Context, ids gopact.RuntimeIDs, listers
 			},
 		}))
 	}
-	return BootstrapResult{Cards: copyAgentCards(imported), Events: events}, nil
+	return BootstrapResult{Cards: copyAgentCards(cards), Events: events}, nil
 }
 
 // Card returns the latest known agent card for name.
@@ -927,6 +929,20 @@ func (r *Registry) importCardsLocked(cards []AgentCard) {
 		r.cards[card.Name] = copyAgentCard(card)
 		r.appendOrderLocked(card.Name)
 	}
+}
+
+func latestCardsByName(cards []AgentCard) []AgentCard {
+	out := make([]AgentCard, 0, len(cards))
+	indexes := map[string]int{}
+	for _, card := range cards {
+		if index, ok := indexes[card.Name]; ok {
+			out[index] = copyAgentCard(card)
+			continue
+		}
+		indexes[card.Name] = len(out)
+		out = append(out, copyAgentCard(card))
+	}
+	return out
 }
 
 func listImportCards(ctx context.Context, lister CardLister) ([]AgentCard, error) {
