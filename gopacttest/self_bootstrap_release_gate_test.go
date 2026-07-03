@@ -270,6 +270,24 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingExamplesMockCI(t *test
 	}
 }
 
+func TestSelfBootstrapReleaseGateReportIncludesExamplesMockSuiteCommand(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+
+	if findSelfBootstrapReleaseGateCheck(t, report, SelfBootstrapCheckExamplesMockSuiteCommand).ID == "" {
+		t.Fatal("self-bootstrap release gate report missing examples mock suite command")
+	}
+}
+
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingExamplesMockSuiteCommand(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckExamplesMockSuiteCommand)
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ci/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing examples mock suite command: %+v", results)
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingAgnesIntegration(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, []string{
 		SelfBootstrapCIGateWhitespace,
