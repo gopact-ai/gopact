@@ -31,6 +31,7 @@
 ### Changed
 
 - `a2a.Mesh.BootstrapEnv` and `a2a.Mesh.SyncEnv` now apply mesh-level HTTP agent options while discovering environment-configured agents.
+- `gopact agent verify` now validates every card in a bare-array A2A registry instead of only the first card.
 - Feature coverage now names the tested graph orchestration surface: step export/import, interrupted step resume, branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, and node-emitted nested events.
 - Workflow orchestration matrix now records the `gopact-ext` human review template, durable scheduler, Dev Agent self-bootstrap workflow, and Dev Agent workspace adapter including policy-approved plan patch apply as completed with offline proof.
 - README and `doc/` structure now separate first-reader documentation, design records, maintainer process, and historical execution plans.

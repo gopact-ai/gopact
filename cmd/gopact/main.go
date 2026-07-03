@@ -360,26 +360,35 @@ func verifyAgentRegistry(path string) (string, error) {
 	if len(cards) == 0 {
 		return "", errors.New("agents.json must contain at least one agent card")
 	}
-	card := cards[0]
-	if card.Name == "" {
-		return "", errors.New("agents.json first card missing name")
+	for i, card := range cards {
+		label := agentRegistryCardLabel(i)
+		if card.Name == "" {
+			return "", fmt.Errorf("agents.json %s missing name", label)
+		}
+		if card.URL == "" {
+			return "", fmt.Errorf("agents.json %s missing url", label)
+		}
+		if len(card.Protocols) == 0 {
+			return "", fmt.Errorf("agents.json %s missing protocols", label)
+		}
+		if len(card.Capabilities) == 0 {
+			return "", fmt.Errorf("agents.json %s missing capabilities", label)
+		}
+		if !card.Streaming {
+			return "", fmt.Errorf("agents.json %s must enable streaming", label)
+		}
+		if card.Health == nil || card.Health.HealthPath == "" || card.Health.ReadinessPath == "" {
+			return "", fmt.Errorf("agents.json %s missing health and readiness paths", label)
+		}
 	}
-	if card.URL == "" {
-		return "", errors.New("agents.json first card missing url")
+	return cards[0].Name, nil
+}
+
+func agentRegistryCardLabel(index int) string {
+	if index == 0 {
+		return "first card"
 	}
-	if len(card.Protocols) == 0 {
-		return "", errors.New("agents.json first card missing protocols")
-	}
-	if len(card.Capabilities) == 0 {
-		return "", errors.New("agents.json first card missing capabilities")
-	}
-	if !card.Streaming {
-		return "", errors.New("agents.json first card must enable streaming")
-	}
-	if card.Health == nil || card.Health.HealthPath == "" || card.Health.ReadinessPath == "" {
-		return "", errors.New("agents.json first card missing health and readiness paths")
-	}
-	return card.Name, nil
+	return fmt.Sprintf("card[%d]", index)
 }
 
 func agentRunEnv(dir string, env []string) ([]string, error) {
