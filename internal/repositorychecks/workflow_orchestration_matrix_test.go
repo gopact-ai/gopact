@@ -89,24 +89,18 @@ func TestWorkflowOrchestrationMatrixDocumentsImplementedAndPlannedCapabilities(t
 		}
 	}
 
-	for _, id := range []string{
-		"durable-background-scheduler",
-	} {
-		capability, ok := capabilities[id]
-		if !ok {
-			t.Fatalf("workflow orchestration matrix missing planned capability %q", id)
-		}
+	for _, capability := range matrix.Capabilities {
 		if capability.Status != "planned" {
-			t.Fatalf("workflow orchestration capability %q status = %q, want planned", id, capability.Status)
+			continue
 		}
 		if capability.Gap == "" {
-			t.Fatalf("workflow orchestration planned capability %q gap is empty", id)
+			t.Fatalf("workflow orchestration planned capability %q gap is empty", capability.ID)
 		}
 		if len(capability.ConformanceCases) != 0 {
-			t.Fatalf("workflow orchestration planned capability %q has completed conformance cases: %v", id, capability.ConformanceCases)
+			t.Fatalf("workflow orchestration planned capability %q has completed conformance cases: %v", capability.ID, capability.ConformanceCases)
 		}
 		if capability.TargetRepo == "" {
-			t.Fatalf("workflow orchestration planned capability %q target_repo is empty", id)
+			t.Fatalf("workflow orchestration planned capability %q target_repo is empty", capability.ID)
 		}
 	}
 }
@@ -286,6 +280,24 @@ func expectedCompletedExternalWorkflowCapabilities() []struct {
 				"default-approval-resume-schema",
 				"custom-schema-and-metadata-defensive-copy",
 				"cross-module-graph-composition",
+			},
+		},
+		{
+			id:           "durable-background-scheduler",
+			packageName:  "agents/scheduler",
+			targetRepo:   "gopact-ext",
+			offlineProof: "gopact-ext: (cd agents/scheduler && go test -count=1 ./...) && ./scripts/self-bootstrap-mock-suite.sh",
+			conformanceCases: []string{
+				"run-once-completes-successful-job",
+				"retry-schedules-next-attempt-with-backoff",
+				"dead-letter-at-max-attempts",
+				"custom-decider-stop-and-retry-normalization",
+				"lease-conflict-prevents-dequeue",
+				"lease-renewal-and-loss-boundaries",
+				"bounded-drain-counts-transitions",
+				"retry-policy-capped-backoff",
+				"memory-queue-not-before-and-defensive-snapshot",
+				"schedule-evidence-recording-and-validation",
 			},
 		},
 	}
