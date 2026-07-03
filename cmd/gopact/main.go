@@ -305,6 +305,9 @@ func verifyAgentScaffold(ctx context.Context, dir string, stdout, stderr io.Writ
 			return agentVerifyReport{}, err
 		}
 	}
+	if err := verifyAgentGitignore(filepath.Join(dir, ".gitignore")); err != nil {
+		return agentVerifyReport{}, err
+	}
 
 	agentName, err := verifyAgentRegistry(filepath.Join(dir, "agents.json"))
 	if err != nil {
@@ -382,6 +385,28 @@ func verifyAgentRegistry(path string) (string, error) {
 		}
 	}
 	return cards[0].Name, nil
+}
+
+func verifyAgentGitignore(path string) error {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := map[string]bool{}
+	for _, raw := range strings.Split(string(body), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		lines[line] = true
+	}
+	if !lines[".env"] {
+		return errors.New(".gitignore must ignore .env")
+	}
+	if !lines["!.env.example"] {
+		return errors.New(".gitignore must keep .env.example trackable")
+	}
+	return nil
 }
 
 func agentRegistryCardLabel(index int) string {
