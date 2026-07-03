@@ -44,6 +44,12 @@ govulncheck ./...
 
 如果改动了 graph、checkpoint、provider、tool、MCP、A2A、sandbox、verification 或 release gate，还要运行对应的 conformance 命令；这些命令列在 [FEATURES.md](FEATURES.md)。
 
+如果改动 release gate 或 self-bootstrap 行为，还要运行 mock 自举套件：
+
+```bash
+./scripts/self-bootstrap-mock-suite.sh
+```
+
 ## Pull Request Checklist
 
 PR 应该满足：

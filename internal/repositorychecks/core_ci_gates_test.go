@@ -2,6 +2,7 @@ package repositorychecks
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -237,10 +238,51 @@ func TestCoreCIWorkflowOptimizesIndependentGatesForParallelFeedback(t *testing.T
 		"coverage:",
 		"conformance:",
 		"security:",
-		"needs: [hygiene, unit, race, static, coverage, conformance, security]",
+		"self-bootstrap:",
+		"needs: [hygiene, unit, race, static, coverage, conformance, security, self-bootstrap]",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("core CI workflow missing parallel feedback control %q", want)
+		}
+	}
+}
+
+func TestCoreSelfBootstrapMockSuiteIsExecutableAndUsedByCI(t *testing.T) {
+	const suitePath = "scripts/self-bootstrap-mock-suite.sh"
+
+	info, err := os.Stat(repoPath(t, suitePath))
+	if err != nil {
+		t.Fatalf("stat %s: %v", suitePath, err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("%s is not executable: mode %v", suitePath, info.Mode())
+	}
+
+	suite := readTextFile(t, suitePath)
+	for _, want := range []string{
+		"set -euo pipefail",
+		"./scripts/public-readiness-check.sh",
+		"git diff --exit-code -- go.mod go.sum",
+		"go test -count=1 ./...",
+		"go test -run '^Example' ./...",
+		"go test -count=1 ./graph ./gopacttest/graphconformance",
+		"go test -count=1 ./a2a ./gopacttest/a2aconformance",
+		"go test -count=1 -run SelfBootstrap ./gopacttest",
+	} {
+		if !strings.Contains(suite, want) {
+			t.Fatalf("core self-bootstrap mock suite missing %q", want)
+		}
+	}
+
+	workflow := readTextFile(t, ".github/workflows/ci.yml")
+	for _, want := range []string{
+		"self-bootstrap:",
+		"./scripts/self-bootstrap-mock-suite.sh",
+		"needs: [hygiene, unit, race, static, coverage, conformance, security, self-bootstrap]",
+		"check_gate self-bootstrap",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("core CI workflow missing self-bootstrap suite control %q", want)
 		}
 	}
 }

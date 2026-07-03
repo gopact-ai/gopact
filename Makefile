@@ -1,4 +1,4 @@
-.PHONY: check test race tidy fmt vet lint coverage examples graph a2a-mesh security
+.PHONY: check test race tidy fmt vet lint coverage examples graph a2a-mesh security self-bootstrap
 
 check:
 	git diff --check
@@ -47,3 +47,6 @@ a2a-mesh:
 
 security:
 	govulncheck ./...
+
+self-bootstrap:
+	./scripts/self-bootstrap-mock-suite.sh
