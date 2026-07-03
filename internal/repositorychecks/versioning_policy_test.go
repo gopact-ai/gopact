@@ -51,9 +51,15 @@ func TestVersioningPolicyDocumentedAndIndexed(t *testing.T) {
 }
 
 func TestAgentScaffoldFallbackUsesLatestReleasedCoreTag(t *testing.T) {
-	out, err := exec.Command("git", "tag", "--list", "v0.0.*", "--sort=v:refname").Output()
+	git, err := exec.LookPath("git")
 	if err != nil {
-		t.Fatalf("list release tags: %v", err)
+		t.Skip("git not available")
+	}
+	cmd := exec.Command(git, "tag", "--list", "v0.0.*", "--sort=v:refname")
+	cmd.Dir = repoRoot(t)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("list release tags: %v\n%s", err, out)
 	}
 	tags := strings.Fields(string(out))
 	if len(tags) == 0 {
