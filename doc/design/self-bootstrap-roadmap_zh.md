@@ -70,6 +70,18 @@
 
 workflow 切片本身不调用模型，也不判断 patch 是否可接受。patch authorization、patch apply、workspace 读取和命令执行只通过宿主显式创建的 policy 与 adapter boundary 暴露，确保 policy、sandbox、checkpoint 和 release gate 自动化仍是可观察的 runtime boundary。
 
+## 下一版 CLI 与 Scaffold API
+
+第一段自举 CLI 面保持小而稳定：
+
+- `gopact agent init <name> -module <module> [-out <dir>]` 创建独立的 A2A HTTP agent module，包含测试、health/readiness endpoint、`agents.json` bare-array registry、`.env.example` 和本地 README。
+- `gopact agent verify [dir]` 校验 scaffold 必需文件、A2A registry 结构，并运行 `go test ./...`；该命令不加载 `.env`，也不读取 provider credentials。
+- `gopact agent run [dir]` 执行生成的 module，只在运行期读取本地 `.env` 中的地址或 public URL 覆盖。
+
+这样 core 保留零凭据 bootstrap path；provider-backed 行为、生产 agent template 和 Dev Agent 实现仍放在 `gopact-ext`，可运行 workflow 仍放在 `gopact-examples`。
+
+下一批 scaffold 增量是 agent-cluster 生成、registry/mesh 环境变量接线，以及能够记录 run export、diff、command、CI、review 和 policy evidence 的 release-bundle 命令；这些能力在 CI 中仍不能依赖真实 provider。
+
 ## 可自举定义
 
 可自举状态必须同时满足：
