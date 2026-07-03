@@ -313,6 +313,44 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsInvalidLaterRegistryCard(t *testing.T) {
+	dir := t.TempDir()
+	writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, `[
+  {
+    "name": "verify-agent",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  },
+  {
+    "name": "worker-agent",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  }
+]`)
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("run() code = %d, want %d", code, exitError)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "agents.json card[1] missing url") {
+		t.Fatalf("stderr missing later registry card error:\n%s", stderr.String())
+	}
+}
+
 func TestRunAgentVerifyReportsGoTestFailure(t *testing.T) {
 	dir := t.TempDir()
 	writeVerifyAgentModule(t, dir, `package main
