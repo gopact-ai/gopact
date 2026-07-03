@@ -300,5 +300,19 @@ func expectedCompletedExternalWorkflowCapabilities() []struct {
 				"schedule-evidence-recording-and-validation",
 			},
 		},
+		{
+			id:           "devagent-selfbootstrap-workflow",
+			packageName:  "devagent/selfbootstrap",
+			targetRepo:   "gopact-ext",
+			offlineProof: "gopact-ext: (cd devagent/selfbootstrap && go test -count=1 ./...) && ./scripts/self-bootstrap-mock-suite.sh; gopact-examples: go test -count=1 ./quickstart/self-bootstrap && ./scripts/self-bootstrap-mock-suite.sh",
+			conformanceCases: []string{
+				"selfbootstrap-workflow-completes-with-release-ready-evidence",
+				"selfbootstrap-review-rejection-fails-with-review-evidence",
+				"selfbootstrap-test-failure-records-verification-attribution",
+				"selfbootstrap-stage-errors-produce-failed-run-export",
+				"selfbootstrap-write-evidence-failure-records-failed-check",
+				"selfbootstrap-quickstart-release-ready-evidence",
+			},
+		},
 	}
 }

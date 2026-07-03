@@ -41,6 +41,12 @@ This implies three product constraints:
 | P5 scaffold and examples | Environment-driven examples, dotenv support, agent cluster scaffold, generated agent run path, and mock provider path | Example smoke tests and scaffold tests |
 | P6 self-bootstrap gate | Dev Agent can analyze, plan, apply, test, review, and assemble release evidence for gopact repositories | Release bundle validation and self-bootstrap release gate |
 
+## Current Delivered Slice
+
+`gopact-ext/devagent/selfbootstrap` provides the first provider-neutral Dev Agent self-bootstrap workflow slice. It coordinates host-injected analyze, plan, write, test, and review stages, records observed diff, file snapshot, command, CI gate, review, run export, failure attribution, and verification report evidence, and is tracked in [workflow-orchestration-matrix.json](workflow-orchestration-matrix.json).
+
+This slice intentionally does not call models, execute commands, apply patches, or read workspaces by itself. Those capabilities remain explicit host responsibilities until policy, sandbox, checkpoint, and release-gate automation are promoted into the runtime contract.
+
 ## Testing Standard
 
 Coverage is a baseline, not a completion criterion. Every expected feature point must have tests that pin behavior, failure modes, and public API ergonomics.
