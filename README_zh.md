@@ -43,6 +43,8 @@ go run ./cmd/gopact agent verify /tmp/support-agent
 go run ./cmd/gopact agent run /tmp/support-agent
 ```
 
+需要让生成的 agent 自动注册到可写 A2A registry 时，设置 `GOPACT_A2A_REGISTRAR_URL`；运行时会注册 agent card 并维持可续租 lease。
+
 生成一个本地 A2A agent cluster scaffold：
 
 ```bash
@@ -50,6 +52,8 @@ go run ./cmd/gopact agent init-cluster support-cluster -module example.com/suppo
 (cd /tmp/support-cluster && go test ./...)
 go run ./cmd/gopact agent verify /tmp/support-cluster
 ```
+
+生成的 cluster 使用 `GOPACT_A2A_REGISTRY_URL` 做 mesh bootstrap，使用 `GOPACT_A2A_REGISTRAR_URL` 做可选外部注册。
 
 从已记录的 run export 和已观察 verification report 构建 self-bootstrap release evidence bundle：
 

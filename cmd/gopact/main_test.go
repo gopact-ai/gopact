@@ -41,10 +41,15 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "main.go"),
 		`agentName = "support-agent"`,
+		`agentRegistrarURLEnv`,
+		`"GOPACT_A2A_REGISTRAR_URL"`,
 		"signal.NotifyContext",
 		"server.Shutdown",
 		"a2a.NewHTTPHandler(agent)",
 		"a2a.NewHTTPRegistryHandler",
+		"maintainScaffoldRegistryLease",
+		"RegisterCardWithLease",
+		"HeartbeatCard",
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
@@ -56,6 +61,7 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 		"TestScaffoldAgentServesHealthEndpoints",
 		"TestScaffoldServerStopsOnContextCancel",
 		"TestScaffoldAgentRegistryMeshStreamsAndCancels",
+		"TestScaffoldAgentRegistersWithExternalRegistryLease",
 		"a2a.NewHTTPAgent",
 		"a2a.NewHTTPRegistry",
 	)
@@ -64,11 +70,13 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 		"gopact agent run .",
 		"gopact agent verify .",
 		"GOPACT_AGENT_ADDR",
+		"GOPACT_A2A_REGISTRAR_URL",
 		"loads `.env`",
 	)
 	assertFileContains(t, filepath.Join(out, ".env.example"),
 		"GOPACT_AGENT_ADDR=:8080",
 		"GOPACT_AGENT_URL=http://localhost:8080",
+		"GOPACT_A2A_REGISTRAR_URL=",
 	)
 
 	registry := readFile(t, filepath.Join(out, "agents.json"))
@@ -159,8 +167,14 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 		"a2a.NewHTTPRegistryHandler",
 		"a2a.NewHTTPRegistry",
 		"a2a.NewMesh",
-		`clusterRegistryURLEnv = "GOPACT_A2A_REGISTRY_URL"`,
+		`clusterRegistryURLEnv`,
+		`"GOPACT_A2A_REGISTRY_URL"`,
+		`clusterRegistrarURLEnv`,
+		`"GOPACT_A2A_REGISTRAR_URL"`,
 		"bootstrapClusterMeshFromEnv",
+		"maintainClusterRegistryLease",
+		"RegisterCardWithLease",
+		"HeartbeatCard",
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
@@ -171,6 +185,7 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 		"a2aconformance.RequireDiscovererConformance",
 		"TestClusterRegistryBootstrapsMesh",
 		"TestClusterBootstrapsMeshFromEnvRegistryURL",
+		"TestClusterRegistersAgentsWithExternalRegistryLease",
 		"TestClusterRoutesStreamingTasks",
 		"TestClusterServerStopsOnContextCancel",
 	)
@@ -181,11 +196,13 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 		"GOPACT_CLUSTER_ADDR",
 		"GOPACT_CLUSTER_URL",
 		"GOPACT_A2A_REGISTRY_URL",
+		"GOPACT_A2A_REGISTRAR_URL",
 		"mesh bootstrap helper",
 	)
 	assertFileContains(t, filepath.Join(out, ".env.example"),
 		"GOPACT_CLUSTER_ADDR=:8080",
 		"GOPACT_CLUSTER_URL=http://localhost:8080",
+		"GOPACT_A2A_REGISTRAR_URL=",
 	)
 
 	registry := readFile(t, filepath.Join(out, "agents.json"))
