@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "scope": "core-workflow-orchestration",
+  "proof_command": "go test -count=1 ./graph ./gopacttest/graphconformance",
+  "capabilities": [
+    {
+      "id": "branch-routing",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "branch-routes-selected-target",
+        "branch-routes-multiple-targets",
+        "branch-can-end-with-no-targets",
+        "branch-rejects-missing-target",
+        "branch-resume-uses-checkpoint-queue"
+      ],
+      "boundary": "Dynamic branch functions can choose one, many, or no successor nodes; missing targets fail the run; checkpoint resume preserves the already-computed branch queue."
+    },
+    {
+      "id": "dag-fan-in",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "dag-fan-in-runs-join-after-parents",
+        "dag-fan-in-stops-when-parent-fails",
+        "dag-fan-in-preserves-edge-order"
+      ],
+      "boundary": "Join nodes run only after all predecessor nodes complete; failed parents prevent the join; edge insertion order remains stable for deterministic replay."
+    },
+    {
+      "id": "dynamic-fan-out",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "dynamic-fan-out-resumes-incomplete-targets",
+        "dynamic-fan-out-runs-all-targets",
+        "dynamic-fan-out-empty-completes",
+        "dynamic-fan-out-stops-on-target-failure"
+      ],
+      "boundary": "A branch may fan out to multiple targets; completed targets are not rerun after checkpoint resume; empty fan-out completes; target failure stops sibling successors."
+    },
+    {
+      "id": "loop-control",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "loop-branch-exits",
+        "loop-step-limit-fails"
+      ],
+      "boundary": "Looping branches can exit naturally, and per-run max step limits prevent unbounded execution."
+    },
+    {
+      "id": "step-export-import",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "step-export-resumes-completed-boundary"
+      ],
+      "boundary": "Completed step exports can be imported into another run, emit import/resume events, and continue from the exported queue."
+    },
+    {
+      "id": "interrupt-resume",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "interrupted-step-export-resumes-with-request"
+      ],
+      "boundary": "Interrupted step exports accept explicit resume requests, emit resume events, and continue without rerunning the interrupted node."
+    },
+    {
+      "id": "checkpoint-resume",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "branch-resume-uses-checkpoint-queue",
+        "dynamic-fan-out-resumes-incomplete-targets"
+      ],
+      "boundary": "Graph checkpoints persist state, queue, completed-node metadata, phase, pending interrupt, effects, runtime IDs, and config version for stable resume."
+    },
+    {
+      "id": "runnable-subgraph",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "runnable-node-runs-subgraph",
+        "runnable-node-streams-nested-events",
+        "runnable-node-inherits-runtime-ids",
+        "runnable-node-checkpoint-inheritance-isolation"
+      ],
+      "boundary": "A compiled graph can be mounted as a same-state runnable node; nested events inherit runtime IDs and carry parent node/step metadata; child checkpoints stay scoped."
+    },
+    {
+      "id": "node-emitted-events",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "node-emits-nested-events"
+      ],
+      "boundary": "Node code can emit child events into the graph event stream with parent node/step metadata for delegated agent or tool work."
+    },
+    {
+      "id": "failure-and-cancel-propagation",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "failed-node-stops-successors",
+        "canceled-node-stops-successors"
+      ],
+      "boundary": "Failed or canceled nodes stop successor execution and produce terminal failed or canceled run events with step snapshots."
+    },
+    {
+      "id": "parallel-fanout-executor",
+      "status": "planned",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "",
+      "conformance_cases": [],
+      "gap": "Dynamic fan-out is deterministic and resumable but currently executes selected targets sequentially; there is no first-class concurrent executor with ordering, cancellation, and evidence semantics."
+    },
+    {
+      "id": "human-review-node-template",
+      "status": "planned",
+      "package": "graph",
+      "target_repo": "gopact-ext",
+      "offline_proof": "",
+      "conformance_cases": [],
+      "gap": "Core has interrupt/resume contracts, but reusable human-review and approval node templates belong in gopact-ext and need template conformance."
+    },
+    {
+      "id": "graph-state-schema-guards",
+      "status": "planned",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "",
+      "conformance_cases": [],
+      "gap": "Resume payload schema validation exists, but graph state and per-node input/output schema guards are not yet first-class orchestration contracts."
+    },
+    {
+      "id": "durable-background-scheduler",
+      "status": "planned",
+      "package": "graph",
+      "target_repo": "gopact-ext",
+      "offline_proof": "",
+      "conformance_cases": [],
+      "gap": "Core can resume from checkpoints, but long-running background scheduling, queue leases, and worker adapters are not yet packaged as production extensions."
+    },
+    {
+      "id": "workflow-visualization-export",
+      "status": "planned",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "",
+      "conformance_cases": [],
+      "gap": "Compiled graphs do not yet expose a stable inspectable topology export for diagrams, audits, or UI visualization."
+    }
+  ]
+}
