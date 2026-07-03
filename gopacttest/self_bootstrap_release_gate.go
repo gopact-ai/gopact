@@ -53,6 +53,10 @@ const (
 	SelfBootstrapCommandExamplesMockSuite = "(cd gopact-examples && ./scripts/self-bootstrap-mock-suite.sh)"
 	// SelfBootstrapCheckExamplesMockSuiteCommand is the standard gopact-examples mock self-bootstrap suite check.
 	SelfBootstrapCheckExamplesMockSuiteCommand = "command:" + SelfBootstrapCommandExamplesMockSuite
+	// SelfBootstrapCommandAgnesExtIntegrationSuite is the standard gopact-ext local Agnes integration suite command.
+	SelfBootstrapCommandAgnesExtIntegrationSuite = "(cd gopact-ext && ./scripts/local-agnes-integration.sh)"
+	// SelfBootstrapCheckAgnesExtIntegrationSuiteCommand is the standard gopact-ext local Agnes integration suite check.
+	SelfBootstrapCheckAgnesExtIntegrationSuiteCommand = "command:" + SelfBootstrapCommandAgnesExtIntegrationSuite
 	// SelfBootstrapCommandAgnesProviderIntegration is the standard local Agnes provider integration command.
 	SelfBootstrapCommandAgnesProviderIntegration = "(cd gopact-ext/models/agnes && go test -tags=integration -count=1 ./...)"
 	// SelfBootstrapCheckAgnesProviderIntegrationCommand is the standard local Agnes provider integration check.
@@ -65,6 +69,10 @@ const (
 	SelfBootstrapCommandAgnesExamplesIntegration = "(cd gopact-examples && go test -tags=integration -count=1 ./quickstart/agnes-chat)"
 	// SelfBootstrapCheckAgnesExamplesIntegrationCommand is the standard local Agnes examples integration check.
 	SelfBootstrapCheckAgnesExamplesIntegrationCommand = "command:" + SelfBootstrapCommandAgnesExamplesIntegration
+	// SelfBootstrapCommandAgnesExamplesIntegrationSuite is the standard gopact-examples local Agnes integration suite command.
+	SelfBootstrapCommandAgnesExamplesIntegrationSuite = "(cd gopact-examples && ./scripts/local-agnes-integration.sh)"
+	// SelfBootstrapCheckAgnesExamplesIntegrationSuiteCommand is the standard gopact-examples local Agnes integration suite check.
+	SelfBootstrapCheckAgnesExamplesIntegrationSuiteCommand = "command:" + SelfBootstrapCommandAgnesExamplesIntegrationSuite
 	// SelfBootstrapCheckDeprecationPolicy is the standard deprecation policy snapshot check.
 	SelfBootstrapCheckDeprecationPolicy = "file-snapshot:doc/design/deprecation-policy.md"
 	// SelfBootstrapCheckAPIErgonomics is the standard API ergonomics snapshot check.
@@ -273,9 +281,11 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 		{
 			Name: "self-bootstrap-local-agnes-integration",
 			RequiredCheckIDs: []string{
+				SelfBootstrapCheckAgnesExtIntegrationSuiteCommand,
 				SelfBootstrapCheckAgnesProviderIntegrationCommand,
 				SelfBootstrapCheckAgnesAgentTemplatesIntegrationCommand,
 				SelfBootstrapCheckAgnesExamplesIntegrationCommand,
+				SelfBootstrapCheckAgnesExamplesIntegrationSuiteCommand,
 			},
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCommand},
 		},
@@ -369,9 +379,11 @@ func selfBootstrapReleaseGateChecks(
 	checks = appendSelfBootstrapCommandChecks(checks, selfBootstrapFeatureCoverageCommands())
 	checks = append(checks, []gopact.VerificationCheck{
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandExamplesMockSuite),
+		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExtIntegrationSuite),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesProviderIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesAgentTemplatesIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExamplesIntegration),
+		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExamplesIntegrationSuite),
 		{
 			ID:     SelfBootstrapCheckCheckpoint,
 			Status: gopact.VerificationStatusPassed,
