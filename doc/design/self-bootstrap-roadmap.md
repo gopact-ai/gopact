@@ -57,7 +57,7 @@ The first self-bootstrap CLI surface is intentionally small:
 - `gopact agent init-cluster <name> [-module <module>] [-out <dir>]` creates a local planner/worker/reviewer A2A HTTP cluster with tests for HTTP registry bootstrap, mesh routing, streaming, cancel, health/readiness, graceful shutdown, and a bare-array `agents.json`. When `-module` is omitted, the scaffold uses `example.com/<name>`.
 - `gopact agent verify [dir]` validates the required scaffold files, checks the A2A registry shape, and runs `go test ./...` without loading `.env` or provider credentials.
 - `gopact agent run [dir]` executes the generated module and loads local `.env` only for runtime address or public URL overrides.
-- `gopact release-bundle -run-export <file>` builds a self-bootstrap release evidence bundle from an already recorded `RunExport`, embeds the generated verification report, checks the self-bootstrap release gate, and writes stable JSON to stdout.
+- `gopact release-bundle -run-export <file> -report <file>` builds a self-bootstrap release evidence bundle from an already recorded `RunExport` and observed `VerificationReport`, embeds the provided report, checks the self-bootstrap release gate, and writes stable JSON to stdout.
 
 This keeps the zero-credential bootstrap path in core while leaving provider-backed behavior, production agent templates, and Dev Agent implementations in `gopact-ext` and runnable workflows in `gopact-examples`.
 

@@ -462,17 +462,17 @@ func TestRunReleaseBundleBuildsSelfBootstrapBundle(t *testing.T) {
 		IDs:     gopact.RuntimeIDs{RunID: "run-cli-release-bundle", ThreadID: "thread-cli-release-bundle"},
 		Outcome: gopact.RunCompleted,
 	}
-	body, err := json.Marshal(input)
+	report, err := gopacttest.BuildSelfBootstrapReleaseGateReport(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	inputPath := filepath.Join(dir, "run-export.json")
-	if err := os.WriteFile(inputPath, body, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeJSONFile(t, inputPath, input)
+	reportPath := filepath.Join(dir, "verification-report.json")
+	writeJSONFile(t, reportPath, report)
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"release-bundle", "-run-export", inputPath}, &stdout, &stderr)
+	code := run(context.Background(), []string{"release-bundle", "-run-export", inputPath, "-report", reportPath}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
 	}
@@ -494,6 +494,59 @@ func TestRunReleaseBundleBuildsSelfBootstrapBundle(t *testing.T) {
 		t.Fatalf("embedded reports = %d, want 1", len(bundle.RunExport.VerificationReports))
 	}
 	gopacttest.RequireSelfBootstrapReleaseGateForExport(t, bundle.RunExport, bundle.Report)
+}
+
+func TestRunReleaseBundleRequiresObservedReport(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "run-export.json")
+	writeJSONFile(t, inputPath, gopact.RunExport{
+		Version: gopact.RunExportVersion,
+		IDs:     gopact.RuntimeIDs{RunID: "run-cli-release-bundle", ThreadID: "thread-cli-release-bundle"},
+		Outcome: gopact.RunCompleted,
+	})
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"release-bundle", "-run-export", inputPath}, &stdout, &stderr)
+	if code != exitUsage {
+		t.Fatalf("run() code = %d, want %d", code, exitUsage)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "-report is required") {
+		t.Fatalf("stderr missing -report requirement:\n%s", stderr.String())
+	}
+}
+
+func TestRunReleaseBundleRejectsMismatchedObservedReport(t *testing.T) {
+	dir := t.TempDir()
+	input := gopact.RunExport{
+		Version: gopact.RunExportVersion,
+		IDs:     gopact.RuntimeIDs{RunID: "run-cli-release-bundle", ThreadID: "thread-cli-release-bundle"},
+		Outcome: gopact.RunCompleted,
+	}
+	reportExport := input
+	reportExport.IDs.RunID = "other-run"
+	report, err := gopacttest.BuildSelfBootstrapReleaseGateReport(reportExport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputPath := filepath.Join(dir, "run-export.json")
+	writeJSONFile(t, inputPath, input)
+	reportPath := filepath.Join(dir, "verification-report.json")
+	writeJSONFile(t, reportPath, report)
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"release-bundle", "-run-export", inputPath, "-report", reportPath}, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("run() code = %d, want %d", code, exitError)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "mixed run ids") {
+		t.Fatalf("stderr missing run id mismatch:\n%s", stderr.String())
+	}
 }
 
 func TestDefaultSDKVersionFallbackUsesCurrentReleasedTag(t *testing.T) {
@@ -573,6 +626,17 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(body)
+}
+
+func writeJSONFile(t *testing.T, path string, value any) {
+	t.Helper()
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func repoRoot(t *testing.T) string {

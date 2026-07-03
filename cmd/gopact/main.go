@@ -87,10 +87,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 func runReleaseBundle(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var runExportPath string
+	var reportPath string
 
 	fs := flag.NewFlagSet("gopact release-bundle", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&runExportPath, "run-export", "", "path to a gopact RunExport JSON file")
+	fs.StringVar(&reportPath, "report", "", "path to an observed gopact VerificationReport JSON file")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -103,44 +105,59 @@ func runReleaseBundle(ctx context.Context, args []string, stdout, stderr io.Writ
 		_, _ = fmt.Fprintln(stderr, "-run-export is required")
 		return exitUsage
 	}
+	reportPath = strings.TrimSpace(reportPath)
+	if reportPath == "" {
+		_, _ = fmt.Fprintln(stderr, "-report is required")
+		return exitUsage
+	}
 
-	bundle, err := buildSelfBootstrapReleaseBundle(ctx, runExportPath)
+	bundle, err := buildSelfBootstrapReleaseBundle(ctx, runExportPath, reportPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "release-bundle: %v\n", err)
 		return exitError
 	}
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(releaseBundleOutput{RunExport: bundle.RunExport, Report: bundle.Report}); err != nil {
+	if err := encoder.Encode(bundle); err != nil {
 		_, _ = fmt.Fprintf(stderr, "release-bundle: write JSON: %v\n", err)
 		return exitError
 	}
 	return exitOK
 }
 
-func buildSelfBootstrapReleaseBundle(ctx context.Context, runExportPath string) (gopacttest.SelfBootstrapReleaseGateBundle, error) {
+func buildSelfBootstrapReleaseBundle(ctx context.Context, runExportPath, reportPath string) (releaseBundleOutput, error) {
 	if err := ctx.Err(); err != nil {
-		return gopacttest.SelfBootstrapReleaseGateBundle{}, err
+		return releaseBundleOutput{}, err
 	}
 
 	body, err := os.ReadFile(runExportPath)
 	if err != nil {
-		return gopacttest.SelfBootstrapReleaseGateBundle{}, fmt.Errorf("read run export: %w", err)
+		return releaseBundleOutput{}, fmt.Errorf("read run export: %w", err)
 	}
 	var export gopact.RunExport
 	if err := json.Unmarshal(body, &export); err != nil {
-		return gopacttest.SelfBootstrapReleaseGateBundle{}, fmt.Errorf("parse run export: %w", err)
+		return releaseBundleOutput{}, fmt.Errorf("parse run export: %w", err)
 	}
-	bundle, err := gopacttest.BuildSelfBootstrapReleaseGateBundle(export)
+
+	body, err = os.ReadFile(reportPath)
 	if err != nil {
-		return gopacttest.SelfBootstrapReleaseGateBundle{}, err
+		return releaseBundleOutput{}, fmt.Errorf("read verification report: %w", err)
 	}
-	for _, result := range gopacttest.CheckSelfBootstrapReleaseGate(ctx, bundle.RunExport, bundle.Report) {
+	var report gopact.VerificationReport
+	if err := json.Unmarshal(body, &report); err != nil {
+		return releaseBundleOutput{}, fmt.Errorf("parse verification report: %w", err)
+	}
+
+	bundled, err := gopact.EmbedVerificationReport(export, report)
+	if err != nil {
+		return releaseBundleOutput{}, err
+	}
+	for _, result := range gopacttest.CheckSelfBootstrapReleaseGate(ctx, bundled, report) {
 		if !result.Passed {
-			return gopacttest.SelfBootstrapReleaseGateBundle{}, fmt.Errorf("release gate case %q failed: %w", result.Case, result.Err)
+			return releaseBundleOutput{}, fmt.Errorf("release gate case %q failed: %w", result.Case, result.Err)
 		}
 	}
-	return bundle, nil
+	return releaseBundleOutput{RunExport: bundled, Report: report}, nil
 }
 
 func runAgent(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -727,14 +744,14 @@ func printUsage(w io.Writer) {
   gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
   gopact agent run [dir]
   gopact agent verify [dir]
-  gopact release-bundle -run-export <file>
+  gopact release-bundle -run-export <file> -report <file>
 
 Commands:
   agent init         Create a runnable A2A HTTP agent scaffold.
   agent init-cluster Create a runnable local A2A agent cluster scaffold.
   agent run          Run an agent module with go run.
   agent verify       Verify an agent scaffold with local mock-only checks.
-  release-bundle     Build a self-bootstrap release evidence bundle.
+  release-bundle     Bundle observed self-bootstrap release evidence.
 `)
 }
 
