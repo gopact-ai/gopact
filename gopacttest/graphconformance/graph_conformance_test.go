@@ -27,6 +27,8 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"dynamic-fan-out-stops-on-target-failure",
 		"loop-branch-exits",
 		"loop-step-limit-fails",
+		"step-export-resumes-completed-boundary",
+		"interrupted-step-export-resumes-with-request",
 		"runnable-node-runs-subgraph",
 		"runnable-node-streams-nested-events",
 		"node-emits-nested-events",
