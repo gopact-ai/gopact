@@ -45,7 +45,9 @@ This implies three product constraints:
 
 `gopact-ext/devagent/selfbootstrap` provides the first provider-neutral Dev Agent self-bootstrap workflow slice. It coordinates host-injected analyze, plan, write, test, and review stages, records observed diff, file snapshot, command, CI gate, review, run export, failure attribution, and verification report evidence, and is tracked in [workflow-orchestration-matrix.json](workflow-orchestration-matrix.json).
 
-This slice intentionally does not call models, execute commands, apply patches, or read workspaces by itself. Those capabilities remain explicit host responsibilities until policy, sandbox, checkpoint, and release-gate automation are promoted into the runtime contract.
+`gopact-ext/devagent/workspace` adds the first local repository adapter for that workflow. It captures repo-relative git diffs and file snapshots, runs host-controlled commands as bounded command and CI gate evidence, records failed commands as verification evidence, rejects outside-root paths and symlink escapes, and is exercised by the `gopact-examples` self-bootstrap quickstart in a temporary git workspace.
+
+The workflow slice intentionally does not call models or apply patches by itself. Workspace reads and command execution are available only through explicit host-created adapters so policy, sandbox, checkpoint, and release-gate automation remain visible runtime boundaries.
 
 ## Testing Standard
 
