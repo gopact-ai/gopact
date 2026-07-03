@@ -173,12 +173,23 @@
     },
     {
       "id": "durable-background-scheduler",
-      "status": "planned",
-      "package": "graph",
+      "status": "completed",
+      "package": "agents/scheduler",
       "target_repo": "gopact-ext",
-      "offline_proof": "",
-      "conformance_cases": [],
-      "gap": "Core can resume from checkpoints, but long-running background scheduling, queue leases, and worker adapters are not yet packaged as production extensions."
+      "offline_proof": "gopact-ext: (cd agents/scheduler && go test -count=1 ./...) && ./scripts/self-bootstrap-mock-suite.sh",
+      "conformance_cases": [
+        "run-once-completes-successful-job",
+        "retry-schedules-next-attempt-with-backoff",
+        "dead-letter-at-max-attempts",
+        "custom-decider-stop-and-retry-normalization",
+        "lease-conflict-prevents-dequeue",
+        "lease-renewal-and-loss-boundaries",
+        "bounded-drain-counts-transitions",
+        "retry-policy-capped-backoff",
+        "memory-queue-not-before-and-defensive-snapshot",
+        "schedule-evidence-recording-and-validation"
+      ],
+      "boundary": "gopact-ext provides a provider-neutral leased background worker primitive that runs one job or bounded drains, applies retry/stop/dead-letter queue transitions, renews worker ownership leases, refuses commits after lease loss, exposes an in-process test queue, and records schedule verification evidence."
     },
     {
       "id": "workflow-visualization-export",
