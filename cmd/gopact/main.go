@@ -1074,6 +1074,7 @@ const (
 const (
 	clusterAddrEnv        = "GOPACT_CLUSTER_ADDR"
 	clusterURLEnv         = "GOPACT_CLUSTER_URL"
+	clusterRegistryURLEnv = "GOPACT_A2A_REGISTRY_URL"
 	defaultClusterBaseURL = "http://localhost:8080"
 )
 
@@ -1109,11 +1110,22 @@ func (agent clusterAgent) Card() a2a.AgentCard {
 }
 
 func clusterAgentURL(name string) string {
+	return clusterBaseURL() + clusterAgentPath(name)
+}
+
+func clusterBaseURL() string {
 	base := os.Getenv(clusterURLEnv)
 	if base == "" {
-		base = defaultClusterBaseURL
+		return defaultClusterBaseURL
 	}
-	return strings.TrimRight(base, "/") + clusterAgentPath(name)
+	return strings.TrimRight(base, "/")
+}
+
+func clusterRegistryURL() string {
+	if url := os.Getenv(clusterRegistryURLEnv); url != "" {
+		return url
+	}
+	return clusterBaseURL() + "/agents.json"
 }
 
 func clusterAgentPath(name string) string {
@@ -1224,6 +1236,10 @@ func bootstrapClusterMesh(ctx context.Context, registryURL string, client *http.
 	return mesh, nil
 }
 
+func bootstrapClusterMeshFromEnv(ctx context.Context, client *http.Client) (*a2a.Mesh, error) {
+	return bootstrapClusterMesh(ctx, clusterRegistryURL(), client)
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -1319,6 +1335,45 @@ func TestClusterRegistryBootstrapsMesh(t *testing.T) {
 	}
 	if result.Output != plannerAgentName+" handled: ship a support agent" {
 		t.Fatalf("Route() = %+v, want planner response", result)
+	}
+}
+
+func TestClusterRegistryURLDefaultsToClusterURL(t *testing.T) {
+	t.Setenv(clusterURLEnv, "http://cluster.local/root/")
+
+	if got, want := clusterRegistryURL(), "http://cluster.local/root/agents.json"; got != want {
+		t.Fatalf("clusterRegistryURL() = %q, want %q", got, want)
+	}
+}
+
+func TestClusterRegistryURLUsesRegistryOverride(t *testing.T) {
+	t.Setenv(clusterRegistryURLEnv, "http://registry.local/cards.json")
+
+	if got, want := clusterRegistryURL(), "http://registry.local/cards.json"; got != want {
+		t.Fatalf("clusterRegistryURL() = %q, want %q", got, want)
+	}
+}
+
+func TestClusterBootstrapsMeshFromEnvRegistryURL(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(newClusterHTTPHandler())
+	defer server.Close()
+	t.Setenv(clusterURLEnv, server.URL)
+	t.Setenv(clusterRegistryURLEnv, server.URL+"/agents.json")
+
+	mesh, err := bootstrapClusterMeshFromEnv(ctx, server.Client())
+	if err != nil {
+		t.Fatalf("bootstrapClusterMeshFromEnv() error = %v", err)
+	}
+	result, err := mesh.Route(ctx, a2a.RouteQuery{
+		Require: []string{"execution"},
+		Task:    a2a.Task{ID: "task-execute", Input: "use env registry"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != workerAgentName+" handled: use env registry" {
+		t.Fatalf("Route() = %+v, want worker response", result)
 	}
 }
 
@@ -1454,5 +1509,5 @@ gopact agent verify .
 GOPACT_CLUSTER_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
-The cluster runs three A2A HTTP agents under ` + "`/agents/planner-agent`" + `, ` + "`/agents/worker-agent`" + `, and ` + "`/agents/reviewer-agent`" + `. The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, or ` + "`GOPACT_A2A_REGISTRY_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
+The cluster runs three A2A HTTP agents under ` + "`/agents/planner-agent`" + `, ` + "`/agents/worker-agent`" + `, and ` + "`/agents/reviewer-agent`" + `. The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. Generated mesh bootstrap helper code reads ` + "`GOPACT_A2A_REGISTRY_URL`" + `, defaulting to ` + "`GOPACT_CLUSTER_URL`" + ` plus ` + "`/agents.json`" + `. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, or ` + "`GOPACT_A2A_REGISTRY_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
 `
