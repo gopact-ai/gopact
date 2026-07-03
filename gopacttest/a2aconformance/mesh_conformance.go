@@ -750,7 +750,9 @@ func checkMeshFacadeStreamsByName(ctx context.Context, agent a2a.Agent, query a2
 			return failedAgentMeshConformance("mesh-streams-by-name", fmt.Errorf("stream metadata agent_name = %v, want %q", event.Metadata["agent_name"], expected.Name))
 		}
 		sawStream = true
-		break
+		if event.Status == a2a.TaskStatusCompleted || event.Result != nil {
+			break
+		}
 	}
 	if !sawStream {
 		return failedAgentMeshConformance("mesh-streams-by-name", errors.New("stream ended without events"))
@@ -1199,12 +1201,14 @@ func checkMeshFacadeRouteStreamPublishesEvidence(ctx context.Context, agent a2a.
 		return failedAgentMeshConformance("mesh-route-stream-publishes-evidence", err)
 	}
 	var sawStream bool
-	for _, err := range mesh.RouteStream(ctx, route) {
+	for event, err := range mesh.RouteStream(ctx, route) {
 		if err != nil {
 			return failedAgentMeshConformance("mesh-route-stream-publishes-evidence", err)
 		}
 		sawStream = true
-		break
+		if event.Status == a2a.TaskStatusCompleted || event.Result != nil {
+			break
+		}
 	}
 	if !sawStream {
 		return failedAgentMeshConformance("mesh-route-stream-publishes-evidence", errors.New("route stream ended without events"))

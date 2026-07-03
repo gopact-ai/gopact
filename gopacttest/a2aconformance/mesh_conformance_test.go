@@ -329,6 +329,27 @@ func TestCheckAgentMeshConformanceUsesMeshNamedStreamFacade(t *testing.T) {
 	requireConformanceCasePassed(t, results, "mesh-streams-by-name")
 }
 
+func TestCheckAgentMeshConformanceAcceptsProgressBeforeCompletedStream(t *testing.T) {
+	agent := meshAgent{
+		card: a2a.AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review"},
+			Streaming:    true,
+		},
+		streamProgressFirst: true,
+	}
+
+	results := CheckAgentMeshConformance(context.Background(), AgentMeshConformanceHarness{
+		Agent:            agent,
+		ExpectedCard:     agent.card,
+		Task:             a2a.Task{ID: "task-1", Input: "review this diff"},
+		RequireStreaming: true,
+	})
+
+	requireConformanceCasePassed(t, results, "mesh-streams-by-name")
+	requireConformanceCasePassed(t, results, "mesh-route-stream-publishes-evidence")
+}
+
 func TestCheckAgentMeshConformanceRequiresMeshEvidence(t *testing.T) {
 	agent := meshAgent{
 		card: a2a.AgentCard{
@@ -629,8 +650,9 @@ func requireConformanceCasePassed(t *testing.T, results []AgentMeshConformanceRe
 }
 
 type meshAgent struct {
-	card         a2a.AgentCard
-	requireInput bool
+	card                a2a.AgentCard
+	requireInput        bool
+	streamProgressFirst bool
 }
 
 func (a meshAgent) Card() a2a.AgentCard {
@@ -661,6 +683,9 @@ func (a meshAgent) Stream(ctx context.Context, task a2a.Task) iter.Seq2[a2a.Task
 	return func(yield func(a2a.TaskEvent, error) bool) {
 		if err := ctx.Err(); err != nil {
 			yield(a2a.TaskEvent{TaskID: task.ID, Status: a2a.TaskStatusFailed, Err: err}, err)
+			return
+		}
+		if a.streamProgressFirst && !yield(a2a.TaskEvent{TaskID: task.ID, Status: a2a.TaskStatusRunning, Message: "review started"}, nil) {
 			return
 		}
 		yield(a2a.TaskEvent{TaskID: task.ID, Status: a2a.TaskStatusCompleted, Result: &a2a.Result{TaskID: task.ID, Output: "reviewed"}}, nil)
