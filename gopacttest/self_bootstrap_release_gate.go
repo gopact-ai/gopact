@@ -53,6 +53,10 @@ const (
 	SelfBootstrapCommandExamplesMockSuite = "(cd gopact-examples && ./scripts/self-bootstrap-mock-suite.sh)"
 	// SelfBootstrapCheckExamplesMockSuiteCommand is the standard gopact-examples mock self-bootstrap suite check.
 	SelfBootstrapCheckExamplesMockSuiteCommand = "command:" + SelfBootstrapCommandExamplesMockSuite
+	// SelfBootstrapCommandExtMockSuite is the standard gopact-ext mock self-bootstrap suite command.
+	SelfBootstrapCommandExtMockSuite = "(cd gopact-ext && ./scripts/self-bootstrap-mock-suite.sh)"
+	// SelfBootstrapCheckExtMockSuiteCommand is the standard gopact-ext mock self-bootstrap suite check.
+	SelfBootstrapCheckExtMockSuiteCommand = "command:" + SelfBootstrapCommandExtMockSuite
 	// SelfBootstrapCommandAgnesExtIntegrationSuite is the standard gopact-ext local Agnes integration suite command.
 	SelfBootstrapCommandAgnesExtIntegrationSuite = "(cd gopact-ext && ./scripts/local-agnes-integration.sh)"
 	// SelfBootstrapCheckAgnesExtIntegrationSuiteCommand is the standard gopact-ext local Agnes integration suite check.
@@ -269,8 +273,12 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 			RequiredCIGates:       []string{SelfBootstrapCIGateSecretScan},
 		},
 		{
-			Name:                  "self-bootstrap-extension-ci",
-			RequiredCheckIDs:      []string{VerificationCheckCIGates, SelfBootstrapCheckExamplesMockSuiteCommand},
+			Name: "self-bootstrap-extension-ci",
+			RequiredCheckIDs: []string{
+				VerificationCheckCIGates,
+				SelfBootstrapCheckExtMockSuiteCommand,
+				SelfBootstrapCheckExamplesMockSuiteCommand,
+			},
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate, VerificationEvidenceTypeCommand},
 			RequiredCIGates: []string{
 				SelfBootstrapCIGateExtMock,
@@ -378,6 +386,7 @@ func selfBootstrapReleaseGateChecks(
 	checks = append(checks, selfBootstrapCoreCICommandChecks()...)
 	checks = appendSelfBootstrapCommandChecks(checks, selfBootstrapFeatureCoverageCommands())
 	checks = append(checks, []gopact.VerificationCheck{
+		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandExtMockSuite),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandExamplesMockSuite),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExtIntegrationSuite),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesProviderIntegration),
