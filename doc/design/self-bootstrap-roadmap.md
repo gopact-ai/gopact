@@ -43,11 +43,11 @@ This implies three product constraints:
 
 ## Current Delivered Slice
 
-`gopact-ext/devagent/selfbootstrap` provides the first provider-neutral Dev Agent self-bootstrap workflow slice. It coordinates host-injected analyze, plan, write, test, and review stages, records observed diff, file snapshot, command, CI gate, review, run export, failure attribution, and verification report evidence, and is tracked in [workflow-orchestration-matrix.json](workflow-orchestration-matrix.json).
+`gopact-ext/devagent/selfbootstrap` provides the first provider-neutral Dev Agent self-bootstrap workflow slice. It coordinates host-injected analyze, plan, patch proposal policy, write, test, and review stages, records observed policy decision, diff, file snapshot, command, CI gate, review, run export, failure attribution, and verification report evidence, and is tracked in [workflow-orchestration-matrix.json](workflow-orchestration-matrix.json).
 
-`gopact-ext/devagent/workspace` adds the first local repository adapter for that workflow. It applies caller-provided unified diffs through an explicit `PatchWriter`, rejects outside-root paths and symlink escapes before apply, captures repo-relative git diffs and file snapshots, runs host-controlled commands as bounded command and CI gate evidence, records failed commands as verification evidence, and is exercised by the `gopact-examples` self-bootstrap quickstart in a temporary git workspace.
+`gopact-ext/devagent/workspace` adds the first local repository adapter for that workflow. It applies policy-approved plan patches through an explicit `PlanPatchWriter` or caller-provided unified diffs through `PatchWriter`, rejects outside-root paths and symlink escapes before apply, captures repo-relative git diffs and file snapshots, runs host-controlled commands as bounded command and CI gate evidence, records failed commands as verification evidence, and is exercised by the `gopact-examples` self-bootstrap quickstart in a temporary git workspace.
 
-The workflow slice intentionally does not call models or decide which patch is acceptable by itself. Patch apply, workspace reads, and command execution are available only through explicit host-created adapters so policy, sandbox, checkpoint, and release-gate automation remain visible runtime boundaries.
+The workflow slice intentionally does not call models or decide which patch is acceptable by itself. Patch authorization, patch apply, workspace reads, and command execution are available only through explicit host-created policy and adapter boundaries so policy, sandbox, checkpoint, and release-gate automation remain visible runtime boundaries.
 
 ## Testing Standard
 

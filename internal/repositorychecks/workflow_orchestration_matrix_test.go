@@ -311,7 +311,9 @@ func expectedCompletedExternalWorkflowCapabilities() []struct {
 				"selfbootstrap-test-failure-records-verification-attribution",
 				"selfbootstrap-stage-errors-produce-failed-run-export",
 				"selfbootstrap-write-evidence-failure-records-failed-check",
-				"selfbootstrap-quickstart-release-ready-evidence",
+				"selfbootstrap-plan-patch-policy-records-policy-decision-evidence",
+				"selfbootstrap-plan-patch-policy-denial-stops-before-write",
+				"selfbootstrap-quickstart-release-ready-evidence-with-policy-decision",
 			},
 		},
 		{
@@ -327,7 +329,9 @@ func expectedCompletedExternalWorkflowCapabilities() []struct {
 				"workspace-tester-records-failed-command-without-runtime-error",
 				"workspace-command-output-is-bounded",
 				"workspace-rejects-outside-root-paths-and-symlink-escapes",
-				"selfbootstrap-quickstart-uses-workspace-diff-file-snapshot-command-and-ci-gate-evidence",
+				"workspace-plan-patch-writer-applies-policy-approved-plan-patch",
+				"workspace-plan-patch-writer-requires-policy-allow-before-apply",
+				"selfbootstrap-quickstart-uses-plan-patch-policy-diff-file-snapshot-command-and-ci-gate-evidence",
 			},
 		},
 	}
