@@ -40,6 +40,8 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkDynamicFanOutStopsOnTargetFailure(ctx),
 		checkLoopBranchExits(ctx),
 		checkLoopStepLimitFails(ctx),
+		checkStepExportResumesCompletedBoundary(ctx),
+		checkInterruptedStepExportResumesWithRequest(ctx),
 		checkRunnableNodeRunsSubgraph(ctx),
 		checkRunnableNodeStreamsNestedEvents(ctx),
 		checkNodeEmitsNestedEvents(ctx),
@@ -465,6 +467,115 @@ func checkLoopStepLimitFails(ctx context.Context) GraphConformanceResult {
 		return failedGraphConformance(name, fmt.Errorf("run error = %v, want max steps error", err))
 	}
 	return requireTrace(name, got, []string{"loop", "loop"})
+}
+
+func checkStepExportResumesCompletedBoundary(ctx context.Context) GraphConformanceResult {
+	const name = "step-export-resumes-completed-boundary"
+	ids := gopact.RuntimeIDs{RunID: "run-step-export", ThreadID: "thread-step-export"}
+	g := graph.New[traceState]()
+	g.AddNode("first", failNode("completed exported step reran"))
+	g.AddNode("next", appendTrace("next"))
+	g.AddEdge(graph.Start, "first")
+	g.AddEdge("first", "next")
+	g.AddEdge("next", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}, graph.WithStepExport(gopact.StepExport{
+		Version: 1,
+		Step: gopact.StepSnapshot{
+			ID:     "run-step-export:1",
+			Step:   1,
+			Node:   "first",
+			Phase:  gopact.StepCompleted,
+			IDs:    ids,
+			Output: traceState{Trace: []string{"first"}},
+			Queue:  []string{"next"},
+		},
+	})))
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventStepImported,
+		gopact.EventNodeResumed,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	}
+	if !reflect.DeepEqual(eventTypes(events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(events), wantTypes))
+	}
+	output, ok := events[3].StepSnapshot.Output.(traceState)
+	if !ok {
+		return failedGraphConformance(name, fmt.Errorf("resumed output type = %T, want traceState", events[3].StepSnapshot.Output))
+	}
+	return requireTrace(name, output, []string{"first", "next"})
+}
+
+func checkInterruptedStepExportResumesWithRequest(ctx context.Context) GraphConformanceResult {
+	const name = "interrupted-step-export-resumes-with-request"
+	ids := gopact.RuntimeIDs{RunID: "run-step-interrupt", ThreadID: "thread-step-interrupt"}
+	g := graph.New[traceState]()
+	g.AddNode("ask", failNode("interrupted exported step reran"))
+	g.AddNode("answer", appendTrace("answer"))
+	g.AddEdge(graph.Start, "ask")
+	g.AddEdge("ask", "answer")
+	g.AddEdge("answer", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{},
+		graph.WithStepExport(gopact.StepExport{
+			Version: 1,
+			Step: gopact.StepSnapshot{
+				ID:     "run-step-interrupt:1",
+				Step:   1,
+				Node:   "ask",
+				Phase:  gopact.StepInterrupted,
+				IDs:    ids,
+				Output: traceState{Trace: []string{"ask"}},
+				Queue:  []string{"answer"},
+				Pending: &gopact.InterruptRecord{
+					ID:     "interrupt-ask",
+					Type:   gopact.InterruptInput,
+					Reason: "need input",
+				},
+			},
+		}),
+		graph.WithResumeRequest(gopact.ResumeRequest{
+			StepID:      "run-step-interrupt:1",
+			InterruptID: "interrupt-ask",
+			Payload:     "continue",
+		}),
+	))
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventStepImported,
+		gopact.EventResumeReceived,
+		gopact.EventNodeResumed,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	}
+	if !reflect.DeepEqual(eventTypes(events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(events), wantTypes))
+	}
+	if events[2].Metadata["interrupt_id"] != "interrupt-ask" ||
+		events[2].Metadata["step_id"] != "run-step-interrupt:1" {
+		return failedGraphConformance(name, fmt.Errorf("resume metadata = %+v, want interrupt and step ids", events[2].Metadata))
+	}
+	output, ok := events[4].StepSnapshot.Output.(traceState)
+	if !ok {
+		return failedGraphConformance(name, fmt.Errorf("resumed output type = %T, want traceState", events[4].StepSnapshot.Output))
+	}
+	return requireTrace(name, output, []string{"ask", "answer"})
 }
 
 func checkRunnableNodeRunsSubgraph(ctx context.Context) GraphConformanceResult {
