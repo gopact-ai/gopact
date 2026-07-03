@@ -49,6 +49,10 @@ const (
 	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./graph ./gopacttest/graphconformance"
 	// SelfBootstrapCheckA2AConformanceCommand is the standard A2A mesh conformance check.
 	SelfBootstrapCheckA2AConformanceCommand = "command:go test -count=1 ./a2a ./gopacttest/a2aconformance"
+	// SelfBootstrapCommandCoreMockSuite is the standard core mock self-bootstrap suite command.
+	SelfBootstrapCommandCoreMockSuite = "./scripts/self-bootstrap-mock-suite.sh"
+	// SelfBootstrapCheckCoreMockSuiteCommand is the standard core mock self-bootstrap suite check.
+	SelfBootstrapCheckCoreMockSuiteCommand = "command:" + SelfBootstrapCommandCoreMockSuite
 	// SelfBootstrapCommandExamplesMockSuite is the standard gopact-examples mock self-bootstrap suite command.
 	SelfBootstrapCommandExamplesMockSuite = "(cd gopact-examples && ./scripts/self-bootstrap-mock-suite.sh)"
 	// SelfBootstrapCheckExamplesMockSuiteCommand is the standard gopact-examples mock self-bootstrap suite check.
@@ -191,7 +195,7 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 		},
 		{
 			Name:                  "self-bootstrap-ci",
-			RequiredCheckIDs:      append([]string{VerificationCheckCIGates}, selfBootstrapCoreCICommandCheckIDs()...),
+			RequiredCheckIDs:      append([]string{VerificationCheckCIGates, SelfBootstrapCheckCoreMockSuiteCommand}, selfBootstrapCoreCICommandCheckIDs()...),
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate, VerificationEvidenceTypeCommand},
 			RequiredCIGates: []string{
 				SelfBootstrapCIGateWhitespace,
@@ -384,6 +388,7 @@ func selfBootstrapReleaseGateChecks(
 		selfBootstrapExtensionEcosystemCIGatesCheck(cfg.extensionEcosystemCIGates),
 	}
 	checks = append(checks, selfBootstrapCoreCICommandChecks()...)
+	checks = append(checks, selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandCoreMockSuite))
 	checks = appendSelfBootstrapCommandChecks(checks, selfBootstrapFeatureCoverageCommands())
 	checks = append(checks, []gopact.VerificationCheck{
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandExtMockSuite),

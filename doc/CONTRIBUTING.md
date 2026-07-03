@@ -42,6 +42,12 @@ govulncheck ./...
 
 If you change graph, checkpoint, provider, tool, MCP, A2A, sandbox, verification, or release-gate behavior, also run the relevant conformance command from [FEATURES.md](FEATURES.md).
 
+For release-gate or self-bootstrap changes, run the mock self-bootstrap suite:
+
+```bash
+./scripts/self-bootstrap-mock-suite.sh
+```
+
 ## Pull Request Checklist
 
 A pull request should:
