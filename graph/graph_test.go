@@ -15,6 +15,13 @@ type traceState struct {
 	Trace []string
 }
 
+func traceNode(label string) NodeFunc[traceState] {
+	return func(_ context.Context, state traceState) (traceState, error) {
+		state.Trace = append(state.Trace, label)
+		return state, nil
+	}
+}
+
 func TestGraphRunExecutesNodesInEdgeOrder(t *testing.T) {
 	ctx := context.Background()
 	g := New[traceState]()
@@ -304,6 +311,117 @@ func TestGraphRunnableNodeInheritsRuntimeIDs(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("RuntimeIDsFromContext() = %+v, want %+v", got, want)
+	}
+}
+
+func TestGraphTopologyExportIncludesNodesEdgesBranchesAndJoins(t *testing.T) {
+	subgraph := New[traceState]()
+	subgraph.AddNode("child", traceNode("child"))
+	subgraph.AddEdge(Start, "child")
+	subgraph.AddEdge("child", End)
+	subrun, err := subgraph.Compile()
+	if err != nil {
+		t.Fatalf("Compile(subgraph) error = %v", err)
+	}
+
+	g := New[traceState]()
+	g.AddNode("plan", traceNode("plan"))
+	g.AddRunnableNode("review", subrun)
+	g.AddNode("work", traceNode("work"))
+	g.AddNode("join", traceNode("join"))
+	g.AddEdge(Start, "plan")
+	g.AddBranch("plan", func(context.Context, traceState) ([]string, error) {
+		return []string{"review", "work"}, nil
+	})
+	g.AddEdge("review", "join")
+	g.AddEdge("work", "join")
+	g.AddEdge("join", End)
+
+	topology := g.Topology()
+
+	expectedNodes := []TopologyNode{
+		{Name: Start, Kind: TopologyNodeBoundary},
+		{Name: "join", Kind: TopologyNodeFunction},
+		{Name: "plan", Kind: TopologyNodeFunction},
+		{Name: "review", Kind: TopologyNodeRunnable},
+		{Name: "work", Kind: TopologyNodeFunction},
+		{Name: End, Kind: TopologyNodeBoundary},
+	}
+	if !reflect.DeepEqual(topology.Nodes, expectedNodes) {
+		t.Fatalf("topology nodes = %#v, want %#v", topology.Nodes, expectedNodes)
+	}
+
+	expectedEdges := []TopologyEdge{
+		{From: Start, To: "plan", Index: 0},
+		{From: "join", To: End, Index: 0},
+		{From: "review", To: "join", Index: 0},
+		{From: "work", To: "join", Index: 0},
+	}
+	if !reflect.DeepEqual(topology.Edges, expectedEdges) {
+		t.Fatalf("topology edges = %#v, want %#v", topology.Edges, expectedEdges)
+	}
+
+	expectedBranches := []TopologyBranch{{From: "plan", Count: 1}}
+	if !reflect.DeepEqual(topology.Branches, expectedBranches) {
+		t.Fatalf("topology branches = %#v, want %#v", topology.Branches, expectedBranches)
+	}
+
+	expectedJoins := []TopologyJoin{{Node: "join", Predecessors: []string{"review", "work"}}}
+	if !reflect.DeepEqual(topology.Joins, expectedJoins) {
+		t.Fatalf("topology joins = %#v, want %#v", topology.Joins, expectedJoins)
+	}
+}
+
+func TestRunnableTopologyExportIsStableAndDefensive(t *testing.T) {
+	subgraph := New[traceState]()
+	subgraph.AddNode("child", traceNode("child"))
+	subgraph.AddEdge(Start, "child")
+	subgraph.AddEdge("child", End)
+	subrun, err := subgraph.Compile()
+	if err != nil {
+		t.Fatalf("Compile(subgraph) error = %v", err)
+	}
+
+	g := New[traceState]()
+	g.AddNode("left", traceNode("left"))
+	g.AddRunnableNode("right", subrun)
+	g.AddNode("join", traceNode("join"))
+	g.AddEdge(Start, "left")
+	g.AddEdge(Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	topology := run.Topology()
+	if topology.MaxSteps != 1024 {
+		t.Fatalf("topology max steps = %d, want 1024", topology.MaxSteps)
+	}
+	if !reflect.DeepEqual(topology.Joins, []TopologyJoin{{Node: "join", Predecessors: []string{"left", "right"}}}) {
+		t.Fatalf("topology joins = %#v", topology.Joins)
+	}
+	var rightKind TopologyNodeKind
+	for _, node := range topology.Nodes {
+		if node.Name == "right" {
+			rightKind = node.Kind
+		}
+	}
+	if rightKind != TopologyNodeRunnable {
+		t.Fatalf("right node kind = %q, want %q", rightKind, TopologyNodeRunnable)
+	}
+
+	topology.Nodes[0].Name = "mutated"
+	topology.Edges[0].From = "mutated"
+	topology.Joins[0].Predecessors[0] = "mutated"
+
+	again := run.Topology()
+	if again.Nodes[0].Name == "mutated" ||
+		again.Edges[0].From == "mutated" ||
+		again.Joins[0].Predecessors[0] == "mutated" {
+		t.Fatalf("Topology() returned mutable internal state: %#v", again)
 	}
 }
 
