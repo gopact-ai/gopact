@@ -385,6 +385,14 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingFeatureCoverage(t *tes
 	}
 }
 
+func TestSelfBootstrapReleaseGateReportIncludesWorkflowOrchestrationMatrix(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+
+	if findSelfBootstrapReleaseGateCheck(t, report, SelfBootstrapCheckWorkflowOrchestrationMatrix).ID == "" {
+		t.Fatal("self-bootstrap release gate report missing workflow orchestration matrix")
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingFeatureCoverageCommand(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheckIfPresent(&report, "command:go test -count=1 ./checkpoint ./gopacttest/checkpointconformance")
@@ -392,6 +400,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingFeatureCoverageCommand
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
 	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-feature-coverage/required-check-ids") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing feature coverage command: %+v", results)
+	}
+}
+
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingWorkflowOrchestrationMatrix(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckWorkflowOrchestrationMatrix)
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-feature-coverage/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing workflow orchestration matrix: %+v", results)
 	}
 }
 
