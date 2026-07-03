@@ -34,6 +34,7 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"node-emits-nested-events",
 		"runnable-node-inherits-runtime-ids",
 		"runnable-node-checkpoint-inheritance-isolation",
+		"topology-export-stable",
 		"failed-node-stops-successors",
 		"canceled-node-stops-successors",
 	} {

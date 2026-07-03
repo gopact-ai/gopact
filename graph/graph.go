@@ -192,17 +192,24 @@ func (g *Graph[S]) Compile() (*Runnable[S], error) {
 	for from, branchList := range g.branches {
 		branches[from] = append([]BranchFunc[S](nil), branchList...)
 	}
-
-	return &Runnable[S]{nodes: nodes, edges: edges, branches: branches, joins: joins, maxSteps: 1024}, nil
+	return &Runnable[S]{
+		nodes:     nodes,
+		nodeKinds: topologyNodeKinds(g.nodes, g.runnableNodes),
+		edges:     edges,
+		branches:  branches,
+		joins:     joins,
+		maxSteps:  1024,
+	}, nil
 }
 
 // Runnable 是编译后的 graph。
 type Runnable[S any] struct {
-	nodes    map[string]NodeFunc[S]
-	edges    map[string][]string
-	branches map[string][]BranchFunc[S]
-	joins    map[string][]string
-	maxSteps int
+	nodes     map[string]NodeFunc[S]
+	nodeKinds map[string]TopologyNodeKind
+	edges     map[string][]string
+	branches  map[string][]BranchFunc[S]
+	joins     map[string][]string
+	maxSteps  int
 }
 
 type nestedEventSinkContextKey struct{}

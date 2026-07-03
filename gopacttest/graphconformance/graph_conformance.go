@@ -47,6 +47,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkNodeEmitsNestedEvents(ctx),
 		checkRunnableNodeInheritsRuntimeIDs(ctx),
 		checkRunnableNodeCheckpointInheritanceIsolation(ctx),
+		checkTopologyExportStable(ctx),
 		checkFailedNodeStopsSuccessors(ctx),
 		checkCanceledNodeStopsSuccessors(ctx),
 	}
@@ -802,6 +803,52 @@ func checkRunnableNodeCheckpointInheritanceIsolation(ctx context.Context) GraphC
 	}
 	if childStore.checkpoints[0].Node != "child-one" || childStore.checkpoints[1].Node != "child-two" {
 		return failedGraphConformance(name, fmt.Errorf("child checkpoint nodes = %q/%q, want child-one/child-two", childStore.checkpoints[0].Node, childStore.checkpoints[1].Node))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkTopologyExportStable(_ context.Context) GraphConformanceResult {
+	const name = "topology-export-stable"
+	subgraph := graph.New[traceState]()
+	subgraph.AddNode("child", appendTrace("child"))
+	subgraph.AddEdge(graph.Start, "child")
+	subgraph.AddEdge("child", graph.End)
+	subrun, err := subgraph.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+
+	g := graph.New[traceState]()
+	g.AddNode("left", appendTrace("left"))
+	g.AddRunnableNode("right", subrun)
+	g.AddNode("join", appendTrace("join"))
+	g.AddEdge(graph.Start, "left")
+	g.AddEdge(graph.Start, "right")
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", graph.End)
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+
+	topology := run.Topology()
+	if topology.MaxSteps != 1024 {
+		return failedGraphConformance(name, fmt.Errorf("max steps = %d, want 1024", topology.MaxSteps))
+	}
+	if !reflect.DeepEqual(topology.Joins, []graph.TopologyJoin{{Node: "join", Predecessors: []string{"left", "right"}}}) {
+		return failedGraphConformance(name, fmt.Errorf("joins = %#v", topology.Joins))
+	}
+	kinds := map[string]graph.TopologyNodeKind{}
+	for _, node := range topology.Nodes {
+		kinds[node.Name] = node.Kind
+	}
+	if kinds[graph.Start] != graph.TopologyNodeBoundary ||
+		kinds[graph.End] != graph.TopologyNodeBoundary ||
+		kinds["left"] != graph.TopologyNodeFunction ||
+		kinds["right"] != graph.TopologyNodeRunnable ||
+		kinds["join"] != graph.TopologyNodeFunction {
+		return failedGraphConformance(name, fmt.Errorf("node kinds = %#v", kinds))
 	}
 	return passedGraphConformance(name)
 }
