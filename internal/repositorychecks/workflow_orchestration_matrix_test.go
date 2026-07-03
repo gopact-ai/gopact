@@ -63,7 +63,6 @@ func TestWorkflowOrchestrationMatrixDocumentsImplementedAndPlannedCapabilities(t
 	}
 
 	for _, id := range []string{
-		"parallel-fanout-executor",
 		"human-review-node-template",
 		"durable-background-scheduler",
 	} {
@@ -177,6 +176,15 @@ func expectedCompletedWorkflowCapabilities() []struct {
 				"dynamic-fan-out-runs-all-targets",
 				"dynamic-fan-out-empty-completes",
 				"dynamic-fan-out-stops-on-target-failure",
+			},
+		},
+		{
+			id: "parallel-fanout-executor",
+			conformanceCases: []string{
+				"parallel-fan-out-runs-targets-concurrently",
+				"parallel-fan-out-cancels-siblings-on-failure",
+				"parallel-fan-out-merge-error-stops-successors",
+				"parallel-fan-out-checkpointing-falls-back-to-sequential",
 			},
 		},
 		{

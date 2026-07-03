@@ -130,12 +130,17 @@
     },
     {
       "id": "parallel-fanout-executor",
-      "status": "planned",
+      "status": "completed",
       "package": "graph",
       "target_repo": "gopact",
-      "offline_proof": "",
-      "conformance_cases": [],
-      "gap": "Dynamic fan-out is deterministic and resumable but currently executes selected targets sequentially; there is no first-class concurrent executor with ordering, cancellation, and evidence semantics."
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "parallel-fan-out-runs-targets-concurrently",
+        "parallel-fan-out-cancels-siblings-on-failure",
+        "parallel-fan-out-merge-error-stops-successors",
+        "parallel-fan-out-checkpointing-falls-back-to-sequential"
+      ],
+      "boundary": "Graph Runnable invocation can explicitly enable parallel fan-out with a required state merge function. Ready fan-out targets run concurrently, receive the same base state, emit stable target-order evidence, merge results in target order, cancel siblings on failure, and preserve existing checkpoint/resume behavior by falling back to the sequential executor when checkpointing is active."
     },
     {
       "id": "human-review-node-template",

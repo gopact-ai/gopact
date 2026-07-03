@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/graph"
@@ -38,6 +39,10 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkDynamicFanOutRunsAllTargets(ctx),
 		checkDynamicFanOutEmptyCompletes(ctx),
 		checkDynamicFanOutStopsOnTargetFailure(ctx),
+		checkParallelFanOutRunsTargetsConcurrently(ctx),
+		checkParallelFanOutCancelsSiblingsOnFailure(ctx),
+		checkParallelFanOutMergeErrorStopsSuccessors(ctx),
+		checkParallelFanOutCheckpointingFallsBackToSequential(ctx),
 		checkLoopBranchExits(ctx),
 		checkLoopStepLimitFails(ctx),
 		checkStepExportResumesCompletedBoundary(ctx),
@@ -429,6 +434,225 @@ func checkDynamicFanOutStopsOnTargetFailure(ctx context.Context) GraphConformanc
 	}
 	if len(events) < 2 || events[len(events)-1].Type != gopact.EventRunFailed {
 		return failedGraphConformance(name, fmt.Errorf("events = %v, want final run_failed", eventTypes(events)))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkParallelFanOutRunsTargetsConcurrently(ctx context.Context) GraphConformanceResult {
+	const name = "parallel-fan-out-runs-targets-concurrently"
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	g := graph.New[traceState]()
+	g.AddNode("split", appendTrace("split"))
+	g.AddNode("left", blockingAppendTrace("left", started, release))
+	g.AddNode("right", blockingAppendTrace("right", started, release))
+	g.AddNode("join", appendTrace("join"))
+	g.AddEdge(graph.Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	type runResult struct {
+		events []gopact.Event
+		err    error
+	}
+	resultc := make(chan runResult, 1)
+	go func() {
+		events, err := collectRunEvents(run.Run(ctx, traceState{}, graph.WithParallelFanOut(mergeTraceFanOut)))
+		resultc <- runResult{events: events, err: err}
+	}()
+
+	gotStarted := map[string]bool{}
+	for len(gotStarted) < 2 {
+		select {
+		case node := <-started:
+			gotStarted[node] = true
+		case <-time.After(500 * time.Millisecond):
+			cancel()
+			close(release)
+			result := <-resultc
+			return failedGraphConformance(name, fmt.Errorf("started nodes = %v, want left and right; run error = %v", gotStarted, result.err))
+		}
+	}
+	if !gotStarted["left"] || !gotStarted["right"] {
+		cancel()
+		close(release)
+		result := <-resultc
+		return failedGraphConformance(name, fmt.Errorf("started nodes = %v, want left and right; run error = %v", gotStarted, result.err))
+	}
+	close(release)
+
+	result := <-resultc
+	if result.err != nil {
+		return failedGraphConformance(name, result.err)
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	}
+	if !reflect.DeepEqual(eventTypes(result.events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(result.events), wantTypes))
+	}
+	output, ok := result.events[8].StepSnapshot.Output.(traceState)
+	if !ok {
+		return failedGraphConformance(name, fmt.Errorf("join output type = %T, want traceState", result.events[8].StepSnapshot.Output))
+	}
+	return requireTrace(name, output, []string{"split", "left", "right", "join"})
+}
+
+func checkParallelFanOutCancelsSiblingsOnFailure(ctx context.Context) GraphConformanceResult {
+	const name = "parallel-fan-out-cancels-siblings-on-failure"
+	wantErr := errors.New("left failed")
+	rightCanceled := make(chan struct{})
+	afterRan := false
+	g := graph.New[traceState]()
+	g.AddNode("split", appendTrace("split"))
+	g.AddNode("left", func(context.Context, traceState) (traceState, error) {
+		return traceState{}, wantErr
+	})
+	g.AddNode("right", func(ctx context.Context, state traceState) (traceState, error) {
+		<-ctx.Done()
+		close(rightCanceled)
+		return state, ctx.Err()
+	})
+	g.AddNode("after", func(context.Context, traceState) (traceState, error) {
+		afterRan = true
+		return traceState{}, nil
+	})
+	g.AddEdge(graph.Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "after")
+	g.AddEdge("right", "after")
+	g.AddEdge("after", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}, graph.WithParallelFanOut(mergeTraceFanOut)))
+	if !errors.Is(err, wantErr) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want %v", err, wantErr))
+	}
+	select {
+	case <-rightCanceled:
+	case <-time.After(500 * time.Millisecond):
+		return failedGraphConformance(name, errors.New("right node did not observe sibling failure cancellation"))
+	}
+	if afterRan {
+		return failedGraphConformance(name, errors.New("successor ran after fan-out target failed"))
+	}
+	if len(events) == 0 || events[len(events)-1].Type != gopact.EventRunFailed {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want final run_failed", eventTypes(events)))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkParallelFanOutMergeErrorStopsSuccessors(ctx context.Context) GraphConformanceResult {
+	const name = "parallel-fan-out-merge-error-stops-successors"
+	wantErr := errors.New("merge failed")
+	afterRan := false
+	g := graph.New[traceState]()
+	g.AddNode("split", appendTrace("split"))
+	g.AddNode("left", appendTrace("left"))
+	g.AddNode("right", appendTrace("right"))
+	g.AddNode("after", func(context.Context, traceState) (traceState, error) {
+		afterRan = true
+		return traceState{}, nil
+	})
+	g.AddEdge(graph.Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "after")
+	g.AddEdge("right", "after")
+	g.AddEdge("after", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}, graph.WithParallelFanOut(func(context.Context, traceState, []graph.FanOutResult[traceState]) (traceState, error) {
+		return traceState{}, wantErr
+	})))
+	if !errors.Is(err, wantErr) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want %v", err, wantErr))
+	}
+	if afterRan {
+		return failedGraphConformance(name, errors.New("successor ran after fan-out merge failed"))
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeStarted,
+		gopact.EventRunFailed,
+	}
+	if !reflect.DeepEqual(eventTypes(events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(events), wantTypes))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkParallelFanOutCheckpointingFallsBackToSequential(ctx context.Context) GraphConformanceResult {
+	const name = "parallel-fan-out-checkpointing-falls-back-to-sequential"
+	store := &checkpointStore{}
+	g := graph.New[traceState]()
+	g.AddNode("split", appendTrace("split"))
+	g.AddNode("left", appendTrace("left"))
+	g.AddNode("right", appendTrace("right"))
+	g.AddNode("join", appendTrace("join"))
+	g.AddEdge(graph.Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	failMerge := func(context.Context, traceState, []graph.FanOutResult[traceState]) (traceState, error) {
+		return traceState{}, errors.New("parallel fan-out merge should not run when checkpointing is active")
+	}
+	got, err := run.Invoke(ctx, traceState{},
+		graph.WithParallelFanOut(failMerge),
+		graph.WithCheckpointer[traceState](store),
+	)
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	if result := requireTrace(name, got, []string{"split", "left", "right", "join"}); !result.Passed {
+		return result
+	}
+	if len(store.checkpoints) != 4 {
+		return failedGraphConformance(name, fmt.Errorf("checkpoint count = %d, want 4", len(store.checkpoints)))
+	}
+	for i, wantNode := range []string{"split", "left", "right", "join"} {
+		if store.checkpoints[i].Node != wantNode {
+			return failedGraphConformance(name, fmt.Errorf("checkpoint[%d].Node = %q, want %q", i, store.checkpoints[i].Node, wantNode))
+		}
 	}
 	return passedGraphConformance(name)
 }
@@ -1098,6 +1322,34 @@ func appendTrace(name string) graph.NodeFunc[traceState] {
 		state.Trace = append(state.Trace, name)
 		return state, nil
 	}
+}
+
+func blockingAppendTrace(name string, started chan<- string, release <-chan struct{}) graph.NodeFunc[traceState] {
+	return func(ctx context.Context, state traceState) (traceState, error) {
+		select {
+		case started <- name:
+		case <-ctx.Done():
+			return state, ctx.Err()
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return state, ctx.Err()
+		}
+		state.Trace = append(state.Trace, name)
+		return state, nil
+	}
+}
+
+func mergeTraceFanOut(_ context.Context, base traceState, results []graph.FanOutResult[traceState]) (traceState, error) {
+	merged := traceState{Trace: append([]string(nil), base.Trace...)}
+	for _, result := range results {
+		if len(result.Output.Trace) < len(base.Trace) {
+			return traceState{}, fmt.Errorf("fan-out result %q output trace is shorter than base", result.Node)
+		}
+		merged.Trace = append(merged.Trace, result.Output.Trace[len(base.Trace):]...)
+	}
+	return merged, nil
 }
 
 func traceMinItemsSchema(minItems int) gopact.JSONSchema {

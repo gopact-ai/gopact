@@ -36,7 +36,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			capability: "workflow graph execution",
 			path:       "graph",
 			command:    "go test -count=1 ./graph ./gopacttest/graphconformance",
-			boundary:   "step export/import, interrupted step resume, branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, node-emitted nested events, topology export, graph state and node schema guards",
+			boundary:   "step export/import, interrupted step resume, branch routing, DAG fan-in, dynamic fan-out, explicit parallel fan-out with ordered merge, loop step limits, runnable subgraphs, node-emitted nested events, topology export, graph state and node schema guards",
 		},
 		{
 			capability: "checkpoint and resume",
