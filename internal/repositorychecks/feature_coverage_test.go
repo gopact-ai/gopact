@@ -85,7 +85,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			capability: "agent scaffold generator",
 			path:       "cmd/gopact",
 			command:    "go test -count=1 ./cmd/gopact",
-			boundary:   "module paths default to example.com/<name>; generated clusters wire `GOPACT_A2A_REGISTRY_URL` into mesh bootstrap; `gopact agent verify` checks required scaffold files, bare-array A2A registry shape, `.gitignore` credential boundaries",
+			boundary:   "module paths default to example.com/<name>; generated clusters wire `GOPACT_A2A_REGISTRY_URL` into mesh bootstrap; generated agents and clusters use `GOPACT_A2A_REGISTRAR_URL` for optional external lease registration and heartbeat; `gopact agent verify` checks required scaffold files, bare-array A2A registry shape, `.gitignore` credential boundaries",
 		},
 		{
 			capability: "channel and surface transfer",

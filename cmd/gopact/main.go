@@ -782,6 +782,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -791,9 +792,12 @@ import (
 const agentName = {{ .AgentNameLiteral }}
 
 const (
-	agentAddrEnv = "GOPACT_AGENT_ADDR"
-	agentURLEnv  = "GOPACT_AGENT_URL"
-	defaultURL   = "http://localhost:8080"
+	agentAddrEnv          = "GOPACT_AGENT_ADDR"
+	agentURLEnv           = "GOPACT_AGENT_URL"
+	agentRegistrarURLEnv  = "GOPACT_A2A_REGISTRAR_URL"
+	defaultURL             = "http://localhost:8080"
+	agentRegistryLeaseTTL = 30 * time.Second
+	agentHeartbeatEvery   = 15 * time.Second
 )
 
 type scaffoldAgent struct{}
@@ -882,6 +886,42 @@ func newScaffoldHTTPHandler() http.Handler {
 	return mux
 }
 
+func maintainScaffoldRegistryLease(ctx context.Context, registrarURL string, client *http.Client, ttl, interval time.Duration) error {
+	registrarURL = strings.TrimSpace(registrarURL)
+	if registrarURL == "" {
+		return nil
+	}
+	if interval <= 0 {
+		return a2a.ErrSyncIntervalRequired
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	registry, err := a2a.NewHTTPRegistry(registrarURL, a2a.WithHTTPClient(client))
+	if err != nil {
+		return err
+	}
+	registered, err := registry.RegisterCardWithLease(ctx, scaffoldAgent{}.Card(), ttl)
+	if err != nil {
+		return err
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := registry.HeartbeatCard(ctx, registered.Name, ttl); err != nil && ctx.Err() == nil {
+					log.Printf("a2a registry heartbeat failed: %v", err)
+				}
+			}
+		}
+	}()
+	return nil
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -910,6 +950,11 @@ func serve(ctx context.Context, addr string) error {
 		log.Printf("serving %s on %s", agentName, listener.Addr())
 		errs <- server.Serve(listener)
 	}()
+	if err := maintainScaffoldRegistryLease(ctx, os.Getenv(agentRegistrarURLEnv), http.DefaultClient, agentRegistryLeaseTTL, agentHeartbeatEvery); err != nil {
+		_ = server.Close()
+		<-errs
+		return err
+	}
 
 	select {
 	case <-ctx.Done():
@@ -1114,6 +1159,29 @@ func TestScaffoldAgentRegistryMeshStreamsAndCancels(t *testing.T) {
 	}
 }
 
+func TestScaffoldAgentRegistersWithExternalRegistryLease(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	store := a2a.NewRegistry()
+	registryServer := httptest.NewServer(a2a.NewHTTPRegistryHandler(store))
+	defer registryServer.Close()
+	agentServer := httptest.NewServer(newScaffoldHTTPHandler())
+	defer agentServer.Close()
+	defer cancel()
+	t.Setenv(agentURLEnv, agentServer.URL)
+
+	if err := maintainScaffoldRegistryLease(ctx, registryServer.URL, registryServer.Client(), 100*time.Millisecond, 5*time.Millisecond); err != nil {
+		t.Fatalf("maintainScaffoldRegistryLease() error = %v", err)
+	}
+	card, err := store.Card(ctx, agentName)
+	if err != nil {
+		t.Fatalf("registry card error = %v", err)
+	}
+	if card.URL != agentServer.URL || card.ExpiresAt.IsZero() {
+		t.Fatalf("registered card = %+v, want agent URL and lease expiry", card)
+	}
+	requireRenewedRegistryCard(t, ctx, store, agentName, card.ExpiresAt)
+}
+
 func TestScaffoldAgentRejectsEmptyCancelID(t *testing.T) {
 	err := scaffoldAgent{}.Cancel(context.Background(), "")
 	if !errors.Is(err, a2a.ErrTaskIDRequired) {
@@ -1152,10 +1220,29 @@ func TestScaffoldRegistryFile(t *testing.T) {
 		t.Fatalf("agents.json = %+v, want local streaming card", cards)
 	}
 }
+
+func requireRenewedRegistryCard(t *testing.T, ctx context.Context, registry *a2a.Registry, name string, firstExpiry time.Time) {
+	t.Helper()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.After(250 * time.Millisecond)
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("registry card %q lease was not renewed after %v", name, firstExpiry)
+		case <-ticker.C:
+			card, err := registry.Card(ctx, name)
+			if err == nil && card.ExpiresAt.After(firstExpiry) {
+				return
+			}
+		}
+	}
+}
 `
 
 const envExampleTemplate = `GOPACT_AGENT_ADDR=:8080
 GOPACT_AGENT_URL=http://localhost:8080
+GOPACT_A2A_REGISTRAR_URL=
 `
 
 const readmeTemplate = `# {{ .AgentName }}
@@ -1170,7 +1257,7 @@ gopact agent verify .
 GOPACT_AGENT_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
-The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. ` + "`gopact agent verify`" + ` checks the scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register this agent with a renewable lease. ` + "`gopact agent verify`" + ` checks the scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
 `
 
 const clusterMainGoTemplate = `package main
@@ -1203,7 +1290,10 @@ const (
 	clusterAddrEnv        = "GOPACT_CLUSTER_ADDR"
 	clusterURLEnv         = "GOPACT_CLUSTER_URL"
 	clusterRegistryURLEnv = "GOPACT_A2A_REGISTRY_URL"
+	clusterRegistrarURLEnv = "GOPACT_A2A_REGISTRAR_URL"
 	defaultClusterBaseURL = "http://localhost:8080"
+	clusterRegistryLeaseTTL = 30 * time.Second
+	clusterHeartbeatEvery   = 15 * time.Second
 )
 
 type clusterAgent struct {
@@ -1377,6 +1467,48 @@ func bootstrapClusterMeshFromEnv(ctx context.Context, client *http.Client) (*a2a
 	return bootstrapClusterMesh(ctx, clusterRegistryURL(), client)
 }
 
+func maintainClusterRegistryLease(ctx context.Context, registrarURL string, client *http.Client, ttl, interval time.Duration) error {
+	registrarURL = strings.TrimSpace(registrarURL)
+	if registrarURL == "" {
+		return nil
+	}
+	if interval <= 0 {
+		return a2a.ErrSyncIntervalRequired
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	registry, err := a2a.NewHTTPRegistry(registrarURL, a2a.WithHTTPClient(client))
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(clusterAgents()))
+	for _, agent := range clusterAgents() {
+		registered, err := registry.RegisterCardWithLease(ctx, agent.Card(), ttl)
+		if err != nil {
+			return err
+		}
+		names = append(names, registered.Name)
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				for _, name := range names {
+					if _, err := registry.HeartbeatCard(ctx, name, ttl); err != nil && ctx.Err() == nil {
+						log.Printf("a2a registry heartbeat failed for %s: %v", name, err)
+					}
+				}
+			}
+		}
+	}()
+	return nil
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -1405,6 +1537,11 @@ func serve(ctx context.Context, addr string) error {
 		log.Printf("serving %s on %s", clusterName, listener.Addr())
 		errs <- server.Serve(listener)
 	}()
+	if err := maintainClusterRegistryLease(ctx, os.Getenv(clusterRegistrarURLEnv), http.DefaultClient, clusterRegistryLeaseTTL, clusterHeartbeatEvery); err != nil {
+		_ = server.Close()
+		<-errs
+		return err
+	}
 
 	select {
 	case <-ctx.Done():
@@ -1562,6 +1699,47 @@ func TestClusterBootstrapsMeshFromEnvRegistryURL(t *testing.T) {
 	}
 }
 
+func TestClusterRegistersAgentsWithExternalRegistryLease(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	store := a2a.NewRegistry()
+	registryServer := httptest.NewServer(a2a.NewHTTPRegistryHandler(store))
+	defer registryServer.Close()
+	clusterServer := httptest.NewServer(newClusterHTTPHandler())
+	defer clusterServer.Close()
+	defer cancel()
+	t.Setenv(clusterURLEnv, clusterServer.URL)
+
+	if err := maintainClusterRegistryLease(ctx, registryServer.URL, registryServer.Client(), 100*time.Millisecond, 5*time.Millisecond); err != nil {
+		t.Fatalf("maintainClusterRegistryLease() error = %v", err)
+	}
+	cards, err := store.ListCards(ctx)
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if len(cards) != 3 || cards[0].Name != plannerAgentName || cards[1].Name != workerAgentName || cards[2].Name != reviewerAgentName {
+		t.Fatalf("registered cards = %+v, want planner, worker, reviewer", cards)
+	}
+	if cards[0].URL != clusterServer.URL+clusterAgentPath(plannerAgentName) || cards[0].ExpiresAt.IsZero() {
+		t.Fatalf("registered planner card = %+v, want cluster URL and lease expiry", cards[0])
+	}
+
+	mesh, err := bootstrapClusterMesh(ctx, registryServer.URL, registryServer.Client())
+	if err != nil {
+		t.Fatalf("bootstrapClusterMesh(external) error = %v", err)
+	}
+	result, err := mesh.Route(ctx, a2a.RouteQuery{
+		Require: []string{"review"},
+		Task:    a2a.Task{ID: "task-external-registry", Input: "external registry"},
+	})
+	if err != nil {
+		t.Fatalf("Route() error = %v", err)
+	}
+	if result.Output != reviewerAgentName+" handled: external registry" {
+		t.Fatalf("Route() = %+v, want reviewer response", result)
+	}
+	requireRenewedRegistryCard(t, ctx, store, plannerAgentName, cards[0].ExpiresAt)
+}
+
 func TestClusterRoutesStreamingTasks(t *testing.T) {
 	ctx := context.Background()
 	server := httptest.NewServer(newClusterHTTPHandler())
@@ -1675,11 +1853,30 @@ func TestClusterRegistryFile(t *testing.T) {
 		}
 	}
 }
+
+func requireRenewedRegistryCard(t *testing.T, ctx context.Context, registry *a2a.Registry, name string, firstExpiry time.Time) {
+	t.Helper()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.After(250 * time.Millisecond)
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("registry card %q lease was not renewed after %v", name, firstExpiry)
+		case <-ticker.C:
+			card, err := registry.Card(ctx, name)
+			if err == nil && card.ExpiresAt.After(firstExpiry) {
+				return
+			}
+		}
+	}
+}
 `
 
 const clusterEnvExampleTemplate = `GOPACT_CLUSTER_ADDR=:8080
 GOPACT_CLUSTER_URL=http://localhost:8080
 GOPACT_A2A_REGISTRY_URL=http://localhost:8080/agents.json
+GOPACT_A2A_REGISTRAR_URL=
 `
 
 const clusterReadmeTemplate = `# {{ .ClusterName }}
@@ -1694,5 +1891,5 @@ gopact agent verify .
 GOPACT_CLUSTER_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
-The cluster runs three A2A HTTP agents under ` + "`/agents/planner-agent`" + `, ` + "`/agents/worker-agent`" + `, and ` + "`/agents/reviewer-agent`" + `. The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. Generated mesh bootstrap helper code reads ` + "`GOPACT_A2A_REGISTRY_URL`" + `, defaulting to ` + "`GOPACT_CLUSTER_URL`" + ` plus ` + "`/agents.json`" + `. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, or ` + "`GOPACT_A2A_REGISTRY_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
+The cluster runs three A2A HTTP agents under ` + "`/agents/planner-agent`" + `, ` + "`/agents/worker-agent`" + `, and ` + "`/agents/reviewer-agent`" + `. The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. Generated mesh bootstrap helper code reads ` + "`GOPACT_A2A_REGISTRY_URL`" + `, defaulting to ` + "`GOPACT_CLUSTER_URL`" + ` plus ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register all cluster agents with renewable leases. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, ` + "`GOPACT_A2A_REGISTRY_URL`" + `, or ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
 `
