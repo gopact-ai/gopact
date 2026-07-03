@@ -351,6 +351,52 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsGitignoreWithoutDotEnvBoundary(t *testing.T) {
+	tests := []struct {
+		name      string
+		gitignore string
+		wantError string
+	}{
+		{
+			name:      "missing dot env",
+			gitignore: "coverage.out\n",
+			wantError: ".gitignore must ignore .env",
+		},
+		{
+			name:      "missing env example exception",
+			gitignore: ".env\n",
+			wantError: ".gitignore must keep .env.example trackable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, validVerifyRegistry("verify-agent"))
+			if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(tt.gitignore), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("run() code = %d, want %d", code, exitError)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantError) {
+				t.Fatalf("stderr missing %q:\n%s", tt.wantError, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAgentVerifyReportsGoTestFailure(t *testing.T) {
 	dir := t.TempDir()
 	writeVerifyAgentModule(t, dir, `package main
