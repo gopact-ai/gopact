@@ -1,6 +1,7 @@
 package repositorychecks
 
 import (
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,5 +47,23 @@ func TestVersioningPolicyDocumentedAndIndexed(t *testing.T) {
 		if !strings.Contains(content, "versioning-policy.md") {
 			t.Fatalf("%s does not reference versioning-policy.md", path)
 		}
+	}
+}
+
+func TestAgentScaffoldFallbackUsesLatestReleasedCoreTag(t *testing.T) {
+	out, err := exec.Command("git", "tag", "--list", "v0.0.*", "--sort=v:refname").Output()
+	if err != nil {
+		t.Fatalf("list release tags: %v", err)
+	}
+	tags := strings.Fields(string(out))
+	if len(tags) == 0 {
+		t.Fatal("no v0.0.x release tags found")
+	}
+	latest := tags[len(tags)-1]
+
+	mainGo := readTextFile(t, filepath.Join("cmd", "gopact", "main.go"))
+	want := `fallbackSDKVersion = "` + latest + `"`
+	if !strings.Contains(mainGo, want) {
+		t.Fatalf("gopact agent init fallback SDK version must use latest released core tag %s", latest)
 	}
 }
