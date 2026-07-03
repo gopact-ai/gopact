@@ -85,7 +85,7 @@ func TestFeatureCoverageMatrixDocumentsCoreCapabilities(t *testing.T) {
 			capability: "agent scaffold generator",
 			path:       "cmd/gopact",
 			command:    "go test -count=1 ./cmd/gopact",
-			boundary:   "gopact agent verify",
+			boundary:   "gopact agent init-cluster",
 		},
 		{
 			capability: "channel and surface transfer",

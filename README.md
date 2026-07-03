@@ -45,6 +45,14 @@ go run ./cmd/gopact agent verify /tmp/support-agent
 go run ./cmd/gopact agent run /tmp/support-agent
 ```
 
+Generate a local A2A agent cluster scaffold:
+
+```bash
+go run ./cmd/gopact agent init-cluster support-cluster -module example.com/support-cluster -out /tmp/support-cluster
+(cd /tmp/support-cluster && go test ./...)
+go run ./cmd/gopact agent verify /tmp/support-cluster
+```
+
 Use [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) when you want a complete runnable provider or agent-template path.
 
 ## Features
