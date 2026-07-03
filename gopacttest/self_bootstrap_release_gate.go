@@ -49,6 +49,10 @@ const (
 	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./graph ./gopacttest/graphconformance"
 	// SelfBootstrapCheckA2AConformanceCommand is the standard A2A mesh conformance check.
 	SelfBootstrapCheckA2AConformanceCommand = "command:go test -count=1 ./a2a ./gopacttest/a2aconformance"
+	// SelfBootstrapCommandExamplesMockSuite is the standard gopact-examples mock self-bootstrap suite command.
+	SelfBootstrapCommandExamplesMockSuite = "(cd gopact-examples && ./scripts/self-bootstrap-mock-suite.sh)"
+	// SelfBootstrapCheckExamplesMockSuiteCommand is the standard gopact-examples mock self-bootstrap suite check.
+	SelfBootstrapCheckExamplesMockSuiteCommand = "command:" + SelfBootstrapCommandExamplesMockSuite
 	// SelfBootstrapCommandAgnesProviderIntegration is the standard local Agnes provider integration command.
 	SelfBootstrapCommandAgnesProviderIntegration = "(cd gopact-ext/models/agnes && go test -tags=integration -count=1 ./...)"
 	// SelfBootstrapCheckAgnesProviderIntegrationCommand is the standard local Agnes provider integration check.
@@ -258,8 +262,8 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 		},
 		{
 			Name:                  "self-bootstrap-extension-ci",
-			RequiredCheckIDs:      []string{VerificationCheckCIGates},
-			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate},
+			RequiredCheckIDs:      []string{VerificationCheckCIGates, SelfBootstrapCheckExamplesMockSuiteCommand},
+			RequiredEvidenceTypes: []string{VerificationEvidenceTypeCIGate, VerificationEvidenceTypeCommand},
 			RequiredCIGates: []string{
 				SelfBootstrapCIGateExtMock,
 				SelfBootstrapCIGateExamplesMock,
@@ -364,6 +368,7 @@ func selfBootstrapReleaseGateChecks(
 	checks = append(checks, selfBootstrapCoreCICommandChecks()...)
 	checks = appendSelfBootstrapCommandChecks(checks, selfBootstrapFeatureCoverageCommands())
 	checks = append(checks, []gopact.VerificationCheck{
+		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandExamplesMockSuite),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesProviderIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesAgentTemplatesIntegration),
 		selfBootstrapCommandEvidenceCheck(SelfBootstrapCommandAgnesExamplesIntegration),
