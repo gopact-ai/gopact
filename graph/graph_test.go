@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/gopacttest"
@@ -21,6 +23,34 @@ func traceNode(label string) NodeFunc[traceState] {
 		state.Trace = append(state.Trace, label)
 		return state, nil
 	}
+}
+
+func blockingTraceNode(label string, started chan<- string, release <-chan struct{}) NodeFunc[traceState] {
+	return func(ctx context.Context, state traceState) (traceState, error) {
+		select {
+		case started <- label:
+		case <-ctx.Done():
+			return state, ctx.Err()
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return state, ctx.Err()
+		}
+		state.Trace = append(state.Trace, label)
+		return state, nil
+	}
+}
+
+func mergeTraceFanOut(_ context.Context, base traceState, results []FanOutResult[traceState]) (traceState, error) {
+	merged := traceState{Trace: append([]string(nil), base.Trace...)}
+	for _, result := range results {
+		if len(result.Output.Trace) < len(base.Trace) {
+			return traceState{}, fmt.Errorf("fan-out result %q output trace is shorter than base", result.Node)
+		}
+		merged.Trace = append(merged.Trace, result.Output.Trace[len(base.Trace):]...)
+	}
+	return merged, nil
 }
 
 func traceMinItemsSchema(minItems int) gopact.JSONSchema {
@@ -1152,6 +1182,289 @@ func TestGraphDynamicFanOutCheckpointResumeRunsOnlyIncompleteTargets(t *testing.
 	expected := []string{"split", "left", "right", "join"}
 	if !reflect.DeepEqual(got.Trace, expected) {
 		t.Fatalf("resumed trace = %v, want %v", got.Trace, expected)
+	}
+}
+
+func TestGraphParallelFanOutRunsTargetsConcurrentlyAndMergesInTargetOrder(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan string, 2)
+	release := make(chan struct{})
+
+	g := New[traceState]()
+	g.AddNode("split", traceNode("split"))
+	g.AddNode("left", blockingTraceNode("left", started, release))
+	g.AddNode("right", blockingTraceNode("right", started, release))
+	g.AddNode("join", traceNode("join"))
+	g.AddEdge(Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	type runResult struct {
+		events []gopact.Event
+		err    error
+	}
+	resultc := make(chan runResult, 1)
+	go func() {
+		events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}, WithParallelFanOut(mergeTraceFanOut)))
+		resultc <- runResult{events: events, err: err}
+	}()
+
+	gotStarted := map[string]bool{}
+	for len(gotStarted) < 2 {
+		select {
+		case name := <-started:
+			gotStarted[name] = true
+		case <-time.After(500 * time.Millisecond):
+			cancel()
+			close(release)
+			result := <-resultc
+			t.Fatalf("parallel started nodes = %v, want left and right; run error = %v", gotStarted, result.err)
+		}
+	}
+	if !gotStarted["left"] || !gotStarted["right"] {
+		cancel()
+		close(release)
+		result := <-resultc
+		t.Fatalf("parallel started nodes = %v, want left and right; run error = %v", gotStarted, result.err)
+	}
+	close(release)
+
+	result := <-resultc
+	if result.err != nil {
+		t.Fatalf("Run() error = %v", result.err)
+	}
+	gopacttest.RequireEventTypes(t, result.events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	)
+	joinCompleted := result.events[8]
+	output, ok := joinCompleted.StepSnapshot.Output.(traceState)
+	if !ok {
+		t.Fatalf("join output type = %T, want traceState", joinCompleted.StepSnapshot.Output)
+	}
+	expected := []string{"split", "left", "right", "join"}
+	if !reflect.DeepEqual(output.Trace, expected) {
+		t.Fatalf("merged trace = %v, want %v", output.Trace, expected)
+	}
+}
+
+func TestGraphParallelFanOutPassesOrderedResultsToMerge(t *testing.T) {
+	ctx := context.Background()
+	g := New[traceState]()
+	g.AddNode("split", traceNode("split"))
+	g.AddNode("right", traceNode("right"))
+	g.AddNode("left", traceNode("left"))
+	g.AddEdge(Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"right", "left"}, nil
+	})
+	g.AddEdge("right", End)
+	g.AddEdge("left", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	var gotResults []FanOutResult[traceState]
+	merge := func(ctx context.Context, base traceState, results []FanOutResult[traceState]) (traceState, error) {
+		gotResults = append([]FanOutResult[traceState](nil), results...)
+		return mergeTraceFanOut(ctx, base, results)
+	}
+	got, err := run.Invoke(ctx, traceState{},
+		WithParallelFanOut(merge),
+		WithNodeMiddleware(func(c *gopact.NodeContext) error {
+			if err := c.Next(); err != nil {
+				return err
+			}
+			if c.Node == "left" || c.Node == "right" {
+				c.AddEffect(gopact.EffectRecord{
+					ID:      c.Node + "-effect",
+					Type:    "test_effect",
+					Applied: true,
+				})
+			}
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if !reflect.DeepEqual(got.Trace, []string{"split", "right", "left"}) {
+		t.Fatalf("trace = %v, want split/right/left", got.Trace)
+	}
+	if len(gotResults) != 2 {
+		t.Fatalf("merge result count = %d, want 2", len(gotResults))
+	}
+	for i, want := range []struct {
+		node   string
+		step   int
+		effect string
+	}{
+		{node: "right", step: 2, effect: "right-effect"},
+		{node: "left", step: 3, effect: "left-effect"},
+	} {
+		result := gotResults[i]
+		if result.Node != want.node || result.Step != want.step {
+			t.Fatalf("result[%d] = node %q step %d, want %q step %d", i, result.Node, result.Step, want.node, want.step)
+		}
+		if len(result.Effects) != 1 || result.Effects[0].ID != want.effect {
+			t.Fatalf("result[%d].Effects = %+v, want %q", i, result.Effects, want.effect)
+		}
+	}
+}
+
+func TestGraphParallelFanOutMergeErrorStopsSuccessors(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("merge failed")
+	var afterCalled atomic.Bool
+	g := New[traceState]()
+	g.AddNode("split", traceNode("split"))
+	g.AddNode("left", traceNode("left"))
+	g.AddNode("right", traceNode("right"))
+	g.AddNode("after", func(_ context.Context, state traceState) (traceState, error) {
+		afterCalled.Store(true)
+		state.Trace = append(state.Trace, "after")
+		return state, nil
+	})
+	g.AddEdge(Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "after")
+	g.AddEdge("right", "after")
+	g.AddEdge("after", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}, WithParallelFanOut(func(context.Context, traceState, []FanOutResult[traceState]) (traceState, error) {
+		return traceState{}, wantErr
+	})))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Run() error = %v, want %v", err, wantErr)
+	}
+	if afterCalled.Load() {
+		t.Fatal("after node ran after fan-out merge failed")
+	}
+	gopacttest.RequireEventTypes(t, events,
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeStarted,
+		gopact.EventRunFailed,
+	)
+}
+
+func TestGraphParallelFanOutCancelsSiblingsWhenTargetFails(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("left failed")
+	rightCanceled := make(chan struct{})
+	var afterCalled atomic.Bool
+
+	g := New[traceState]()
+	g.AddNode("split", traceNode("split"))
+	g.AddNode("left", func(context.Context, traceState) (traceState, error) {
+		return traceState{}, wantErr
+	})
+	g.AddNode("right", func(ctx context.Context, state traceState) (traceState, error) {
+		<-ctx.Done()
+		close(rightCanceled)
+		return state, ctx.Err()
+	})
+	g.AddNode("after", func(_ context.Context, state traceState) (traceState, error) {
+		afterCalled.Store(true)
+		state.Trace = append(state.Trace, "after")
+		return state, nil
+	})
+	g.AddEdge(Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "after")
+	g.AddEdge("right", "after")
+	g.AddEdge("after", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	events, err := gopacttest.CollectEvents(run.Run(ctx, traceState{}, WithParallelFanOut(mergeTraceFanOut)))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Run() error = %v, want %v", err, wantErr)
+	}
+	select {
+	case <-rightCanceled:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("right node did not observe sibling failure cancellation")
+	}
+	if afterCalled.Load() {
+		t.Fatal("after node ran after fan-out target failed")
+	}
+	if len(events) == 0 || events[len(events)-1].Type != gopact.EventRunFailed {
+		t.Fatalf("events = %+v, want final run_failed", events)
+	}
+}
+
+func TestGraphParallelFanOutFallsBackToSequentialWhenCheckpointing(t *testing.T) {
+	ctx := context.Background()
+	store := &recordingCheckpointer[traceState]{}
+	g := New[traceState]()
+	g.AddNode("split", traceNode("split"))
+	g.AddNode("left", traceNode("left"))
+	g.AddNode("right", traceNode("right"))
+	g.AddNode("join", traceNode("join"))
+	g.AddEdge(Start, "split")
+	g.AddBranch("split", func(context.Context, traceState) ([]string, error) {
+		return []string{"left", "right"}, nil
+	})
+	g.AddEdge("left", "join")
+	g.AddEdge("right", "join")
+	g.AddEdge("join", End)
+
+	run, err := g.Compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	failMerge := func(context.Context, traceState, []FanOutResult[traceState]) (traceState, error) {
+		return traceState{}, errors.New("parallel fan-out merge should not run when checkpointing is active")
+	}
+
+	got, err := run.Invoke(ctx, traceState{}, WithParallelFanOut(failMerge), WithCheckpointer(store))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	expected := []string{"split", "left", "right", "join"}
+	if !reflect.DeepEqual(got.Trace, expected) {
+		t.Fatalf("trace = %v, want %v", got.Trace, expected)
+	}
+	if len(store.checkpoints) != 4 {
+		t.Fatalf("checkpoint count = %d, want split, left, right, join", len(store.checkpoints))
+	}
+	for i, wantNode := range []string{"split", "left", "right", "join"} {
+		if store.checkpoints[i].Node != wantNode {
+			t.Fatalf("checkpoint[%d].Node = %q, want %q", i, store.checkpoints[i].Node, wantNode)
+		}
 	}
 }
 
