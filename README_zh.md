@@ -39,6 +39,7 @@ go test -run Example_graphRun .
 ```bash
 go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
 (cd /tmp/support-agent && go test ./...)
+go run ./cmd/gopact agent verify /tmp/support-agent
 go run ./cmd/gopact agent run /tmp/support-agent
 ```
 
