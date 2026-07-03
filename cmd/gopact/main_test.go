@@ -48,6 +48,11 @@ func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
+		"gopacttest/a2aconformance",
+		"TestScaffoldAgentSatisfiesA2AConformance",
+		"a2aconformance.RequireAgentConformance",
+		"a2aconformance.RequireAgentMeshConformance",
+		"a2aconformance.RequireDiscovererConformance",
 		"TestScaffoldAgentServesHealthEndpoints",
 		"TestScaffoldServerStopsOnContextCancel",
 		"TestScaffoldAgentRegistryMeshStreamsAndCancels",
@@ -159,6 +164,11 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
+		"gopacttest/a2aconformance",
+		"TestClusterAgentsSatisfyA2AConformance",
+		"a2aconformance.RequireAgentConformance",
+		"a2aconformance.RequireAgentMeshConformance",
+		"a2aconformance.RequireDiscovererConformance",
 		"TestClusterRegistryBootstrapsMesh",
 		"TestClusterBootstrapsMeshFromEnvRegistryURL",
 		"TestClusterRoutesStreamingTasks",
