@@ -545,10 +545,7 @@ func (a *HTTPAgent) checkStatus(resp *http.Response) error {
 	}
 	var remote httpErrorResponse
 	_ = decodeLimitedJSON(resp.Body, a.maxResponseBytes, &remote)
-	if remote.Error != "" {
-		return fmt.Errorf("%w: %s: %s", ErrHTTPStatus, resp.Status, remote.Error)
-	}
-	return fmt.Errorf("%w: %s", ErrHTTPStatus, resp.Status)
+	return httpStatusError{status: resp.Status, remote: remote.Error, cause: knownHTTPRemoteError(remote.Error)}
 }
 
 func (a *HTTPAgent) checkReadiness(ctx context.Context, endpoint string, card AgentCard) error {
@@ -752,6 +749,55 @@ type httpErrorResponse struct {
 
 type httpStatusResponse struct {
 	Status string `json:"status"`
+}
+
+type httpStatusError struct {
+	status string
+	remote string
+	cause  error
+}
+
+func (e httpStatusError) Error() string {
+	if e.remote != "" {
+		return fmt.Sprintf("%s: %s: %s", ErrHTTPStatus.Error(), e.status, e.remote)
+	}
+	return fmt.Sprintf("%s: %s", ErrHTTPStatus.Error(), e.status)
+}
+
+func (e httpStatusError) Unwrap() []error {
+	if e.cause == nil {
+		return []error{ErrHTTPStatus}
+	}
+	return []error{ErrHTTPStatus, e.cause}
+}
+
+func knownHTTPRemoteError(message string) error {
+	for _, candidate := range []error{
+		ErrAgentExists,
+		ErrAgentNotFound,
+		ErrCardNameRequired,
+		ErrLeaseTTLRequired,
+		ErrDiscovererRequired,
+		ErrCardRegistrarRequired,
+		ErrDiscoveryRequired,
+		ErrStreamNotSupported,
+		ErrTaskIDRequired,
+		ErrMeshRetryTaskIDRequired,
+		ErrSyncIntervalRequired,
+	} {
+		if httpErrorMessageMatches(message, candidate) {
+			return candidate
+		}
+	}
+	return nil
+}
+
+func httpErrorMessageMatches(message string, target error) bool {
+	if target == nil {
+		return false
+	}
+	prefix := target.Error()
+	return message == prefix || strings.HasPrefix(message, prefix+":")
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {

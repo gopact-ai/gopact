@@ -469,8 +469,8 @@ func TestHTTPRegistryRegistrationRejectsUnsupportedRegistrarAndInvalidLease(t *t
 		t.Fatalf("NewHTTPRegistry(static) error = %v", err)
 	}
 	_, err = staticRegistry.RegisterCardWithLease(ctx, AgentCard{Name: "reviewer"}, time.Minute)
-	if !errors.Is(err, ErrHTTPStatus) || !strings.Contains(err.Error(), ErrCardRegistrarRequired.Error()) {
-		t.Fatalf("RegisterCardWithLease(unsupported) error = %v, want HTTP status with %q", err, ErrCardRegistrarRequired)
+	if !errors.Is(err, ErrHTTPStatus) || !errors.Is(err, ErrCardRegistrarRequired) || !strings.Contains(err.Error(), ErrCardRegistrarRequired.Error()) {
+		t.Fatalf("RegisterCardWithLease(unsupported) error = %v, want HTTP status wrapping %q", err, ErrCardRegistrarRequired)
 	}
 
 	storeServer := httptest.NewServer(NewHTTPRegistryHandler(NewRegistry()))
@@ -484,8 +484,8 @@ func TestHTTPRegistryRegistrationRejectsUnsupportedRegistrarAndInvalidLease(t *t
 		t.Fatalf("RegisterCardWithLease(0) client error = %v, want %v", err, ErrLeaseTTLRequired)
 	}
 	_, err = registry.HeartbeatCard(ctx, "missing", time.Minute)
-	if !errors.Is(err, ErrHTTPStatus) || !strings.Contains(err.Error(), ErrAgentNotFound.Error()) {
-		t.Fatalf("HeartbeatCard(missing) error = %v, want HTTP status with %q", err, ErrAgentNotFound)
+	if !errors.Is(err, ErrHTTPStatus) || !errors.Is(err, ErrAgentNotFound) || !strings.Contains(err.Error(), ErrAgentNotFound.Error()) {
+		t.Fatalf("HeartbeatCard(missing) error = %v, want HTTP status wrapping %q", err, ErrAgentNotFound)
 	}
 }
 
