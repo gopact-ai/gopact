@@ -45,6 +45,8 @@ const (
 	SelfBootstrapCheckPublicAPIExamplesCommand = "command:go test -run '^Example' ./..."
 	// SelfBootstrapCheckFeatureCoverage is the standard feature coverage snapshot check.
 	SelfBootstrapCheckFeatureCoverage = "file-snapshot:doc/FEATURES.md"
+	// SelfBootstrapCheckWorkflowOrchestrationMatrix is the standard workflow orchestration matrix snapshot check.
+	SelfBootstrapCheckWorkflowOrchestrationMatrix = "file-snapshot:doc/design/workflow-orchestration-matrix.json"
 	// SelfBootstrapCheckGraphConformanceCommand is the standard graph workflow conformance check.
 	SelfBootstrapCheckGraphConformanceCommand = "command:go test -count=1 ./graph ./gopacttest/graphconformance"
 	// SelfBootstrapCheckA2AConformanceCommand is the standard A2A mesh conformance check.
@@ -236,8 +238,11 @@ func SelfBootstrapReleaseGateRequirements() []VerificationEvidenceRequirement {
 			},
 		},
 		{
-			Name:                  "self-bootstrap-feature-coverage",
-			RequiredCheckIDs:      append([]string{SelfBootstrapCheckFeatureCoverage}, selfBootstrapFeatureCoverageCommandCheckIDs()...),
+			Name: "self-bootstrap-feature-coverage",
+			RequiredCheckIDs: append(
+				[]string{SelfBootstrapCheckFeatureCoverage, SelfBootstrapCheckWorkflowOrchestrationMatrix},
+				selfBootstrapFeatureCoverageCommandCheckIDs()...,
+			),
 			RequiredEvidenceTypes: []string{VerificationEvidenceTypeFileSnapshot, VerificationEvidenceTypeCommand},
 		},
 		{
@@ -377,6 +382,7 @@ func selfBootstrapReleaseGateChecks(
 		selfBootstrapSnapshotCheck("doc/design/public-api-boundary.json"),
 		selfBootstrapSnapshotCheck("doc/design/public-api-examples.json"),
 		selfBootstrapSnapshotCheck("doc/FEATURES.md"),
+		selfBootstrapSnapshotCheck("doc/design/workflow-orchestration-matrix.json"),
 		selfBootstrapSnapshotCheck("doc/design/deprecation-policy.md"),
 		selfBootstrapSnapshotCheck("doc/design/api-ergonomics.md"),
 		selfBootstrapSnapshotCheck("doc/design/repository-boundary.json"),

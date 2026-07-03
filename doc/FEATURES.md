@@ -6,6 +6,8 @@ Chinese documentation: [FEATURES_zh.md](FEATURES_zh.md)
 
 This matrix lists only behavior that has offline tests or reusable conformance coverage in the core repository. Planned features may appear in design documents, but they must not be presented as complete in README files or release notes until they have proof here.
 
+Workflow orchestration details, including completed graph capabilities and planned gaps, are tracked in [doc/design/workflow-orchestration-matrix.json](design/workflow-orchestration-matrix.json).
+
 | Capability | Package or contract | Offline proof | Boundary |
 | --- | --- | --- | --- |
 | workflow graph execution | `graph` | `go test -count=1 ./graph ./gopacttest/graphconformance` | Typed graph runtime, node/edge execution, step export/import, interrupted step resume, branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, node-emitted nested events, middleware, event stream, and reusable graph conformance |

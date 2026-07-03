@@ -10,6 +10,7 @@ Main architecture map for gopact. It links design philosophy, runtime modules, t
 
 - [../FEATURES.md](../FEATURES.md): executable feature coverage matrix. Canonical path: `doc/FEATURES.md`.
 - [modules.md](modules.md): runtime module boundaries.
+- [workflow-orchestration-matrix.json](workflow-orchestration-matrix.json): completed graph orchestration capabilities, proof commands, conformance cases, and planned orchestration gaps.
 - [templates.md](templates.md): ReAct, Agent-as-Tool, Dev Agent, and template ownership.
 - [migration-guide.md](migration-guide.md): compatibility and migration guide.
 - [template-guide.md](template-guide.md): external graph template authoring rules.

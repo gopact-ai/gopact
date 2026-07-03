@@ -8,6 +8,8 @@
 
 本表只记录 core 仓库已经具备离线测试或 conformance 证明的能力。未出现在这里的能力可以在设计文档中规划，但不能在 README 或 release note 中描述为已完成。
 
+workflow orchestration 的已完成能力和规划缺口记录在 [doc/design/workflow-orchestration-matrix.json](design/workflow-orchestration-matrix.json)。
+
 | Capability | Package or contract | Offline proof | Boundary |
 | --- | --- | --- | --- |
 | workflow graph execution | `graph` | `go test -count=1 ./graph ./gopacttest/graphconformance` | Typed graph runtime, node/edge execution, step export/import, interrupted step resume, branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, node-emitted nested events, middleware, event stream, and reusable graph conformance |
