@@ -314,5 +314,19 @@ func expectedCompletedExternalWorkflowCapabilities() []struct {
 				"selfbootstrap-quickstart-release-ready-evidence",
 			},
 		},
+		{
+			id:           "devagent-workspace-adapter",
+			packageName:  "devagent/workspace",
+			targetRepo:   "gopact-ext",
+			offlineProof: "gopact-ext: (cd devagent/workspace && go test -count=1 ./...) && ./scripts/self-bootstrap-mock-suite.sh; gopact-examples: go test -count=1 ./quickstart/self-bootstrap && ./scripts/self-bootstrap-mock-suite.sh",
+			conformanceCases: []string{
+				"workspace-writer-captures-worktree-diff-and-repo-relative-file-snapshots",
+				"workspace-tester-runs-commands-and-maps-ci-gates",
+				"workspace-tester-records-failed-command-without-runtime-error",
+				"workspace-command-output-is-bounded",
+				"workspace-rejects-outside-root-paths-and-symlink-escapes",
+				"selfbootstrap-quickstart-uses-workspace-diff-file-snapshot-command-and-ci-gate-evidence",
+			},
+		},
 	}
 }

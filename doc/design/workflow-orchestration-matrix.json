@@ -208,6 +208,22 @@
       "boundary": "gopact-ext provides a provider-neutral Dev Agent self-bootstrap workflow with host-injected analyze, plan, write, test, and review stages; it records observed diff, file snapshot, command, CI gate, review, run export, failure attribution, and embedded verification report evidence without calling models, executing commands, applying patches, or reading a workspace by itself, and gopact-examples exposes the credential-free quickstart path."
     },
     {
+      "id": "devagent-workspace-adapter",
+      "status": "completed",
+      "package": "devagent/workspace",
+      "target_repo": "gopact-ext",
+      "offline_proof": "gopact-ext: (cd devagent/workspace && go test -count=1 ./...) && ./scripts/self-bootstrap-mock-suite.sh; gopact-examples: go test -count=1 ./quickstart/self-bootstrap && ./scripts/self-bootstrap-mock-suite.sh",
+      "conformance_cases": [
+        "workspace-writer-captures-worktree-diff-and-repo-relative-file-snapshots",
+        "workspace-tester-runs-commands-and-maps-ci-gates",
+        "workspace-tester-records-failed-command-without-runtime-error",
+        "workspace-command-output-is-bounded",
+        "workspace-rejects-outside-root-paths-and-symlink-escapes",
+        "selfbootstrap-quickstart-uses-workspace-diff-file-snapshot-command-and-ci-gate-evidence"
+      ],
+      "boundary": "gopact-ext provides a local repository workspace adapter for Dev Agent self-bootstrap runs. It captures repo-relative git worktree diffs and file snapshots, executes host-controlled local commands as bounded command and CI gate evidence, preserves failed commands as verification evidence, rejects outside-root paths and symlink escapes, and gopact-examples demonstrates the adapter in a temporary git workspace without mutating the checked-out examples repository."
+    },
+    {
       "id": "workflow-visualization-export",
       "status": "completed",
       "package": "graph",

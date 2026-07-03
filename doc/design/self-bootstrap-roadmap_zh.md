@@ -66,7 +66,9 @@
 
 `gopact-ext/devagent/selfbootstrap` 提供第一段 provider-neutral 的 Dev Agent 自举 workflow。它编排由宿主注入的 analyze、plan、write、test、review 阶段，封存已观察到的 diff、file snapshot、command、CI gate、review、run export、failure attribution 和 verification report 证据，并登记在 [workflow-orchestration-matrix.json](workflow-orchestration-matrix.json)。
 
-该切片本身不调用模型、不执行命令、不应用 patch、不读取工作区。命令执行、受控修改、sandbox、policy、checkpoint 和 release gate 自动化必须在 runtime contract 明确后再升级为内置能力。
+`gopact-ext/devagent/workspace` 提供第一段本地仓库 adapter。它采集 repo-relative git diff 和 file snapshot，把宿主控制的本地命令执行结果记录为有界 command 与 CI gate evidence，把失败命令保留为 verification evidence，拒绝越过 root 的路径和 symlink escape，并由 `gopact-examples` 的 self-bootstrap quickstart 在临时 git workspace 中演示。
+
+workflow 切片本身不调用模型、不应用 patch。workspace 读取和命令执行只通过宿主显式创建的 adapter 暴露，确保 policy、sandbox、checkpoint 和 release gate 自动化仍是可观察的 runtime boundary。
 
 ## 可自举定义
 
