@@ -945,7 +945,48 @@ import (
 	"time"
 
 	"github.com/gopact-ai/gopact/a2a"
+	"github.com/gopact-ai/gopact/gopacttest/a2aconformance"
 )
+
+func TestScaffoldAgentSatisfiesA2AConformance(t *testing.T) {
+	server := httptest.NewServer(newScaffoldHTTPHandler())
+	defer server.Close()
+	t.Setenv(agentURLEnv, server.URL)
+
+	expected := scaffoldAgent{}.Card()
+
+	a2aconformance.RequireAgentConformance(t, a2aconformance.AgentConformanceHarness{
+		Agent:            scaffoldAgent{},
+		Task:             a2a.Task{ID: "task-conformance", Input: "hello"},
+		RequireStreaming: true,
+	})
+
+	remote, err := a2a.NewHTTPAgent(server.URL, a2a.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPAgent() error = %v", err)
+	}
+	a2aconformance.RequireAgentMeshConformance(t, a2aconformance.AgentMeshConformanceHarness{
+		Agent:            remote,
+		Query:            a2a.DiscoveryQuery{URL: server.URL},
+		ExpectedCard:     expected,
+		Task:             a2a.Task{ID: "task-mesh-conformance", Input: "mesh hello"},
+		RequireStreaming: true,
+	})
+
+	registry, err := a2a.NewHTTPRegistry(server.URL+"/agents.json", a2a.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+	a2aconformance.RequireDiscovererConformance(t, a2aconformance.DiscovererConformanceHarness{
+		Discoverer: registry,
+		Query: a2a.DiscoveryQuery{
+			Name:    agentName,
+			Require: []string{"chat"},
+		},
+		ExpectedCard:     expected,
+		RequireListCards: true,
+	})
+}
 
 func TestScaffoldAgentServesA2A(t *testing.T) {
 	ctx := context.Background()
@@ -1231,6 +1272,15 @@ func (agent clusterAgent) Send(ctx context.Context, task a2a.Task) (a2a.Result, 
 
 func (agent clusterAgent) Stream(ctx context.Context, task a2a.Task) iter.Seq2[a2a.TaskEvent, error] {
 	return func(yield func(a2a.TaskEvent, error) bool) {
+		if err := ctx.Err(); err != nil {
+			yield(a2a.TaskEvent{
+				TaskID: task.ID,
+				IDs:    task.IDs,
+				Status: a2a.TaskStatusFailed,
+				Err:    err,
+			}, err)
+			return
+		}
 		if !yield(a2a.TaskEvent{
 			TaskID:  task.ID,
 			IDs:     task.IDs,
@@ -1390,7 +1440,55 @@ import (
 	"time"
 
 	"github.com/gopact-ai/gopact/a2a"
+	"github.com/gopact-ai/gopact/gopacttest/a2aconformance"
 )
+
+func TestClusterAgentsSatisfyA2AConformance(t *testing.T) {
+	server := httptest.NewServer(newClusterHTTPHandler())
+	defer server.Close()
+	t.Setenv(clusterURLEnv, server.URL)
+
+	registry, err := a2a.NewHTTPRegistry(server.URL+"/agents.json", a2a.WithHTTPClient(server.Client()), a2a.WithHTTPReadinessCheck())
+	if err != nil {
+		t.Fatalf("NewHTTPRegistry() error = %v", err)
+	}
+
+	for _, agent := range clusterAgents() {
+		agent := agent
+		t.Run(agent.name, func(t *testing.T) {
+			expected := agent.Card()
+			require := append([]string(nil), agent.capabilities...)
+
+			a2aconformance.RequireAgentConformance(t, a2aconformance.AgentConformanceHarness{
+				Agent:            agent,
+				Task:             a2a.Task{ID: "task-conformance", Input: "hello"},
+				RequireStreaming: true,
+			})
+
+			remote, err := a2a.NewHTTPAgent(server.URL+clusterAgentPath(agent.name), a2a.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("NewHTTPAgent() error = %v", err)
+			}
+			a2aconformance.RequireAgentMeshConformance(t, a2aconformance.AgentMeshConformanceHarness{
+				Agent:            remote,
+				Query:            a2a.DiscoveryQuery{URL: expected.URL},
+				ExpectedCard:     expected,
+				Task:             a2a.Task{ID: "task-mesh-conformance", Input: "mesh hello"},
+				RequireStreaming: true,
+			})
+
+			a2aconformance.RequireDiscovererConformance(t, a2aconformance.DiscovererConformanceHarness{
+				Discoverer: registry,
+				Query: a2a.DiscoveryQuery{
+					Name:    agent.name,
+					Require: require,
+				},
+				ExpectedCard:     expected,
+				RequireListCards: true,
+			})
+		})
+	}
+}
 
 func TestClusterRegistryBootstrapsMesh(t *testing.T) {
 	ctx := context.Background()
