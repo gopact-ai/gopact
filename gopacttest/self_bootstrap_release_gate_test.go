@@ -2,6 +2,7 @@ package gopacttest
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/gopact-ai/gopact"
@@ -44,6 +45,60 @@ func TestCheckSelfBootstrapReleaseGatePassesCompleteExportAndReport(t *testing.T
 		t.Fatalf("CheckSelfBootstrapReleaseGate() failed cases: %v", failed)
 	}
 	RequireSelfBootstrapReleaseGateForExport(t, bundle.RunExport, bundle.Report)
+}
+
+func TestBuildSelfBootstrapReleaseGateReportRecordsReplayPlanFromRunExport(t *testing.T) {
+	export := selfBootstrapRunExport(gopact.RunCompleted)
+	export.Steps = []gopact.StepSnapshot{
+		{
+			ID:    "step-code",
+			Step:  1,
+			Node:  "code-agent",
+			Phase: gopact.StepCompleted,
+			Effects: []gopact.EffectRecord{
+				{
+					ID:             "effect-code",
+					Type:           "command",
+					ReplayPolicy:   gopact.EffectReplayIdempotent,
+					IdempotencyKey: "code-agent:command",
+				},
+			},
+		},
+		{
+			ID:    "step-review",
+			Step:  2,
+			Node:  "review-agent",
+			Phase: gopact.StepCompleted,
+			Effects: []gopact.EffectRecord{
+				{
+					ID:           "effect-review",
+					Type:         "review",
+					ReplayPolicy: gopact.EffectReplaySkip,
+					DependsOn:    []string{"effect-code"},
+				},
+			},
+		},
+	}
+
+	report := selfBootstrapReleaseGateReportForExport(t, export, selfBootstrapReleaseGateGates())
+	check := findSelfBootstrapReleaseGateCheck(t, report, SelfBootstrapCheckReplayPlan)
+	if len(check.Evidence) != 1 {
+		t.Fatalf("replay plan evidence count = %d, want 1", len(check.Evidence))
+	}
+	evidence := check.Evidence[0]
+	if evidence.Type != SelfBootstrapEvidenceTypeReplayPlan {
+		t.Fatalf("replay plan evidence type = %q, want %q", evidence.Type, SelfBootstrapEvidenceTypeReplayPlan)
+	}
+	metadata := evidence.Metadata
+	if metadata["decision_count"] != 2 || metadata["replay_count"] != 1 || metadata["skip_count"] != 1 {
+		t.Fatalf("replay plan metadata = %+v, want decision/replay/skip counts", metadata)
+	}
+	if !reflect.DeepEqual(metadata["planned_effect_ids"], []string{"effect-code", "effect-review"}) {
+		t.Fatalf("planned effect ids = %+v, want effect-code/effect-review", metadata["planned_effect_ids"])
+	}
+	if !reflect.DeepEqual(metadata["planned_step_ids"], []string{"step-code", "step-review"}) {
+		t.Fatalf("planned step ids = %+v, want step-code/step-review", metadata["planned_step_ids"])
+	}
 }
 
 func TestCheckSelfBootstrapReleaseGateRejectsFailureAttributions(t *testing.T) {
@@ -462,6 +517,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingRunEffectReplayEvidenc
 	}
 }
 
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingReplayPlanEvidence(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckReplayPlan)
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-behavior-evidence/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing replay plan evidence: %+v", results)
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingA2ATaskEvidence(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckA2ATask)
@@ -510,6 +575,21 @@ func removeSelfBootstrapReleaseGateCheck(t *testing.T, report *gopact.Verificati
 		}
 	}
 	t.Fatalf("self-bootstrap fixture missing check %q", id)
+}
+
+func findSelfBootstrapReleaseGateCheck(
+	t *testing.T,
+	report gopact.VerificationReport,
+	id string,
+) gopact.VerificationCheck {
+	t.Helper()
+	for _, check := range report.Checks {
+		if check.ID == id {
+			return check
+		}
+	}
+	t.Fatalf("self-bootstrap fixture missing check %q", id)
+	return gopact.VerificationCheck{}
 }
 
 func removeSelfBootstrapReleaseGateCheckIfPresent(report *gopact.VerificationReport, id string) {
