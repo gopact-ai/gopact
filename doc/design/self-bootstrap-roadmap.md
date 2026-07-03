@@ -57,10 +57,11 @@ The first self-bootstrap CLI surface is intentionally small:
 - `gopact agent init-cluster <name> [-module <module>] [-out <dir>]` creates a local planner/worker/reviewer A2A HTTP cluster with tests for HTTP registry bootstrap, mesh routing, streaming, cancel, health/readiness, graceful shutdown, and a bare-array `agents.json`. When `-module` is omitted, the scaffold uses `example.com/<name>`.
 - `gopact agent verify [dir]` validates the required scaffold files, checks the A2A registry shape, and runs `go test ./...` without loading `.env` or provider credentials.
 - `gopact agent run [dir]` executes the generated module and loads local `.env` only for runtime address or public URL overrides.
+- `gopact release-bundle -run-export <file>` builds a self-bootstrap release evidence bundle from an already recorded `RunExport`, embeds the generated verification report, checks the self-bootstrap release gate, and writes stable JSON to stdout.
 
 This keeps the zero-credential bootstrap path in core while leaving provider-backed behavior, production agent templates, and Dev Agent implementations in `gopact-ext` and runnable workflows in `gopact-examples`.
 
-Generated clusters also wire `GOPACT_A2A_REGISTRY_URL` into mesh bootstrap so local or external registries can be swapped without editing scaffold code. The next scaffold increments are examples-repository smoke coverage for generated clusters and a release-bundle command that records run export, diff, command, CI, review, and policy evidence without depending on real providers in CI.
+Generated clusters also wire `GOPACT_A2A_REGISTRY_URL` into mesh bootstrap so local or external registries can be swapped without editing scaffold code. Release bundle generation remains credential-free in core and relies on recorded evidence rather than real providers in CI.
 
 ## Testing Standard
 
