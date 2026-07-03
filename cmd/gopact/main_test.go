@@ -151,10 +151,13 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 		"a2a.NewHTTPRegistryHandler",
 		"a2a.NewHTTPRegistry",
 		"a2a.NewMesh",
+		`clusterRegistryURLEnv = "GOPACT_A2A_REGISTRY_URL"`,
+		"bootstrapClusterMeshFromEnv",
 	)
 	assertFileContains(t, filepath.Join(out, "main_test.go"),
 		"httptest.NewServer",
 		"TestClusterRegistryBootstrapsMesh",
+		"TestClusterBootstrapsMeshFromEnvRegistryURL",
 		"TestClusterRoutesStreamingTasks",
 		"TestClusterServerStopsOnContextCancel",
 	)
@@ -164,6 +167,8 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 		"gopact agent run .",
 		"GOPACT_CLUSTER_ADDR",
 		"GOPACT_CLUSTER_URL",
+		"GOPACT_A2A_REGISTRY_URL",
+		"mesh bootstrap helper",
 	)
 	assertFileContains(t, filepath.Join(out, ".env.example"),
 		"GOPACT_CLUSTER_ADDR=:8080",
