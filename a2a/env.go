@@ -50,7 +50,8 @@ func NewEnvCardListers(lookup func(string) string, opts ...HTTPAgentOption) ([]C
 
 // BootstrapEnv imports agent cards from standard gopact A2A environment variables.
 func (m *Mesh) BootstrapEnv(ctx context.Context, lookup func(string) string, opts ...HTTPAgentOption) (BootstrapResult, []string, error) {
-	listers, sources, err := NewEnvCardListers(lookup, opts...)
+	httpOptions := m.envHTTPOptions(opts)
+	listers, sources, err := NewEnvCardListers(lookup, httpOptions...)
 	if err != nil {
 		return BootstrapResult{}, nil, err
 	}
@@ -63,7 +64,8 @@ func (m *Mesh) BootstrapEnv(ctx context.Context, lookup func(string) string, opt
 
 // SyncEnv imports cards from standard gopact A2A environment variables, prunes unready agents, and returns the final card snapshot.
 func (m *Mesh) SyncEnv(ctx context.Context, lookup func(string) string, opts ...HTTPAgentOption) (SyncResult, error) {
-	listers, sources, err := NewEnvCardListers(lookup, opts...)
+	httpOptions := m.envHTTPOptions(opts)
+	listers, sources, err := NewEnvCardListers(lookup, httpOptions...)
 	if err != nil {
 		return SyncResult{}, err
 	}
@@ -111,6 +113,13 @@ func (m *Mesh) withHTTPOptions(opts []HTTPAgentOption) *Mesh {
 	clone := *m
 	clone.httpOptions = append(append([]HTTPAgentOption(nil), m.httpOptions...), opts...)
 	return &clone
+}
+
+func (m *Mesh) envHTTPOptions(opts []HTTPAgentOption) []HTTPAgentOption {
+	if m == nil || len(m.httpOptions) == 0 {
+		return append([]HTTPAgentOption(nil), opts...)
+	}
+	return append(append([]HTTPAgentOption(nil), m.httpOptions...), opts...)
 }
 
 func splitEnvList(value string) []string {

@@ -26,6 +26,7 @@ This file records user-visible changes to `gopact` core. Internal reshuffling, p
 
 ### Changed
 
+- `a2a.Mesh.BootstrapEnv` and `a2a.Mesh.SyncEnv` now apply mesh-level HTTP agent options while discovering environment-configured agents.
 - Feature coverage now names the tested graph orchestration surface: step export/import, interrupted step resume, branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, and node-emitted nested events.
 - README and `doc/` structure now separate first-reader documentation, design records, maintainer process, and historical execution plans.
 - CI runs hygiene, unit, race, static analysis, coverage, conformance, and security gates in parallel while preserving a required aggregate `test` job.
