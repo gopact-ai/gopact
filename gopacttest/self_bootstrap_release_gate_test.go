@@ -278,6 +278,14 @@ func TestSelfBootstrapReleaseGateReportIncludesExamplesMockSuiteCommand(t *testi
 	}
 }
 
+func TestSelfBootstrapReleaseGateReportIncludesExtMockSuiteCommand(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+
+	if findSelfBootstrapReleaseGateCheck(t, report, SelfBootstrapCheckExtMockSuiteCommand).ID == "" {
+		t.Fatal("self-bootstrap release gate report missing ext mock suite command")
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingExamplesMockSuiteCommand(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckExamplesMockSuiteCommand)
@@ -285,6 +293,16 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingExamplesMockSuiteComma
 	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
 	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ci/required-check-ids") {
 		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing examples mock suite command: %+v", results)
+	}
+}
+
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingExtMockSuiteCommand(t *testing.T) {
+	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckExtMockSuiteCommand)
+
+	results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+	if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-extension-ci/required-check-ids") {
+		t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing ext mock suite command: %+v", results)
 	}
 }
 
