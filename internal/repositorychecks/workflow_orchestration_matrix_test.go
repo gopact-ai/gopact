@@ -320,6 +320,8 @@ func expectedCompletedExternalWorkflowCapabilities() []struct {
 			targetRepo:   "gopact-ext",
 			offlineProof: "gopact-ext: (cd devagent/workspace && go test -count=1 ./...) && ./scripts/self-bootstrap-mock-suite.sh; gopact-examples: go test -count=1 ./quickstart/self-bootstrap && ./scripts/self-bootstrap-mock-suite.sh",
 			conformanceCases: []string{
+				"workspace-patch-writer-applies-caller-provided-patch-and-captures-evidence",
+				"workspace-patch-writer-rejects-root-escape-and-symlink-escape-before-apply",
 				"workspace-writer-captures-worktree-diff-and-repo-relative-file-snapshots",
 				"workspace-tester-runs-commands-and-maps-ci-gates",
 				"workspace-tester-records-failed-command-without-runtime-error",
