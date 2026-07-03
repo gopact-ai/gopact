@@ -53,6 +53,12 @@ go run ./cmd/gopact agent init-cluster support-cluster -out /tmp/support-cluster
 go run ./cmd/gopact agent verify /tmp/support-cluster
 ```
 
+Build a self-bootstrap release evidence bundle from a recorded run export:
+
+```bash
+go run ./cmd/gopact release-bundle -run-export /path/to/run-export.json > release-bundle.json
+```
+
 Use [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) when you want a complete runnable provider or agent-template path.
 
 ## Features

@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gopact-ai/gopact"
+	"github.com/gopact-ai/gopact/gopacttest"
 )
 
 func TestRunAgentInitWritesRunnableScaffold(t *testing.T) {
@@ -450,6 +453,47 @@ GOPACT_EXISTING=from-dotenv
 	if _, err := agentRunEnv(dir, nil); err == nil || !strings.Contains(err.Error(), "missing =") {
 		t.Fatalf("agentRunEnv() err = %v, want missing = parse error", err)
 	}
+}
+
+func TestRunReleaseBundleBuildsSelfBootstrapBundle(t *testing.T) {
+	dir := t.TempDir()
+	input := gopact.RunExport{
+		Version: gopact.RunExportVersion,
+		IDs:     gopact.RuntimeIDs{RunID: "run-cli-release-bundle", ThreadID: "thread-cli-release-bundle"},
+		Outcome: gopact.RunCompleted,
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputPath := filepath.Join(dir, "run-export.json")
+	if err := os.WriteFile(inputPath, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"release-bundle", "-run-export", inputPath}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+
+	var bundle struct {
+		RunExport gopact.RunExport          `json:"run_export"`
+		Report    gopact.VerificationReport `json:"report"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &bundle); err != nil {
+		t.Fatalf("stdout is not release bundle JSON: %v\n%s", err, stdout.String())
+	}
+	if bundle.Report.Status != gopact.VerificationStatusPassed {
+		t.Fatalf("report status = %q, want passed", bundle.Report.Status)
+	}
+	if len(bundle.RunExport.VerificationReports) != 1 {
+		t.Fatalf("embedded reports = %d, want 1", len(bundle.RunExport.VerificationReports))
+	}
+	gopacttest.RequireSelfBootstrapReleaseGateForExport(t, bundle.RunExport, bundle.Report)
 }
 
 func TestDefaultSDKVersionFallbackUsesCurrentReleasedTag(t *testing.T) {
