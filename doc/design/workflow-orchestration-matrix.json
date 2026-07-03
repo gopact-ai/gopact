@@ -192,6 +192,22 @@
       "boundary": "gopact-ext provides a provider-neutral leased background worker primitive that runs one job or bounded drains, applies retry/stop/dead-letter queue transitions, renews worker ownership leases, refuses commits after lease loss, exposes an in-process test queue, and records schedule verification evidence."
     },
     {
+      "id": "devagent-selfbootstrap-workflow",
+      "status": "completed",
+      "package": "devagent/selfbootstrap",
+      "target_repo": "gopact-ext",
+      "offline_proof": "gopact-ext: (cd devagent/selfbootstrap && go test -count=1 ./...) && ./scripts/self-bootstrap-mock-suite.sh; gopact-examples: go test -count=1 ./quickstart/self-bootstrap && ./scripts/self-bootstrap-mock-suite.sh",
+      "conformance_cases": [
+        "selfbootstrap-workflow-completes-with-release-ready-evidence",
+        "selfbootstrap-review-rejection-fails-with-review-evidence",
+        "selfbootstrap-test-failure-records-verification-attribution",
+        "selfbootstrap-stage-errors-produce-failed-run-export",
+        "selfbootstrap-write-evidence-failure-records-failed-check",
+        "selfbootstrap-quickstart-release-ready-evidence"
+      ],
+      "boundary": "gopact-ext provides a provider-neutral Dev Agent self-bootstrap workflow with host-injected analyze, plan, write, test, and review stages; it records observed diff, file snapshot, command, CI gate, review, run export, failure attribution, and embedded verification report evidence without calling models, executing commands, applying patches, or reading a workspace by itself, and gopact-examples exposes the credential-free quickstart path."
+    },
+    {
       "id": "workflow-visualization-export",
       "status": "completed",
       "package": "graph",
