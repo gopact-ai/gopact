@@ -144,6 +144,58 @@ func TestMeshBootstrapEnvAppliesHTTPOptionsToRegisteredAgents(t *testing.T) {
 	}
 }
 
+func TestMeshEnvUsesMeshHTTPOptions(t *testing.T) {
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		sync func(context.Context, *Mesh, func(string) string) error
+	}{
+		{
+			name: "BootstrapEnv",
+			sync: func(ctx context.Context, mesh *Mesh, lookup func(string) string) error {
+				_, _, err := mesh.BootstrapEnv(ctx, lookup)
+				return err
+			},
+		},
+		{
+			name: "SyncEnv",
+			sync: func(ctx context.Context, mesh *Mesh, lookup func(string) string) error {
+				_, err := mesh.SyncEnv(ctx, lookup)
+				return err
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newHeaderProtectedSyncEnvAgent(t)
+			defer server.Close()
+			mesh, err := NewMesh(WithMeshHTTPAgentOptions(
+				WithHTTPHeader("X-Cluster", "dev"),
+				WithHTTPReadinessCheck(),
+			))
+			if err != nil {
+				t.Fatalf("NewMesh() error = %v", err)
+			}
+			lookup := func(key string) string {
+				if key == EnvA2AEndpoints {
+					return server.URL
+				}
+				return ""
+			}
+
+			if err := tt.sync(ctx, mesh, lookup); err != nil {
+				t.Fatalf("%s() error = %v", tt.name, err)
+			}
+			result, err := mesh.Call(ctx, "header-agent", Task{ID: "task-1", Input: "task"})
+			if err != nil {
+				t.Fatalf("Call() error = %v", err)
+			}
+			if result.Output != "synced: task" {
+				t.Fatalf("Call() output = %q, want synced task", result.Output)
+			}
+		})
+	}
+}
+
 func TestMeshSyncEnvBootstrapsSourcesAndPrunesUnreadyHTTPAgents(t *testing.T) {
 	ctx := context.Background()
 	stale := newSyncEnvHTTPAgent(t, AgentCard{Name: "stale-agent"}, false)
