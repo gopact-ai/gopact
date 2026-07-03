@@ -385,6 +385,7 @@ type invokeConfig struct {
 	resumeRequest    *gopact.ResumeRequest
 	artifactVerifier ArtifactVerifier
 	schemaValidator  gopact.JSONSchemaValidator
+	fanOutMerge      any
 	maxSteps         int
 	maxStepsSet      bool
 }
@@ -580,6 +581,21 @@ func (r *Runnable[S]) execute(ctx context.Context, initial S, yield func(gopact.
 		}
 		checkpointLoader = loader
 	}
+	var fanOutMerge FanOutMergeFunc[S]
+	if cfg.fanOutMerge != nil {
+		merge, ok := cfg.fanOutMerge.(FanOutMergeFunc[S])
+		if !ok {
+			err := errors.New("graph: parallel fan-out merge state type mismatch")
+			emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, "", 0, nil, err), err)
+			return initial, err
+		}
+		if merge == nil {
+			err := errors.New("graph: parallel fan-out merge function is nil")
+			emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, "", 0, nil, err), err)
+			return initial, err
+		}
+		fanOutMerge = merge
+	}
 
 	state := initial
 	queue := append([]string(nil), r.edges[Start]...)
@@ -733,6 +749,29 @@ func (r *Runnable[S]) execute(ctx context.Context, initial S, yield func(gopact.
 			err := fmt.Errorf("graph: exceeded max steps %d", maxSteps)
 			emit(yield, graphEvent(gopact.EventRunFailed, cfg.ids, "", step, nil, err), err)
 			return state, err
+		}
+		if fanOutMerge != nil && checkpointer == nil && len(queue) > 1 && queueCanRunInParallel(queue) {
+			nextState, nextQueue, nextCompleted, nextStep, err := r.executeParallelFanOut(
+				ctx,
+				state,
+				queue,
+				completed,
+				step,
+				maxSteps,
+				cfg,
+				resumingNode,
+				fanOutMerge,
+				yield,
+			)
+			resumingNode = false
+			if err != nil {
+				return state, err
+			}
+			state = nextState
+			queue = nextQueue
+			completed = nextCompleted
+			step = nextStep
+			continue
 		}
 
 		name := queue[0]
@@ -941,6 +980,14 @@ func (r *Runnable[S]) execute(ctx context.Context, initial S, yield func(gopact.
 }
 
 func (r *Runnable[S]) nextNodes(ctx context.Context, name string, state S, completed map[string]struct{}) ([]string, error) {
+	next, err := r.candidateNodes(ctx, name, state)
+	if err != nil {
+		return nil, err
+	}
+	return r.readyNodes(next, completed), nil
+}
+
+func (r *Runnable[S]) candidateNodes(ctx context.Context, name string, state S) ([]string, error) {
 	next := append([]string(nil), r.edges[name]...)
 	for _, branch := range r.branches[name] {
 		targets, err := branch(ctx, state)
@@ -959,7 +1006,7 @@ func (r *Runnable[S]) nextNodes(ctx context.Context, name string, state S, compl
 			next = append(next, target)
 		}
 	}
-	return r.readyNodes(next, completed), nil
+	return next, nil
 }
 
 func (r *Runnable[S]) readyNodes(targets []string, completed map[string]struct{}) []string {
