@@ -421,6 +421,34 @@ func TestSelfBootstrapReleaseGateRequirementsRejectMissingAgnesIntegrationComman
 	}
 }
 
+func TestSelfBootstrapReleaseGateRequirementsRejectMissingAgnesIntegrationSuites(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{
+			name: "ext suite",
+			id:   SelfBootstrapCheckAgnesExtIntegrationSuiteCommand,
+		},
+		{
+			name: "examples suite",
+			id:   SelfBootstrapCheckAgnesExamplesIntegrationSuiteCommand,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
+			removeSelfBootstrapReleaseGateCheckIfPresent(&report, tt.id)
+
+			results := CheckVerificationEvidenceRequirements(context.Background(), report, SelfBootstrapReleaseGateRequirements())
+			if !hasFailedVerificationEvidenceConformanceCase(results, "self-bootstrap-local-agnes-integration/required-check-ids") {
+				t.Fatalf("CheckVerificationEvidenceRequirements() did not report missing Agnes integration suite: %+v", results)
+			}
+		})
+	}
+}
+
 func TestSelfBootstrapReleaseGateRequirementsRejectMissingRepositoryBoundary(t *testing.T) {
 	report := selfBootstrapReleaseGateReport(t, selfBootstrapReleaseGateGates())
 	removeSelfBootstrapReleaseGateCheck(t, &report, SelfBootstrapCheckRepositoryBoundary)
