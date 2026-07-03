@@ -81,7 +81,7 @@ workflow 切片本身不调用模型，也不判断 patch 是否可接受。patc
 
 这样 core 保留零凭据 bootstrap path；provider-backed 行为、生产 agent template 和 Dev Agent 实现仍放在 `gopact-ext`，可运行 workflow 仍放在 `gopact-examples`。
 
-下一批 scaffold 增量是 examples 仓库对生成 cluster 的 smoke 覆盖、本地默认之外的 registry/mesh 环境变量接线，以及能够记录 run export、diff、command、CI、review 和 policy evidence 的 release-bundle 命令；这些能力在 CI 中仍不能依赖真实 provider。
+生成的 cluster 已将 `GOPACT_A2A_REGISTRY_URL` 接入 mesh bootstrap，方便在不改 scaffold 代码的情况下切换本地或外部 registry。下一批 scaffold 增量是 examples 仓库对生成 cluster 的 smoke 覆盖，以及能够记录 run export、diff、command、CI、review 和 policy evidence 的 release-bundle 命令；这些能力在 CI 中仍不能依赖真实 provider。
 
 ## 可自举定义
 

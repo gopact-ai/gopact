@@ -60,7 +60,7 @@ The first self-bootstrap CLI surface is intentionally small:
 
 This keeps the zero-credential bootstrap path in core while leaving provider-backed behavior, production agent templates, and Dev Agent implementations in `gopact-ext` and runnable workflows in `gopact-examples`.
 
-The next scaffold increments are examples-repository smoke coverage for generated clusters, registry/mesh env wiring beyond the local default, and a release-bundle command that records run export, diff, command, CI, review, and policy evidence without depending on real providers in CI.
+Generated clusters also wire `GOPACT_A2A_REGISTRY_URL` into mesh bootstrap so local or external registries can be swapped without editing scaffold code. The next scaffold increments are examples-repository smoke coverage for generated clusters and a release-bundle command that records run export, diff, command, CI, review, and policy evidence without depending on real providers in CI.
 
 ## Testing Standard
 
