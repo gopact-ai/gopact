@@ -43,6 +43,14 @@ go run ./cmd/gopact agent verify /tmp/support-agent
 go run ./cmd/gopact agent run /tmp/support-agent
 ```
 
+生成一个本地 A2A agent cluster scaffold：
+
+```bash
+go run ./cmd/gopact agent init-cluster support-cluster -module example.com/support-cluster -out /tmp/support-cluster
+(cd /tmp/support-cluster && go test ./...)
+go run ./cmd/gopact agent verify /tmp/support-cluster
+```
+
 需要模型 provider 或完整 agent template 时，从 [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) 开始；core 仓库只保留 provider-neutral 契约和离线可测实现。
 
 ## 核心概念

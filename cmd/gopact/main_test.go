@@ -99,6 +99,103 @@ func TestRunAgentInitRejectsMissingModule(t *testing.T) {
 	}
 }
 
+func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "support-cluster")
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"agent", "init-cluster", "support-cluster",
+		"-out", out,
+		"-module", "example.com/support-cluster",
+		"-sdk-version", "v0.0.15",
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "created agent cluster scaffold") {
+		t.Fatalf("stdout missing success message:\n%s", stdout.String())
+	}
+
+	assertFileContains(t, filepath.Join(out, "go.mod"),
+		"module example.com/support-cluster",
+		"github.com/gopact-ai/gopact v0.0.15",
+	)
+	assertFileContains(t, filepath.Join(out, "main.go"),
+		`clusterName = "support-cluster"`,
+		"plannerAgentName",
+		`"planner-agent"`,
+		"workerAgentName",
+		`"worker-agent"`,
+		"reviewerAgentName",
+		`"reviewer-agent"`,
+		"a2a.NewHTTPHandler",
+		"a2a.NewHTTPRegistryHandler",
+		"a2a.NewHTTPRegistry",
+		"a2a.NewMesh",
+	)
+	assertFileContains(t, filepath.Join(out, "main_test.go"),
+		"httptest.NewServer",
+		"TestClusterRegistryBootstrapsMesh",
+		"TestClusterRoutesStreamingTasks",
+		"TestClusterServerStopsOnContextCancel",
+	)
+	assertFileContains(t, filepath.Join(out, "README.md"),
+		"# support-cluster",
+		"gopact agent verify .",
+		"gopact agent run .",
+		"GOPACT_CLUSTER_ADDR",
+		"GOPACT_CLUSTER_URL",
+	)
+	assertFileContains(t, filepath.Join(out, ".env.example"),
+		"GOPACT_CLUSTER_ADDR=:8080",
+		"GOPACT_CLUSTER_URL=http://localhost:8080",
+	)
+
+	registry := readFile(t, filepath.Join(out, "agents.json"))
+	if !strings.HasPrefix(strings.TrimSpace(registry), "[") {
+		t.Fatalf("agents.json must use a bare array registry:\n%s", registry)
+	}
+	var cards []struct {
+		Name         string   `json:"name"`
+		URL          string   `json:"url"`
+		Capabilities []string `json:"capabilities"`
+		Streaming    bool     `json:"streaming"`
+	}
+	if err := json.Unmarshal([]byte(registry), &cards); err != nil {
+		t.Fatalf("agents.json is not valid JSON: %v\n%s", err, registry)
+	}
+	if len(cards) != 3 {
+		t.Fatalf("agents.json card count = %d, want 3: %+v", len(cards), cards)
+	}
+	wantNames := []string{"planner-agent", "worker-agent", "reviewer-agent"}
+	for i, want := range wantNames {
+		if cards[i].Name != want || cards[i].URL == "" || len(cards[i].Capabilities) == 0 || !cards[i].Streaming {
+			t.Fatalf("agents.json card[%d] = %+v, want streaming %s card", i, cards[i], want)
+		}
+	}
+}
+
+func TestRunAgentInitClusterRejectsMissingModule(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"agent", "init-cluster", "support-cluster",
+		"-out", filepath.Join(t.TempDir(), "support-cluster"),
+	}, &stdout, &stderr)
+	if code != exitUsage {
+		t.Fatalf("run() code = %d, want %d", code, exitUsage)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "-module is required") {
+		t.Fatalf("stderr missing module error:\n%s", stderr.String())
+	}
+}
+
 func TestRunAgentRunExecutesGoModule(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/agent-run\n\ngo 1.25\n"), 0o644); err != nil {
@@ -297,6 +394,33 @@ func TestGeneratedAgentScaffoldPassesGoTest(t *testing.T) {
 		t.Fatalf("agent verify code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, exitOK, stdout.String(), stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "verified agent scaffold support-agent") {
+		t.Fatalf("agent verify stdout missing summary:\n%s", stdout.String())
+	}
+}
+
+func TestGeneratedAgentClusterScaffoldPassesGoTest(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "support-cluster")
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"agent", "init-cluster", "support-cluster",
+		"-out", out,
+		"-module", "example.com/support-cluster",
+		"-sdk-version", "v0.0.15",
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+
+	runGeneratedCommand(t, out, "go", "mod", "edit", "-replace", "github.com/gopact-ai/gopact="+repoRoot(t))
+	runGeneratedCommand(t, out, "go", "mod", "tidy")
+	runGeneratedCommand(t, out, "go", "test", "./...")
+
+	code = run(context.Background(), []string{"agent", "verify", out}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("agent verify code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, exitOK, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "verified agent scaffold planner-agent") {
 		t.Fatalf("agent verify stdout missing summary:\n%s", stdout.String())
 	}
 }
