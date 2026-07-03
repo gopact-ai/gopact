@@ -1,17 +1,22 @@
 package graph
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/gopact-ai/gopact"
+)
 
 // Topology describes the static structure of a graph for audits, diagrams, and tooling.
 //
 // Branch functions are opaque at inspection time, so Branches records the branch
 // source and branch-function count instead of possible runtime targets.
 type Topology struct {
-	Nodes    []TopologyNode   `json:"nodes"`
-	Edges    []TopologyEdge   `json:"edges"`
-	Branches []TopologyBranch `json:"branches,omitempty"`
-	Joins    []TopologyJoin   `json:"joins,omitempty"`
-	MaxSteps int              `json:"max_steps,omitempty"`
+	Nodes       []TopologyNode    `json:"nodes"`
+	Edges       []TopologyEdge    `json:"edges"`
+	Branches    []TopologyBranch  `json:"branches,omitempty"`
+	Joins       []TopologyJoin    `json:"joins,omitempty"`
+	StateSchema gopact.JSONSchema `json:"state_schema,omitempty"`
+	MaxSteps    int               `json:"max_steps,omitempty"`
 }
 
 // TopologyNodeKind classifies a graph topology node.
@@ -28,8 +33,10 @@ const (
 
 // TopologyNode describes one graph node in a topology export.
 type TopologyNode struct {
-	Name string           `json:"name"`
-	Kind TopologyNodeKind `json:"kind"`
+	Name         string            `json:"name"`
+	Kind         TopologyNodeKind  `json:"kind"`
+	InputSchema  gopact.JSONSchema `json:"input_schema,omitempty"`
+	OutputSchema gopact.JSONSchema `json:"output_schema,omitempty"`
 }
 
 // TopologyEdge describes one static graph edge.
@@ -58,7 +65,16 @@ func (g *Graph[S]) Topology() Topology {
 	if g == nil {
 		return Topology{}
 	}
-	return buildTopology(topologyNodeKinds(g.nodes, g.runnableNodes), g.edges, g.branches, joinPredecessors(g.edges), 0)
+	return buildTopology(
+		topologyNodeKinds(g.nodes, g.runnableNodes),
+		g.edges,
+		g.branches,
+		joinPredecessors(g.edges),
+		g.stateSchema,
+		g.nodeInputSchemas,
+		g.nodeOutputSchemas,
+		0,
+	)
 }
 
 // Topology returns a stable, defensive topology export for this compiled runnable.
@@ -66,7 +82,16 @@ func (r *Runnable[S]) Topology() Topology {
 	if r == nil {
 		return Topology{}
 	}
-	return buildTopology(r.nodeKinds, r.edges, r.branches, r.joins, r.maxSteps)
+	return buildTopology(
+		r.nodeKinds,
+		r.edges,
+		r.branches,
+		r.joins,
+		r.stateSchema,
+		r.nodeInputSchemas,
+		r.nodeOutputSchemas,
+		r.maxSteps,
+	)
 }
 
 func buildTopology[S any](
@@ -74,14 +99,18 @@ func buildTopology[S any](
 	edges map[string][]string,
 	branches map[string][]BranchFunc[S],
 	joins map[string][]string,
+	stateSchema gopact.JSONSchema,
+	nodeInputSchemas map[string]gopact.JSONSchema,
+	nodeOutputSchemas map[string]gopact.JSONSchema,
 	maxSteps int,
 ) Topology {
 	return Topology{
-		Nodes:    topologyNodes(nodeKinds),
-		Edges:    topologyEdges(edges),
-		Branches: topologyBranches(branches),
-		Joins:    topologyJoins(joins),
-		MaxSteps: maxSteps,
+		Nodes:       topologyNodes(nodeKinds, nodeInputSchemas, nodeOutputSchemas),
+		Edges:       topologyEdges(edges),
+		Branches:    topologyBranches(branches),
+		Joins:       topologyJoins(joins),
+		StateSchema: copyJSONSchema(stateSchema),
+		MaxSteps:    maxSteps,
 	}
 }
 
@@ -100,7 +129,11 @@ func topologyNodeKinds[S any](
 	return nodeKinds
 }
 
-func topologyNodes(nodeKinds map[string]TopologyNodeKind) []TopologyNode {
+func topologyNodes(
+	nodeKinds map[string]TopologyNodeKind,
+	inputSchemas map[string]gopact.JSONSchema,
+	outputSchemas map[string]gopact.JSONSchema,
+) []TopologyNode {
 	nodes := make([]TopologyNode, 0, len(nodeKinds)+2)
 	nodes = append(nodes, TopologyNode{Name: Start, Kind: TopologyNodeBoundary})
 	names := make([]string, 0, len(nodeKinds))
@@ -116,7 +149,12 @@ func topologyNodes(nodeKinds map[string]TopologyNodeKind) []TopologyNode {
 		if kind == "" {
 			kind = TopologyNodeFunction
 		}
-		nodes = append(nodes, TopologyNode{Name: name, Kind: kind})
+		nodes = append(nodes, TopologyNode{
+			Name:         name,
+			Kind:         kind,
+			InputSchema:  copyJSONSchema(inputSchemas[name]),
+			OutputSchema: copyJSONSchema(outputSchemas[name]),
+		})
 	}
 	nodes = append(nodes, TopologyNode{Name: End, Kind: TopologyNodeBoundary})
 	return nodes

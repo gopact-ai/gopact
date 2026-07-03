@@ -48,6 +48,10 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkRunnableNodeInheritsRuntimeIDs(ctx),
 		checkRunnableNodeCheckpointInheritanceIsolation(ctx),
 		checkTopologyExportStable(ctx),
+		checkSchemaGuardRejectsInvalidNodeInput(ctx),
+		checkSchemaGuardRejectsInvalidNodeOutput(ctx),
+		checkSchemaGuardRejectsInvalidResumeState(ctx),
+		checkSchemaGuardExportsTopologyContracts(ctx),
 		checkFailedNodeStopsSuccessors(ctx),
 		checkCanceledNodeStopsSuccessors(ctx),
 	}
@@ -853,6 +857,139 @@ func checkTopologyExportStable(_ context.Context) GraphConformanceResult {
 	return passedGraphConformance(name)
 }
 
+func checkSchemaGuardRejectsInvalidNodeInput(ctx context.Context) GraphConformanceResult {
+	const name = "schema-guard-rejects-invalid-node-input"
+	called := false
+	g := graph.New[traceState]()
+	g.AddNode("guarded", func(context.Context, traceState) (traceState, error) {
+		called = true
+		return traceState{}, nil
+	})
+	g.SetNodeInputSchema("guarded", traceMinItemsSchema(1))
+	g.AddEdge(graph.Start, "guarded")
+	g.AddEdge("guarded", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	_, err = run.Invoke(ctx, traceState{})
+	if !errors.Is(err, graph.ErrSchemaGuardFailed) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want ErrSchemaGuardFailed", err))
+	}
+	if !errors.Is(err, gopact.ErrJSONSchemaValidationFailed) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want ErrJSONSchemaValidationFailed", err))
+	}
+	if called {
+		return failedGraphConformance(name, errors.New("guarded node ran after invalid input"))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkSchemaGuardRejectsInvalidNodeOutput(ctx context.Context) GraphConformanceResult {
+	const name = "schema-guard-rejects-invalid-node-output"
+	g := graph.New[traceState]()
+	g.AddNode("guarded", appendTrace("guarded"))
+	g.SetNodeOutputSchema("guarded", traceMinItemsSchema(2))
+	g.AddEdge(graph.Start, "guarded")
+	g.AddEdge("guarded", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	_, err = run.Invoke(ctx, traceState{})
+	if !errors.Is(err, graph.ErrSchemaGuardFailed) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want ErrSchemaGuardFailed", err))
+	}
+	if !errors.Is(err, gopact.ErrJSONSchemaValidationFailed) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want ErrJSONSchemaValidationFailed", err))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkSchemaGuardRejectsInvalidResumeState(ctx context.Context) GraphConformanceResult {
+	const name = "schema-guard-rejects-invalid-resume-state"
+	called := false
+	g := graph.New[traceState]()
+	g.SetStateSchema(traceMinItemsSchema(2))
+	g.AddNode("one", appendTrace("one"))
+	g.AddNode("next", func(_ context.Context, state traceState) (traceState, error) {
+		called = true
+		state.Trace = append(state.Trace, "next")
+		return state, nil
+	})
+	g.AddEdge(graph.Start, "one")
+	g.AddEdge("one", "next")
+	g.AddEdge("next", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	_, err = run.Invoke(ctx, traceState{}, graph.WithStepExport(gopact.StepExport{
+		Version: 1,
+		Step: gopact.StepSnapshot{
+			ID:     "run-1:1",
+			Step:   1,
+			Node:   "one",
+			Phase:  gopact.StepCompleted,
+			IDs:    gopact.RuntimeIDs{RunID: "run-1"},
+			Output: traceState{Trace: []string{"one"}},
+			Queue:  []string{"next"},
+		},
+	}))
+	if !errors.Is(err, graph.ErrSchemaGuardFailed) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want ErrSchemaGuardFailed", err))
+	}
+	if !errors.Is(err, gopact.ErrJSONSchemaValidationFailed) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want ErrJSONSchemaValidationFailed", err))
+	}
+	if called {
+		return failedGraphConformance(name, errors.New("next node ran after invalid resumed state"))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkSchemaGuardExportsTopologyContracts(_ context.Context) GraphConformanceResult {
+	const name = "schema-guard-exports-topology-contracts"
+	inputSchema := traceMinItemsSchema(0)
+	outputSchema := traceMinItemsSchema(1)
+	g := graph.New[traceState]()
+	g.SetStateSchema(inputSchema)
+	g.AddNode("guarded", appendTrace("guarded"))
+	g.SetNodeInputSchema("guarded", inputSchema)
+	g.SetNodeOutputSchema("guarded", outputSchema)
+	g.AddEdge(graph.Start, "guarded")
+	g.AddEdge("guarded", graph.End)
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+
+	topology := run.Topology()
+	if len(topology.StateSchema) == 0 {
+		return failedGraphConformance(name, errors.New("topology state schema is empty"))
+	}
+	for _, node := range topology.Nodes {
+		if node.Name != "guarded" {
+			continue
+		}
+		if len(node.InputSchema) == 0 || len(node.OutputSchema) == 0 {
+			return failedGraphConformance(name, fmt.Errorf("node schemas = input:%#v output:%#v", node.InputSchema, node.OutputSchema))
+		}
+		node.InputSchema["type"] = "mutated"
+		again := run.Topology()
+		for _, againNode := range again.Nodes {
+			if againNode.Name == "guarded" && againNode.InputSchema["type"] != "object" {
+				return failedGraphConformance(name, fmt.Errorf("topology schema was mutable: %#v", againNode.InputSchema))
+			}
+		}
+		return passedGraphConformance(name)
+	}
+	return failedGraphConformance(name, errors.New("guarded node missing from topology"))
+}
+
 func checkFailedNodeStopsSuccessors(ctx context.Context) GraphConformanceResult {
 	const name = "failed-node-stops-successors"
 	wantErr := errors.New("node failed")
@@ -960,6 +1097,20 @@ func appendTrace(name string) graph.NodeFunc[traceState] {
 	return func(_ context.Context, state traceState) (traceState, error) {
 		state.Trace = append(state.Trace, name)
 		return state, nil
+	}
+}
+
+func traceMinItemsSchema(minItems int) gopact.JSONSchema {
+	return gopact.JSONSchema{
+		"type":     "object",
+		"required": []any{"Trace"},
+		"properties": map[string]any{
+			"Trace": map[string]any{
+				"type":     "array",
+				"minItems": minItems,
+				"items":    map[string]any{"type": "string"},
+			},
+		},
 	}
 }
 

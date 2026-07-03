@@ -35,6 +35,10 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"runnable-node-inherits-runtime-ids",
 		"runnable-node-checkpoint-inheritance-isolation",
 		"topology-export-stable",
+		"schema-guard-rejects-invalid-node-input",
+		"schema-guard-rejects-invalid-node-output",
+		"schema-guard-rejects-invalid-resume-state",
+		"schema-guard-exports-topology-contracts",
 		"failed-node-stops-successors",
 		"canceled-node-stops-successors",
 	} {
