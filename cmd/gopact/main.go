@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"go/format"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -499,6 +500,9 @@ func verifyAgentRegistry(path string) (string, error) {
 		if card.URL == "" {
 			return "", fmt.Errorf("agents.json %s missing url", label)
 		}
+		if !isAbsoluteHTTPURL(card.URL) {
+			return "", fmt.Errorf("agents.json %s url must be an absolute http(s) URL", label)
+		}
 		if len(card.Protocols) == 0 {
 			return "", fmt.Errorf("agents.json %s missing protocols", label)
 		}
@@ -522,6 +526,15 @@ func verifyAgentRegistry(path string) (string, error) {
 		}
 	}
 	return cards[0].Name, nil
+}
+
+func isAbsoluteHTTPURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return parsed.Hostname() != "" && (scheme == "http" || scheme == "https")
 }
 
 func verifyAgentGitignore(path string) error {

@@ -526,6 +526,49 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsRegistryCardNonAbsoluteHTTPURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{name: "missing scheme", url: "localhost:8080"},
+		{name: "missing hostname", url: "http://:80"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, `[
+  {
+    "name": "verify-agent",
+    "url": "`+tt.url+`",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  }
+]`)
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("run() code = %d, want %d", code, exitError)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), `agents.json first card url must be an absolute http(s) URL`) {
+				t.Fatalf("stderr missing registry card url error:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAgentVerifyRejectsRegistryCardProtocolWithoutRequiredFields(t *testing.T) {
 	tests := []struct {
 		name      string
