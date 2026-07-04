@@ -47,6 +47,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkLoopBranchExits(ctx),
 		checkLoopStepLimitFails(ctx),
 		checkStepExportResumesCompletedBoundary(ctx),
+		checkStepExportEmitsEffectReplayPlan(ctx),
 		checkInterruptedStepExportResumesWithRequest(ctx),
 		checkStepExportVerifiesArtifactsBeforeResume(ctx),
 		checkRunnableNodeRunsSubgraph(ctx),
@@ -817,6 +818,66 @@ func checkStepExportResumesCompletedBoundary(ctx context.Context) GraphConforman
 		return failedGraphConformance(name, fmt.Errorf("resumed output type = %T, want traceState", events[3].StepSnapshot.Output))
 	}
 	return requireTrace(name, output, []string{"first", "next"})
+}
+
+func checkStepExportEmitsEffectReplayPlan(ctx context.Context) GraphConformanceResult {
+	const name = "step-export-emits-effect-replay-plan"
+	g := graph.New[traceState]()
+	g.AddNode("first", failNode("completed exported step reran"))
+	g.AddNode("next", appendTrace("next"))
+	g.AddEdge(graph.Start, "first")
+	g.AddEdge("first", "next")
+	g.AddEdge("next", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}, graph.WithStepExport(gopact.StepExport{
+		Version: 1,
+		Step: gopact.StepSnapshot{
+			ID:     "run-step-replay:1",
+			Step:   1,
+			Node:   "first",
+			Phase:  gopact.StepCompleted,
+			IDs:    gopact.RuntimeIDs{RunID: "run-step-replay", ThreadID: "thread-step-replay"},
+			Output: traceState{Trace: []string{"first"}},
+			Queue:  []string{"next"},
+			Effects: []gopact.EffectRecord{
+				{
+					ID:             "tool-1",
+					Type:           "tool_call",
+					Target:         "tools/search",
+					Applied:        true,
+					ReplayPolicy:   gopact.EffectReplayIdempotent,
+					IdempotencyKey: "tool-1",
+				},
+			},
+		},
+	})))
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	if len(events) < 2 || events[1].Type != gopact.EventStepImported {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want step_imported", eventTypes(events)))
+	}
+	plan, ok := gopact.EventEffectReplayPlan(events[1])
+	if !ok {
+		return failedGraphConformance(name, fmt.Errorf("step imported metadata = %+v, want effect replay plan", events[1].Metadata))
+	}
+	if plan.StepID != "run-step-replay:1" || plan.Node != "first" || plan.Step != 1 {
+		return failedGraphConformance(name, fmt.Errorf("replay plan = %+v, want imported step identity", plan))
+	}
+	if len(plan.Decisions) != 1 {
+		return failedGraphConformance(name, fmt.Errorf("replay decisions = %+v, want one decision", plan.Decisions))
+	}
+	decision := plan.Decisions[0]
+	if decision.Effect.ID != "tool-1" || decision.Action != gopact.EffectReplayActionReplay ||
+		decision.ReplayPolicy != gopact.EffectReplayIdempotent ||
+		decision.IdempotencyKey != "tool-1" {
+		return failedGraphConformance(name, fmt.Errorf("replay decision = %+v, want idempotent replay", decision))
+	}
+	return passedGraphConformance(name)
 }
 
 func checkInterruptedStepExportResumesWithRequest(ctx context.Context) GraphConformanceResult {

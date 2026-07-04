@@ -33,6 +33,7 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"loop-branch-exits",
 		"loop-step-limit-fails",
 		"step-export-resumes-completed-boundary",
+		"step-export-emits-effect-replay-plan",
 		"interrupted-step-export-resumes-with-request",
 		"step-export-verifies-artifacts-before-resume",
 		"runnable-node-runs-subgraph",
