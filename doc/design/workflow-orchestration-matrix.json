@@ -117,6 +117,17 @@
       "boundary": "Node code can emit child events into the graph event stream with parent node/step metadata for delegated agent or tool work."
     },
     {
+      "id": "node-middleware-effects",
+      "status": "completed",
+      "package": "graph",
+      "target_repo": "gopact",
+      "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
+      "conformance_cases": [
+        "node-middleware-records-effects"
+      ],
+      "boundary": "Node middleware can wrap graph node execution, transform input/output state, and record effects into step snapshots for evidence and replay."
+    },
+    {
       "id": "failure-and-cancel-propagation",
       "status": "completed",
       "package": "graph",
