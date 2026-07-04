@@ -43,6 +43,7 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"schema-guard-rejects-invalid-node-output",
 		"schema-guard-rejects-invalid-resume-state",
 		"schema-guard-exports-topology-contracts",
+		"node-middleware-records-effects",
 		"failed-node-stops-successors",
 		"canceled-node-stops-successors",
 	} {
