@@ -18,6 +18,7 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"branch-can-end-with-no-targets",
 		"branch-rejects-missing-target",
 		"branch-resume-uses-checkpoint-queue",
+		"checkpoint-verifies-effect-artifacts-before-resume",
 		"dag-fan-in-runs-join-after-parents",
 		"dag-fan-in-stops-when-parent-fails",
 		"dag-fan-in-preserves-edge-order",
