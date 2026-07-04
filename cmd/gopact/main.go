@@ -531,8 +531,12 @@ func verifyAgentRegistry(path string) (string, error) {
 			return "", fmt.Errorf("agents.json %s missing capabilities", label)
 		}
 		for j, capability := range card.Capabilities {
-			if strings.TrimSpace(capability) == "" {
+			trimmedCapability := strings.TrimSpace(capability)
+			if trimmedCapability == "" {
 				return "", fmt.Errorf("agents.json %s capabilities[%d] missing value", label, j)
+			}
+			if trimmedCapability != capability {
+				return "", fmt.Errorf("agents.json %s capabilities[%d] must not have surrounding whitespace", label, j)
 			}
 		}
 		if !card.Streaming {
