@@ -534,11 +534,31 @@ func verifyAgentRegistry(path string) (string, error) {
 		if !card.Streaming {
 			return "", fmt.Errorf("agents.json %s must enable streaming", label)
 		}
-		if card.Health == nil || card.Health.HealthPath == "" || card.Health.ReadinessPath == "" {
+		if card.Health == nil {
 			return "", fmt.Errorf("agents.json %s missing health and readiness paths", label)
+		}
+		if err := requireRegistryHTTPPath(label, "health path", card.Health.HealthPath); err != nil {
+			return "", err
+		}
+		if err := requireRegistryHTTPPath(label, "readiness path", card.Health.ReadinessPath); err != nil {
+			return "", err
 		}
 	}
 	return cards[0].Name, nil
+}
+
+func requireRegistryHTTPPath(cardLabel, field, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("agents.json %s missing %s", cardLabel, field)
+	}
+	if !strings.HasPrefix(value, "/") {
+		return fmt.Errorf("agents.json %s %s must start with /", cardLabel, field)
+	}
+	if strings.HasPrefix(value, "//") {
+		return fmt.Errorf("agents.json %s %s must be a local HTTP path", cardLabel, field)
+	}
+	return nil
 }
 
 func isAbsoluteHTTPURL(raw string) bool {
