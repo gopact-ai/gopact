@@ -617,9 +617,15 @@ func verifyAgentEnvExample(path string) error {
 	case !hasAgentProfile && !hasClusterProfile:
 		return errors.New(".env.example must define agent or cluster scaffold environment variables")
 	case hasAgentProfile:
-		return requireDotEnvKeys(keys, agentEnvExampleRequiredKeys)
+		if err := requireDotEnvKeys(keys, agentEnvExampleRequiredKeys); err != nil {
+			return err
+		}
+		return requireDotEnvHTTPURLs(assignments, []string{"GOPACT_AGENT_URL"})
 	default:
-		return requireDotEnvKeys(keys, clusterEnvExampleRequiredKeys)
+		if err := requireDotEnvKeys(keys, clusterEnvExampleRequiredKeys); err != nil {
+			return err
+		}
+		return requireDotEnvHTTPURLs(assignments, []string{"GOPACT_CLUSTER_URL", "GOPACT_A2A_REGISTRY_URL"})
 	}
 }
 
@@ -636,6 +642,19 @@ func requireDotEnvKeys(keys map[string]bool, required []string) error {
 	for _, key := range required {
 		if !keys[key] {
 			return fmt.Errorf(".env.example missing %s", key)
+		}
+	}
+	return nil
+}
+
+func requireDotEnvHTTPURLs(assignments []dotEnvAssignment, required []string) error {
+	values := make(map[string]string, len(assignments))
+	for _, assignment := range assignments {
+		values[assignment.key] = assignment.value
+	}
+	for _, key := range required {
+		if !isAbsoluteHTTPURL(values[key]) {
+			return fmt.Errorf(".env.example %s must be an absolute http(s) URL", key)
 		}
 	}
 	return nil
