@@ -621,6 +621,95 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsRegistryCardBlankTextFields(t *testing.T) {
+	tests := []struct {
+		name      string
+		registry  string
+		wantError string
+	}{
+		{
+			name: "blank name",
+			registry: `[
+  {
+    "name": "   ",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  }
+]`,
+			wantError: "agents.json first card missing name",
+		},
+		{
+			name: "blank protocol name",
+			registry: `[
+  {
+    "name": "verify-agent",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "   ", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  }
+]`,
+			wantError: "agents.json first card protocols[0] missing name",
+		},
+		{
+			name: "blank protocol transport",
+			registry: `[
+  {
+    "name": "verify-agent",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "a2a", "transport": "   "}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  }
+]`,
+			wantError: "agents.json first card protocols[0] missing transport",
+		},
+		{
+			name: "blank capability",
+			registry: `[
+  {
+    "name": "verify-agent",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["   "],
+    "streaming": true,
+    "health": {"health_path": "/healthz", "readiness_path": "/readyz"}
+  }
+]`,
+			wantError: "agents.json first card capabilities[0] missing value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, tt.registry)
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("run() code = %d, want %d", code, exitError)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantError) {
+				t.Fatalf("stderr missing %q:\n%s", tt.wantError, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAgentVerifyRejectsGitignoreWithoutDotEnvBoundary(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -490,7 +490,7 @@ func verifyAgentRegistry(path string) (string, error) {
 	seenNames := map[string]bool{}
 	for i, card := range cards {
 		label := agentRegistryCardLabel(i)
-		if card.Name == "" {
+		if strings.TrimSpace(card.Name) == "" {
 			return "", fmt.Errorf("agents.json %s missing name", label)
 		}
 		if seenNames[card.Name] {
@@ -508,15 +508,20 @@ func verifyAgentRegistry(path string) (string, error) {
 		}
 		for j, protocol := range card.Protocols {
 			protocolLabel := fmt.Sprintf("%s protocols[%d]", label, j)
-			if protocol.Name == "" {
+			if strings.TrimSpace(protocol.Name) == "" {
 				return "", fmt.Errorf("agents.json %s missing name", protocolLabel)
 			}
-			if protocol.Transport == "" {
+			if strings.TrimSpace(protocol.Transport) == "" {
 				return "", fmt.Errorf("agents.json %s missing transport", protocolLabel)
 			}
 		}
 		if len(card.Capabilities) == 0 {
 			return "", fmt.Errorf("agents.json %s missing capabilities", label)
+		}
+		for j, capability := range card.Capabilities {
+			if strings.TrimSpace(capability) == "" {
+				return "", fmt.Errorf("agents.json %s capabilities[%d] missing value", label, j)
+			}
 		}
 		if !card.Streaming {
 			return "", fmt.Errorf("agents.json %s must enable streaming", label)
