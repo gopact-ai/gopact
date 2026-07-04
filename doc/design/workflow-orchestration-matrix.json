@@ -65,9 +65,10 @@
       "offline_proof": "go test -count=1 ./graph ./gopacttest/graphconformance",
       "conformance_cases": [
         "step-export-resumes-completed-boundary",
+        "step-export-emits-effect-replay-plan",
         "step-export-verifies-artifacts-before-resume"
       ],
-      "boundary": "Completed step exports can be imported into another run, verify step and effect artifact refs before resume, emit import/resume events, and continue from the exported queue."
+      "boundary": "Completed step exports can be imported into another run, verify step and effect artifact refs before resume, emit an effect replay plan on the import event, emit import/resume events, and continue from the exported queue."
     },
     {
       "id": "interrupt-resume",
