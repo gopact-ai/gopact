@@ -47,6 +47,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkLoopStepLimitFails(ctx),
 		checkStepExportResumesCompletedBoundary(ctx),
 		checkInterruptedStepExportResumesWithRequest(ctx),
+		checkStepExportVerifiesArtifactsBeforeResume(ctx),
 		checkRunnableNodeRunsSubgraph(ctx),
 		checkRunnableNodeStreamsNestedEvents(ctx),
 		checkNodeEmitsNestedEvents(ctx),
@@ -806,6 +807,82 @@ func checkInterruptedStepExportResumesWithRequest(ctx context.Context) GraphConf
 		return failedGraphConformance(name, fmt.Errorf("resumed output type = %T, want traceState", events[4].StepSnapshot.Output))
 	}
 	return requireTrace(name, output, []string{"ask", "answer"})
+}
+
+func checkStepExportVerifiesArtifactsBeforeResume(ctx context.Context) GraphConformanceResult {
+	const name = "step-export-verifies-artifacts-before-resume"
+	wantErr := errors.New("artifact integrity mismatch")
+	afterRan := false
+	g := graph.New[traceState]()
+	g.AddNode("first", failNode("completed exported step reran"))
+	g.AddNode("after", func(context.Context, traceState) (traceState, error) {
+		afterRan = true
+		return traceState{}, nil
+	})
+	g.AddEdge(graph.Start, "first")
+	g.AddEdge("first", "after")
+	g.AddEdge("after", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	var gotRefs []gopact.ArtifactRef
+	events, err := collectRunEvents(run.Run(ctx, traceState{},
+		graph.WithStepExport(gopact.StepExport{
+			Version: 1,
+			Step: gopact.StepSnapshot{
+				ID:     "run-step-artifacts:1",
+				Step:   1,
+				Node:   "first",
+				Phase:  gopact.StepCompleted,
+				IDs:    gopact.RuntimeIDs{RunID: "run-step-artifacts", ThreadID: "thread-step-artifacts"},
+				Output: traceState{Trace: []string{"first"}},
+				Queue:  []string{"after"},
+				Artifacts: []gopact.ArtifactRef{
+					{ID: "step-artifact", SHA256: "sha-step"},
+				},
+				Effects: []gopact.EffectRecord{
+					{
+						ID:      "artifact-effect",
+						Type:    "artifact_write",
+						Applied: true,
+						Artifacts: []gopact.ArtifactRef{
+							{ID: "effect-artifact", SHA256: "sha-effect"},
+						},
+					},
+				},
+			},
+		}),
+		graph.WithArtifactVerifier(graph.ArtifactVerifierFunc(func(_ context.Context, refs []gopact.ArtifactRef) error {
+			gotRefs = append(gotRefs, refs...)
+			return wantErr
+		})),
+	))
+	if !errors.Is(err, wantErr) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want %v", err, wantErr))
+	}
+	if afterRan {
+		return failedGraphConformance(name, errors.New("successor ran after failed artifact verification"))
+	}
+	gotRefIDs := map[string]bool{}
+	for _, ref := range gotRefs {
+		gotRefIDs[ref.ID] = true
+	}
+	if len(gotRefs) != 2 || !gotRefIDs["step-artifact"] || !gotRefIDs["effect-artifact"] {
+		return failedGraphConformance(name, fmt.Errorf("verified artifact refs = %+v, want step and effect artifacts", gotRefs))
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventRunFailed,
+	}
+	if !reflect.DeepEqual(eventTypes(events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(events), wantTypes))
+	}
+	if events[1].Node != "first" || events[1].Step != 1 {
+		return failedGraphConformance(name, fmt.Errorf("run failed event = %+v, want imported step boundary", events[1]))
+	}
+	return passedGraphConformance(name)
 }
 
 func checkRunnableNodeRunsSubgraph(ctx context.Context) GraphConformanceResult {
