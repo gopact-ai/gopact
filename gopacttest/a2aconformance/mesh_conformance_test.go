@@ -238,6 +238,23 @@ func TestCheckAgentMeshConformanceRequiresMeshSyncPruneReadiness(t *testing.T) {
 	requireConformanceCasePassed(t, results, "mesh-sync-prunes-unready-http-agents")
 }
 
+func TestCheckAgentMeshConformanceRequiresMeshSyncEveryRefresh(t *testing.T) {
+	agent := meshAgent{
+		card: a2a.AgentCard{
+			Name:         "reviewer",
+			Capabilities: []string{"code.review"},
+		},
+	}
+
+	results := CheckAgentMeshConformance(context.Background(), AgentMeshConformanceHarness{
+		Agent:        agent,
+		ExpectedCard: agent.card,
+		Task:         a2a.Task{ID: "task-1", Input: "review this diff"},
+	})
+
+	requireConformanceCasePassed(t, results, "mesh-sync-every-refreshes-cards")
+}
+
 func TestCheckAgentMeshConformanceRequiresOperationTimeout(t *testing.T) {
 	agent := meshAgent{
 		card: a2a.AgentCard{
