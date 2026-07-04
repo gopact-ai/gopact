@@ -59,6 +59,7 @@ func CheckAgentMeshConformance(ctx context.Context, harness AgentMeshConformance
 		checkMeshFacadeBootstrapHTTPAgentOptions(ctx, task),
 		checkMeshFacadeBootstrapJSONRPCAgentOptions(ctx, task),
 		checkMeshFacadeSyncPrunesUnreadyHTTPAgents(ctx, task),
+		checkMeshFacadeSyncEveryRefreshesCards(ctx),
 		checkMeshFacadeCallsByName(ctx, harness.Agent, query, harness.ExpectedCard, task),
 		checkMeshFacadeOperationTimeout(ctx, task),
 		checkMeshFacadePropagatesRuntimeIDs(ctx, task),
@@ -436,6 +437,54 @@ func checkMeshFacadeSyncPrunesUnreadyHTTPAgents(ctx context.Context, task a2a.Ta
 		return failedAgentMeshConformance(caseName, fmt.Errorf("route output = %q, want ready: %s", routed.Output, task.Input))
 	}
 	return passedAgentMeshConformance(caseName)
+}
+
+func checkMeshFacadeSyncEveryRefreshesCards(ctx context.Context) AgentMeshConformanceResult {
+	const caseName = "mesh-sync-every-refreshes-cards"
+
+	mesh, err := a2a.NewMesh()
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	cards := []a2a.AgentCard{{
+		Name:         "gopact-a2a-sync-every-first",
+		Capabilities: []string{"sync.refresh"},
+	}}
+	lister := meshConformanceCardListerFunc(func(context.Context) ([]a2a.AgentCard, error) {
+		return append([]a2a.AgentCard(nil), cards...), nil
+	})
+	syncCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	seen := 0
+	for result, err := range mesh.SyncEvery(syncCtx, 10*time.Millisecond, lister) {
+		if err != nil {
+			return failedAgentMeshConformance(caseName, err)
+		}
+		seen++
+		switch seen {
+		case 1:
+			if err := checkCardNames(result.Cards, []string{"gopact-a2a-sync-every-first"}); err != nil {
+				return failedAgentMeshConformance(caseName, fmt.Errorf("first sync cards: %w", err))
+			}
+			cards = append(cards, a2a.AgentCard{
+				Name:         "gopact-a2a-sync-every-second",
+				Capabilities: []string{"sync.refresh"},
+			})
+		case 2:
+			if err := checkCardNames(result.Cards, []string{
+				"gopact-a2a-sync-every-first",
+				"gopact-a2a-sync-every-second",
+			}); err != nil {
+				return failedAgentMeshConformance(caseName, fmt.Errorf("second sync cards: %w", err))
+			}
+			return passedAgentMeshConformance(caseName)
+		}
+	}
+	if err := syncCtx.Err(); err != nil {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("sync yielded %d results before context ended: %w", seen, err))
+	}
+	return failedAgentMeshConformance(caseName, fmt.Errorf("sync yielded %d results, want 2", seen))
 }
 
 func checkMeshFacadeAuthenticatesCall(ctx context.Context, task a2a.Task) AgentMeshConformanceResult {
@@ -1545,6 +1594,12 @@ func checkCardNames(cards []a2a.AgentCard, want []string) error {
 		}
 	}
 	return nil
+}
+
+type meshConformanceCardListerFunc func(context.Context) ([]a2a.AgentCard, error)
+
+func (f meshConformanceCardListerFunc) ListCards(ctx context.Context) ([]a2a.AgentCard, error) {
+	return f(ctx)
 }
 
 func checkBootstrapSourceIndexes(events []gopact.Event, want [][2]int) error {
