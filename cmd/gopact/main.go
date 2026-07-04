@@ -501,10 +501,14 @@ func verifyAgentRegistry(path string) (string, error) {
 			return "", fmt.Errorf("agents.json %s duplicates name %q", label, name)
 		}
 		seenNames[name] = true
-		if card.URL == "" {
+		urlValue := strings.TrimSpace(card.URL)
+		if urlValue == "" {
 			return "", fmt.Errorf("agents.json %s missing url", label)
 		}
-		if !isAbsoluteHTTPURL(card.URL) {
+		if urlValue != card.URL {
+			return "", fmt.Errorf("agents.json %s url must not have surrounding whitespace", label)
+		}
+		if !isAbsoluteHTTPURL(urlValue) {
 			return "", fmt.Errorf("agents.json %s url must be an absolute http(s) URL", label)
 		}
 		if len(card.Protocols) == 0 {
