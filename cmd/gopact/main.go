@@ -490,13 +490,17 @@ func verifyAgentRegistry(path string) (string, error) {
 	seenNames := map[string]bool{}
 	for i, card := range cards {
 		label := agentRegistryCardLabel(i)
-		if strings.TrimSpace(card.Name) == "" {
+		name := strings.TrimSpace(card.Name)
+		if name == "" {
 			return "", fmt.Errorf("agents.json %s missing name", label)
 		}
-		if seenNames[card.Name] {
-			return "", fmt.Errorf("agents.json %s duplicates name %q", label, card.Name)
+		if name != card.Name {
+			return "", fmt.Errorf("agents.json %s name must not have surrounding whitespace", label)
 		}
-		seenNames[card.Name] = true
+		if seenNames[name] {
+			return "", fmt.Errorf("agents.json %s duplicates name %q", label, name)
+		}
+		seenNames[name] = true
 		if card.URL == "" {
 			return "", fmt.Errorf("agents.json %s missing url", label)
 		}
