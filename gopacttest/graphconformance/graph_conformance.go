@@ -57,6 +57,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkSchemaGuardRejectsInvalidNodeOutput(ctx),
 		checkSchemaGuardRejectsInvalidResumeState(ctx),
 		checkSchemaGuardExportsTopologyContracts(ctx),
+		checkNodeMiddlewareRecordsEffects(ctx),
 		checkFailedNodeStopsSuccessors(ctx),
 		checkCanceledNodeStopsSuccessors(ctx),
 	}
@@ -1212,6 +1213,72 @@ func checkSchemaGuardExportsTopologyContracts(_ context.Context) GraphConformanc
 		return passedGraphConformance(name)
 	}
 	return failedGraphConformance(name, errors.New("guarded node missing from topology"))
+}
+
+func checkNodeMiddlewareRecordsEffects(ctx context.Context) GraphConformanceResult {
+	const name = "node-middleware-records-effects"
+	g := graph.New[traceState]()
+	g.AddNode("work", appendTrace("node"))
+	g.AddEdge(graph.Start, "work")
+	g.AddEdge("work", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{}, graph.WithNodeMiddleware(func(c *gopact.NodeContext) error {
+		input, ok := c.Input.(traceState)
+		if !ok {
+			return fmt.Errorf("middleware input type = %T, want traceState", c.Input)
+		}
+		input.Trace = append(input.Trace, "before")
+		c.Input = input
+
+		if err := c.Next(); err != nil {
+			return err
+		}
+
+		output, ok := c.Output.(traceState)
+		if !ok {
+			return fmt.Errorf("middleware output type = %T, want traceState", c.Output)
+		}
+		output.Trace = append(output.Trace, "after")
+		c.Output = output
+		c.AddEffect(gopact.EffectRecord{
+			ID:      "tool-call-1",
+			Type:    "tool_call",
+			Target:  "local.echo",
+			Applied: true,
+		})
+		return nil
+	})))
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventNodeStarted,
+		gopact.EventNodeCompleted,
+		gopact.EventRunCompleted,
+	}
+	if !reflect.DeepEqual(eventTypes(events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(events), wantTypes))
+	}
+	if events[2].StepSnapshot == nil {
+		return failedGraphConformance(name, errors.New("completed event missing step snapshot"))
+	}
+	output, ok := events[2].StepSnapshot.Output.(traceState)
+	if !ok {
+		return failedGraphConformance(name, fmt.Errorf("completed output type = %T, want traceState", events[2].StepSnapshot.Output))
+	}
+	if !reflect.DeepEqual(output.Trace, []string{"before", "node", "after"}) {
+		return failedGraphConformance(name, fmt.Errorf("trace = %v, want middleware-wrapped node trace", output.Trace))
+	}
+	effects := events[2].StepSnapshot.Effects
+	if len(effects) != 1 || effects[0].Type != "tool_call" || effects[0].Target != "local.echo" || !effects[0].Applied {
+		return failedGraphConformance(name, fmt.Errorf("effects = %+v, want applied local tool call", effects))
+	}
+	return passedGraphConformance(name)
 }
 
 func checkFailedNodeStopsSuccessors(ctx context.Context) GraphConformanceResult {
