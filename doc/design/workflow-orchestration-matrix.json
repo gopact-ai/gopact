@@ -90,9 +90,10 @@
       "conformance_cases": [
         "branch-resume-uses-checkpoint-queue",
         "checkpoint-verifies-effect-artifacts-before-resume",
+        "checkpoint-emits-effect-replay-plan",
         "dynamic-fan-out-resumes-incomplete-targets"
       ],
-      "boundary": "Graph checkpoints persist state, queue, completed-node metadata, phase, pending interrupt, effects, runtime IDs, and config version; checkpoint resume verifies effect artifact refs before continuing."
+      "boundary": "Graph checkpoints persist state, queue, completed-node metadata, phase, pending interrupt, effects, runtime IDs, and config version; checkpoint resume verifies effect artifact refs before continuing and emits an effect replay plan on the checkpoint-loaded event."
     },
     {
       "id": "runnable-subgraph",

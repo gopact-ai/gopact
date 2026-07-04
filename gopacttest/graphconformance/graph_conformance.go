@@ -33,6 +33,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkBranchRejectsMissingTarget(ctx),
 		checkBranchResumeUsesCheckpointQueue(ctx),
 		checkCheckpointVerifiesEffectArtifactsBeforeResume(ctx),
+		checkCheckpointEmitsEffectReplayPlan(ctx),
 		checkDAGFanInRunsJoinAfterParents(ctx),
 		checkDAGFanInStopsWhenParentFails(ctx),
 		checkDAGFanInPreservesEdgeOrder(ctx),
@@ -273,6 +274,68 @@ func checkCheckpointVerifiesEffectArtifactsBeforeResume(ctx context.Context) Gra
 	}
 	if events[1].Node != "persisted" || events[1].Step != 1 {
 		return failedGraphConformance(name, fmt.Errorf("run failed event = %+v, want checkpoint boundary", events[1]))
+	}
+	return passedGraphConformance(name)
+}
+
+func checkCheckpointEmitsEffectReplayPlan(ctx context.Context) GraphConformanceResult {
+	const name = "checkpoint-emits-effect-replay-plan"
+	const threadID = "thread-checkpoint-replay"
+	store := &checkpointStore{
+		latest: graph.Checkpoint[traceState]{
+			ID:       "checkpoint-replay",
+			ThreadID: threadID,
+			Step:     1,
+			Node:     "persisted",
+			Phase:    gopact.StepCompleted,
+			State:    traceState{Trace: []string{"persisted"}},
+			Queue:    []string{"after"},
+			Effects: []gopact.EffectRecord{
+				{
+					ID:           "artifact-1",
+					Type:         "artifact_write",
+					Applied:      true,
+					ReplayPolicy: gopact.EffectReplaySkip,
+				},
+			},
+		},
+		hasLatest: true,
+	}
+	g := graph.New[traceState]()
+	g.AddNode("persisted", failNode("checkpointed node reran"))
+	g.AddNode("after", appendTrace("after"))
+	g.AddEdge(graph.Start, "persisted")
+	g.AddEdge("persisted", "after")
+	g.AddEdge("after", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	events, err := collectRunEvents(run.Run(ctx, traceState{},
+		graph.WithThreadID(threadID),
+		graph.WithCheckpointLoader[traceState](store),
+	))
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	if len(events) < 2 || events[1].Type != gopact.EventCheckpointLoaded {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want checkpoint_loaded", eventTypes(events)))
+	}
+	plan, ok := gopact.EventEffectReplayPlan(events[1])
+	if !ok {
+		return failedGraphConformance(name, fmt.Errorf("checkpoint loaded metadata = %+v, want effect replay plan", events[1].Metadata))
+	}
+	if plan.StepID == "" || plan.Node != "persisted" || plan.Step != 1 {
+		return failedGraphConformance(name, fmt.Errorf("replay plan = %+v, want checkpoint step identity", plan))
+	}
+	if len(plan.Decisions) != 1 {
+		return failedGraphConformance(name, fmt.Errorf("replay decisions = %+v, want one decision", plan.Decisions))
+	}
+	decision := plan.Decisions[0]
+	if decision.Effect.ID != "artifact-1" || decision.Action != gopact.EffectReplayActionSkip ||
+		decision.ReplayPolicy != gopact.EffectReplaySkip {
+		return failedGraphConformance(name, fmt.Errorf("replay decision = %+v, want skip", decision))
 	}
 	return passedGraphConformance(name)
 }
