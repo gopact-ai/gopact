@@ -741,6 +741,68 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsRegistryCardInvalidHealthPaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		health    string
+		wantError string
+	}{
+		{
+			name:      "blank health path",
+			health:    `"health_path": "   ", "readiness_path": "/readyz"`,
+			wantError: "agents.json first card missing health path",
+		},
+		{
+			name:      "readiness path without slash",
+			health:    `"health_path": "/healthz", "readiness_path": "readyz"`,
+			wantError: "agents.json first card readiness path must start with /",
+		},
+		{
+			name:      "health path absolute url",
+			health:    `"health_path": "http://localhost:8080/healthz", "readiness_path": "/readyz"`,
+			wantError: "agents.json first card health path must start with /",
+		},
+		{
+			name:      "readiness path scheme relative url",
+			health:    `"health_path": "/healthz", "readiness_path": "//localhost:8080/readyz"`,
+			wantError: "agents.json first card readiness path must be a local HTTP path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, `[
+  {
+    "name": "verify-agent",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {`+tt.health+`}
+  }
+]`)
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("run() code = %d, want %d", code, exitError)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantError) {
+				t.Fatalf("stderr missing %q:\n%s", tt.wantError, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAgentVerifyRejectsGitignoreWithoutDotEnvBoundary(t *testing.T) {
 	tests := []struct {
 		name      string
