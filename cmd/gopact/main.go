@@ -46,11 +46,32 @@ type agentClusterScaffoldData struct {
 	ModulePath         string
 	SDKVersion         string
 	GoVersion          string
+	Agents             []clusterAgentScaffoldSpec
 }
 
 type releaseBundleOutput struct {
 	RunExport gopact.RunExport          `json:"run_export"`
 	Report    gopact.VerificationReport `json:"report"`
+}
+
+type clusterAgentScaffoldSpec struct {
+	Name               string
+	NameLiteral        string
+	Description        string
+	DescriptionLiteral string
+	Capability         string
+	CapabilityLiteral  string
+}
+
+type repeatedStringFlag []string
+
+func (f *repeatedStringFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *repeatedStringFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
 }
 
 func main() {
@@ -254,6 +275,7 @@ func runAgentInit(ctx context.Context, args []string, stdout, stderr io.Writer) 
 func runAgentInitCluster(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var out string
 	var modulePath string
+	var agentSpecs repeatedStringFlag
 	sdkVersion := defaultSDKVersion()
 	var name string
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -266,6 +288,7 @@ func runAgentInitCluster(ctx context.Context, args []string, stdout, stderr io.W
 	fs.StringVar(&out, "out", "", "output directory for the generated agent cluster")
 	fs.StringVar(&modulePath, "module", "", "Go module path for the generated agent cluster (default example.com/<name>)")
 	fs.StringVar(&sdkVersion, "sdk-version", sdkVersion, "github.com/gopact-ai/gopact version required by the generated agent cluster")
+	fs.Var(&agentSpecs, "agent", "domain agent spec name[:capability[:description]]; repeat for multiple agents")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -290,6 +313,11 @@ func runAgentInitCluster(ctx context.Context, args []string, stdout, stderr io.W
 		_, _ = fmt.Fprintln(stderr, err)
 		return exitUsage
 	}
+	agents, err := parseClusterAgentSpecs(agentSpecs)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	if out == "" {
 		out = name
 	}
@@ -300,6 +328,7 @@ func runAgentInitCluster(ctx context.Context, args []string, stdout, stderr io.W
 		ModulePath:         modulePath,
 		SDKVersion:         sdkVersion,
 		GoVersion:          scaffoldGoVersion,
+		Agents:             agents,
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "render agent cluster scaffold: %v\n", err)
@@ -562,6 +591,82 @@ func validateAgentInit(name, modulePath, sdkVersion string) error {
 	return nil
 }
 
+func parseClusterAgentSpecs(raw []string) ([]clusterAgentScaffoldSpec, error) {
+	if len(raw) == 0 {
+		return defaultClusterAgentSpecs(), nil
+	}
+	agents := make([]clusterAgentScaffoldSpec, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, item := range raw {
+		spec, err := parseClusterAgentSpec(item)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[spec.Name]; ok {
+			return nil, fmt.Errorf("-agent %q is duplicated", spec.Name)
+		}
+		seen[spec.Name] = struct{}{}
+		agents = append(agents, spec)
+	}
+	return agents, nil
+}
+
+func parseClusterAgentSpec(raw string) (clusterAgentScaffoldSpec, error) {
+	parts := strings.SplitN(raw, ":", 3)
+	name := strings.TrimSpace(parts[0])
+	if err := validateClusterAgentField("-agent name", name); err != nil {
+		return clusterAgentScaffoldSpec{}, err
+	}
+	capability := name
+	if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
+		capability = strings.TrimSpace(parts[1])
+	}
+	if err := validateClusterAgentField("-agent capability", capability); err != nil {
+		return clusterAgentScaffoldSpec{}, err
+	}
+	description := "Generated " + strings.ReplaceAll(name, "-", " ") + " agent."
+	if len(parts) > 2 && strings.TrimSpace(parts[2]) != "" {
+		description = strings.TrimSpace(parts[2])
+	}
+	return clusterAgentScaffoldSpec{
+		Name:               name,
+		NameLiteral:        fmt.Sprintf("%q", name),
+		Description:        description,
+		DescriptionLiteral: fmt.Sprintf("%q", description),
+		Capability:         capability,
+		CapabilityLiteral:  fmt.Sprintf("%q", capability),
+	}, nil
+}
+
+func validateClusterAgentField(label, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required", label)
+	}
+	if strings.ContainsAny(value, `/\`) {
+		return fmt.Errorf("%s must not contain path separators", label)
+	}
+	if strings.ContainsAny(value, " \t\r\n") {
+		return fmt.Errorf("%s must not contain whitespace", label)
+	}
+	return nil
+}
+
+func defaultClusterAgentSpecs() []clusterAgentScaffoldSpec {
+	return []clusterAgentScaffoldSpec{
+		mustClusterAgentSpec("planner-agent:planning:Generated planning agent."),
+		mustClusterAgentSpec("worker-agent:execution:Generated execution agent."),
+		mustClusterAgentSpec("reviewer-agent:review:Generated review agent."),
+	}
+}
+
+func mustClusterAgentSpec(raw string) clusterAgentScaffoldSpec {
+	spec, err := parseClusterAgentSpec(raw)
+	if err != nil {
+		panic(err)
+	}
+	return spec
+}
+
 func defaultAgentModulePath(name string) string {
 	return "example.com/" + name
 }
@@ -636,7 +741,7 @@ func renderAgentClusterScaffold(data agentClusterScaffoldData) (map[string][]byt
 		files[name] = formatted
 	}
 
-	registry, err := renderAgentClusterRegistry()
+	registry, err := renderAgentClusterRegistry(data)
 	if err != nil {
 		return nil, err
 	}
@@ -684,11 +789,15 @@ func renderAgentRegistry(data agentScaffoldData) ([]byte, error) {
 	return append(body, '\n'), nil
 }
 
-func renderAgentClusterRegistry() ([]byte, error) {
-	cards := []map[string]any{
-		agentClusterRegistryCard("planner-agent", "Generated planning agent.", "http://localhost:8080/agents/planner-agent", "planning"),
-		agentClusterRegistryCard("worker-agent", "Generated execution agent.", "http://localhost:8080/agents/worker-agent", "execution"),
-		agentClusterRegistryCard("reviewer-agent", "Generated review agent.", "http://localhost:8080/agents/reviewer-agent", "review"),
+func renderAgentClusterRegistry(data agentClusterScaffoldData) ([]byte, error) {
+	cards := make([]map[string]any, 0, len(data.Agents))
+	for _, agent := range data.Agents {
+		cards = append(cards, agentClusterRegistryCard(
+			agent.Name,
+			agent.Description,
+			"http://localhost:8080/agents/"+agent.Name,
+			agent.Capability,
+		))
 	}
 	body, err := json.MarshalIndent(cards, "", "  ")
 	if err != nil {
@@ -741,7 +850,7 @@ func writeAgentScaffold(ctx context.Context, out string, files map[string][]byte
 func printUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
   gopact agent init <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
-  gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
+  gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>] [-agent name[:capability[:description]]]...
   gopact agent run [dir]
   gopact agent verify [dir]
   gopact release-bundle -run-export <file> -report <file>
@@ -758,7 +867,7 @@ Commands:
 func printAgentUsage(w io.Writer) {
 	_, _ = io.WriteString(w, `Usage:
   gopact agent init <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
-  gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>]
+  gopact agent init-cluster <name> [-module <module>] [-out <dir>] [-sdk-version <version>] [-agent name[:capability[:description]]]...
   gopact agent run [dir]
   gopact agent verify [dir]
 `)
@@ -1281,12 +1390,6 @@ import (
 const clusterName = {{ .ClusterNameLiteral }}
 
 const (
-	plannerAgentName  = "planner-agent"
-	workerAgentName   = "worker-agent"
-	reviewerAgentName = "reviewer-agent"
-)
-
-const (
 	clusterAddrEnv        = "GOPACT_CLUSTER_ADDR"
 	clusterURLEnv         = "GOPACT_CLUSTER_URL"
 	clusterRegistryURLEnv = "GOPACT_A2A_REGISTRY_URL"
@@ -1304,9 +1407,9 @@ type clusterAgent struct {
 
 func clusterAgents() []clusterAgent {
 	return []clusterAgent{
-		{name: plannerAgentName, description: "Generated planning agent.", capabilities: []string{"planning"}},
-		{name: workerAgentName, description: "Generated execution agent.", capabilities: []string{"execution"}},
-		{name: reviewerAgentName, description: "Generated review agent.", capabilities: []string{"review"}},
+		{{- range .Agents }}
+		{name: {{ .NameLiteral }}, description: {{ .DescriptionLiteral }}, capabilities: []string{ {{ .CapabilityLiteral }} }},
+		{{- end }}
 	}
 }
 
@@ -1641,22 +1744,26 @@ func TestClusterRegistryBootstrapsMesh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCards() error = %v", err)
 	}
-	if len(cards) != 3 {
-		t.Fatalf("ListCards() count = %d, want 3: %+v", len(cards), cards)
+	agents := clusterAgents()
+	if len(cards) != len(agents) {
+		t.Fatalf("ListCards() count = %d, want %d: %+v", len(cards), len(agents), cards)
 	}
-	if cards[0].Name != plannerAgentName || cards[1].Name != workerAgentName || cards[2].Name != reviewerAgentName {
-		t.Fatalf("ListCards() = %+v, want planner, worker, reviewer order", cards)
+	for i, agent := range agents {
+		if cards[i].Name != agent.name {
+			t.Fatalf("ListCards()[%d] = %+v, want %s", i, cards[i], agent.name)
+		}
 	}
 
+	first := agents[0]
 	result, err := mesh.Route(ctx, a2a.RouteQuery{
-		Require: []string{"planning"},
+		Require: first.capabilities,
 		Task:    a2a.Task{ID: "task-plan", Input: "ship a support agent"},
 	})
 	if err != nil {
 		t.Fatalf("Route() error = %v", err)
 	}
-	if result.Output != plannerAgentName+" handled: ship a support agent" {
-		t.Fatalf("Route() = %+v, want planner response", result)
+	if result.Output != first.name+" handled: ship a support agent" {
+		t.Fatalf("Route() = %+v, want first agent response", result)
 	}
 }
 
@@ -1687,15 +1794,16 @@ func TestClusterBootstrapsMeshFromEnvRegistryURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bootstrapClusterMeshFromEnv() error = %v", err)
 	}
+	first := clusterAgents()[0]
 	result, err := mesh.Route(ctx, a2a.RouteQuery{
-		Require: []string{"execution"},
+		Require: first.capabilities,
 		Task:    a2a.Task{ID: "task-execute", Input: "use env registry"},
 	})
 	if err != nil {
 		t.Fatalf("Route() error = %v", err)
 	}
-	if result.Output != workerAgentName+" handled: use env registry" {
-		t.Fatalf("Route() = %+v, want worker response", result)
+	if result.Output != first.name+" handled: use env registry" {
+		t.Fatalf("Route() = %+v, want env registry response", result)
 	}
 }
 
@@ -1716,11 +1824,19 @@ func TestClusterRegistersAgentsWithExternalRegistryLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCards() error = %v", err)
 	}
-	if len(cards) != 3 || cards[0].Name != plannerAgentName || cards[1].Name != workerAgentName || cards[2].Name != reviewerAgentName {
-		t.Fatalf("registered cards = %+v, want planner, worker, reviewer", cards)
+	agents := clusterAgents()
+	if len(cards) != len(agents) {
+		t.Fatalf("registered card count = %d, want %d: %+v", len(cards), len(agents), cards)
 	}
-	if cards[0].URL != clusterServer.URL+clusterAgentPath(plannerAgentName) || cards[0].ExpiresAt.IsZero() {
-		t.Fatalf("registered planner card = %+v, want cluster URL and lease expiry", cards[0])
+	for i, agent := range agents {
+		if cards[i].Name != agent.name {
+			t.Fatalf("registered card[%d] = %+v, want %s", i, cards[i], agent.name)
+		}
+	}
+	first := agents[0]
+	last := agents[len(agents)-1]
+	if cards[0].URL != clusterServer.URL+clusterAgentPath(first.name) || cards[0].ExpiresAt.IsZero() {
+		t.Fatalf("registered first card = %+v, want cluster URL and lease expiry", cards[0])
 	}
 
 	mesh, err := bootstrapClusterMesh(ctx, registryServer.URL, registryServer.Client())
@@ -1728,16 +1844,16 @@ func TestClusterRegistersAgentsWithExternalRegistryLease(t *testing.T) {
 		t.Fatalf("bootstrapClusterMesh(external) error = %v", err)
 	}
 	result, err := mesh.Route(ctx, a2a.RouteQuery{
-		Require: []string{"review"},
+		Require: last.capabilities,
 		Task:    a2a.Task{ID: "task-external-registry", Input: "external registry"},
 	})
 	if err != nil {
 		t.Fatalf("Route() error = %v", err)
 	}
-	if result.Output != reviewerAgentName+" handled: external registry" {
-		t.Fatalf("Route() = %+v, want reviewer response", result)
+	if result.Output != last.name+" handled: external registry" {
+		t.Fatalf("Route() = %+v, want last agent response", result)
 	}
-	requireRenewedRegistryCard(t, ctx, store, plannerAgentName, cards[0].ExpiresAt)
+	requireRenewedRegistryCard(t, ctx, store, first.name, cards[0].ExpiresAt)
 }
 
 func TestClusterRoutesStreamingTasks(t *testing.T) {
@@ -1750,11 +1866,12 @@ func TestClusterRoutesStreamingTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bootstrapClusterMesh() error = %v", err)
 	}
+	last := clusterAgents()[len(clusterAgents())-1]
 
 	statuses := []a2a.TaskStatus{}
 	var output string
 	for event, streamErr := range mesh.RouteStream(ctx, a2a.RouteQuery{
-		Require: []string{"review"},
+		Require: last.capabilities,
 		Task:    a2a.Task{ID: "task-review", Input: "candidate patch"},
 	}) {
 		if streamErr != nil {
@@ -1768,8 +1885,8 @@ func TestClusterRoutesStreamingTasks(t *testing.T) {
 	if len(statuses) != 2 || statuses[0] != a2a.TaskStatusRunning || statuses[1] != a2a.TaskStatusCompleted {
 		t.Fatalf("RouteStream() statuses = %+v, want running then completed", statuses)
 	}
-	if output != reviewerAgentName+" handled: candidate patch" {
-		t.Fatalf("RouteStream() output = %q, want reviewer response", output)
+	if output != last.name+" handled: candidate patch" {
+		t.Fatalf("RouteStream() output = %q, want last agent response", output)
 	}
 }
 
@@ -1783,7 +1900,8 @@ func TestClusterCancelsTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bootstrapClusterMesh() error = %v", err)
 	}
-	canceled, err := mesh.Cancel(ctx, workerAgentName, "task-cancel")
+	first := clusterAgents()[0]
+	canceled, err := mesh.Cancel(ctx, first.name, "task-cancel")
 	if err != nil {
 		t.Fatalf("Cancel() error = %v", err)
 	}
@@ -1793,7 +1911,7 @@ func TestClusterCancelsTasks(t *testing.T) {
 }
 
 func TestClusterAgentRejectsEmptyCancelID(t *testing.T) {
-	err := clusterAgent{name: workerAgentName}.Cancel(context.Background(), "")
+	err := clusterAgent{name: clusterAgents()[0].name}.Cancel(context.Background(), "")
 	if !errors.Is(err, a2a.ErrTaskIDRequired) {
 		t.Fatalf("Cancel() error = %v, want ErrTaskIDRequired", err)
 	}
@@ -1803,7 +1921,8 @@ func TestClusterServesHealthEndpoints(t *testing.T) {
 	server := httptest.NewServer(newClusterHTTPHandler())
 	defer server.Close()
 
-	for _, path := range []string{"/healthz", "/readyz", "/agents/planner-agent/healthz", "/agents/planner-agent/readyz"} {
+	first := clusterAgents()[0]
+	for _, path := range []string{"/healthz", "/readyz", clusterAgentPath(first.name) + "/healthz", clusterAgentPath(first.name) + "/readyz"} {
 		resp, err := server.Client().Get(server.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s error = %v", path, err)
@@ -1844,8 +1963,14 @@ func TestClusterRegistryFile(t *testing.T) {
 	if err := json.Unmarshal(body, &cards); err != nil {
 		t.Fatalf("unmarshal agents.json: %v", err)
 	}
-	if len(cards) != 3 || cards[0].Name != plannerAgentName || cards[1].Name != workerAgentName || cards[2].Name != reviewerAgentName {
-		t.Fatalf("agents.json = %+v, want planner, worker, reviewer cards", cards)
+	agents := clusterAgents()
+	if len(cards) != len(agents) {
+		t.Fatalf("agents.json card count = %d, want %d: %+v", len(cards), len(agents), cards)
+	}
+	for i, agent := range agents {
+		if cards[i].Name != agent.name {
+			t.Fatalf("agents.json card[%d] = %+v, want %s", i, cards[i], agent.name)
+		}
 	}
 	for _, card := range cards {
 		if card.URL == "" || len(card.Capabilities) == 0 || !card.Streaming || card.Health == nil {
@@ -1891,5 +2016,10 @@ gopact agent verify .
 GOPACT_CLUSTER_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
-The cluster runs three A2A HTTP agents under ` + "`/agents/planner-agent`" + `, ` + "`/agents/worker-agent`" + `, and ` + "`/agents/reviewer-agent`" + `. The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. Generated mesh bootstrap helper code reads ` + "`GOPACT_A2A_REGISTRY_URL`" + `, defaulting to ` + "`GOPACT_CLUSTER_URL`" + ` plus ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register all cluster agents with renewable leases. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, ` + "`GOPACT_A2A_REGISTRY_URL`" + `, or ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
+The cluster runs configured A2A HTTP agents under ` + "`/agents/<agent-name>`" + `:
+{{- range .Agents }}
+- ` + "`{{ .Name }}`" + ` (` + "`{{ .Capability }}`" + `): {{ .Description }}
+{{- end }}
+
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. Generated mesh bootstrap helper code reads ` + "`GOPACT_A2A_REGISTRY_URL`" + `, defaulting to ` + "`GOPACT_CLUSTER_URL`" + ` plus ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register all cluster agents with renewable leases. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, ` + "`GOPACT_A2A_REGISTRY_URL`" + `, or ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables. Pass repeated ` + "`-agent name[:capability[:description]]`" + ` flags to generate a cluster around your own domain agents.
 `

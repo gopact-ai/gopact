@@ -157,12 +157,9 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 	)
 	assertFileContains(t, filepath.Join(out, "main.go"),
 		`clusterName = "support-cluster"`,
-		"plannerAgentName",
-		`"planner-agent"`,
-		"workerAgentName",
-		`"worker-agent"`,
-		"reviewerAgentName",
-		`"reviewer-agent"`,
+		`{name: "planner-agent", description: "Generated planning agent.", capabilities: []string{"planning"}}`,
+		`{name: "worker-agent", description: "Generated execution agent.", capabilities: []string{"execution"}}`,
+		`{name: "reviewer-agent", description: "Generated review agent.", capabilities: []string{"review"}}`,
 		"a2a.NewHTTPHandler",
 		"a2a.NewHTTPRegistryHandler",
 		"a2a.NewHTTPRegistry",
@@ -226,6 +223,112 @@ func TestRunAgentInitClusterWritesRunnableScaffold(t *testing.T) {
 		if cards[i].Name != want || cards[i].URL == "" || len(cards[i].Capabilities) == 0 || !cards[i].Streaming {
 			t.Fatalf("agents.json card[%d] = %+v, want streaming %s card", i, cards[i], want)
 		}
+	}
+}
+
+func TestRunAgentInitClusterWritesCustomDomainAgents(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "commerce-cluster")
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"agent", "init-cluster", "commerce-cluster",
+		"-out", out,
+		"-module", "example.com/commerce-cluster",
+		"-sdk-version", "v0.0.15",
+		"-agent", "catalog:catalog:Search product catalog.",
+		"-agent", "pricing:pricing:Calculate current price.",
+		"-agent", "support:support:Handle customer support.",
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+
+	assertFileContains(t, filepath.Join(out, "main.go"),
+		`{name: "catalog", description: "Search product catalog.", capabilities: []string{"catalog"}}`,
+		`{name: "pricing", description: "Calculate current price.", capabilities: []string{"pricing"}}`,
+		`{name: "support", description: "Handle customer support.", capabilities: []string{"support"}}`,
+	)
+
+	registry := readFile(t, filepath.Join(out, "agents.json"))
+	var cards []struct {
+		Name         string   `json:"name"`
+		Description  string   `json:"description"`
+		URL          string   `json:"url"`
+		Capabilities []string `json:"capabilities"`
+		Streaming    bool     `json:"streaming"`
+	}
+	if err := json.Unmarshal([]byte(registry), &cards); err != nil {
+		t.Fatalf("agents.json is not valid JSON: %v\n%s", err, registry)
+	}
+	if len(cards) != 3 {
+		t.Fatalf("agents.json card count = %d, want 3: %+v", len(cards), cards)
+	}
+	for i, want := range []struct {
+		name        string
+		description string
+		capability  string
+	}{
+		{name: "catalog", description: "Search product catalog.", capability: "catalog"},
+		{name: "pricing", description: "Calculate current price.", capability: "pricing"},
+		{name: "support", description: "Handle customer support.", capability: "support"},
+	} {
+		if cards[i].Name != want.name ||
+			cards[i].Description != want.description ||
+			cards[i].URL != "http://localhost:8080/agents/"+want.name ||
+			len(cards[i].Capabilities) != 1 ||
+			cards[i].Capabilities[0] != want.capability ||
+			!cards[i].Streaming {
+			t.Fatalf("agents.json card[%d] = %+v, want custom domain agent %+v", i, cards[i], want)
+		}
+	}
+}
+
+func TestRunAgentInitClusterRejectsInvalidCustomDomainAgents(t *testing.T) {
+	tests := []struct {
+		name      string
+		agentSpec string
+		wantError string
+	}{
+		{name: "empty name", agentSpec: ":catalog", wantError: "-agent name is required"},
+		{name: "name with path separator", agentSpec: "support/api:support", wantError: "-agent name must not contain path separators"},
+		{name: "capability with whitespace", agentSpec: "support:customer support", wantError: "-agent capability must not contain whitespace"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(context.Background(), []string{
+				"agent", "init-cluster", "commerce-cluster",
+				"-out", filepath.Join(t.TempDir(), "commerce-cluster"),
+				"-agent", tt.agentSpec,
+			}, &stdout, &stderr)
+			if code != exitUsage {
+				t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitUsage, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantError) {
+				t.Fatalf("stderr missing %q:\n%s", tt.wantError, stderr.String())
+			}
+		})
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{
+		"agent", "init-cluster", "commerce-cluster",
+		"-out", filepath.Join(t.TempDir(), "commerce-cluster"),
+		"-agent", "support:support",
+		"-agent", "support:helpdesk",
+	}, &stdout, &stderr)
+	if code != exitUsage {
+		t.Fatalf("duplicate run() code = %d, want %d\nstderr:\n%s", code, exitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `-agent "support" is duplicated`) {
+		t.Fatalf("stderr missing duplicate error:\n%s", stderr.String())
 	}
 }
 
@@ -633,6 +736,35 @@ func TestGeneratedAgentClusterScaffoldPassesGoTest(t *testing.T) {
 		t.Fatalf("agent verify code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, exitOK, stdout.String(), stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "verified agent scaffold planner-agent") {
+		t.Fatalf("agent verify stdout missing summary:\n%s", stdout.String())
+	}
+}
+
+func TestGeneratedCustomAgentClusterScaffoldPassesGoTest(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "commerce-cluster")
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"agent", "init-cluster", "commerce-cluster",
+		"-out", out,
+		"-module", "example.com/commerce-cluster",
+		"-sdk-version", "v0.0.15",
+		"-agent", "catalog:catalog:Search product catalog.",
+		"-agent", "pricing:pricing:Calculate current price.",
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run() code = %d, want %d\nstderr:\n%s", code, exitOK, stderr.String())
+	}
+
+	runGeneratedCommand(t, out, "go", "mod", "edit", "-replace", "github.com/gopact-ai/gopact="+repoRoot(t))
+	runGeneratedCommand(t, out, "go", "mod", "tidy")
+	runGeneratedCommand(t, out, "go", "test", "./...")
+
+	code = run(context.Background(), []string{"agent", "verify", out}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("agent verify code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, exitOK, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "verified agent scaffold catalog") {
 		t.Fatalf("agent verify stdout missing summary:\n%s", stdout.String())
 	}
 }

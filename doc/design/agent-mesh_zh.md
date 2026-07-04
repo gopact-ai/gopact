@@ -50,6 +50,15 @@ gopact agent run ./support-agent
 gopact mesh up
 ```
 
+也可以直接从本地垂域 agent cluster 开始：
+
+```bash
+gopact agent init-cluster support-cluster \
+  -agent triage:support.triage:"Classify support requests." \
+  -agent docs:knowledge.search:"Search product documentation." \
+  -agent billing:billing:"Handle billing questions."
+```
+
 应用代码应该足够直接：
 
 ```go

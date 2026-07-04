@@ -50,12 +50,15 @@ Set `GOPACT_A2A_REGISTRAR_URL` to a writable A2A registry root when a generated 
 Generate a local A2A agent cluster scaffold:
 
 ```bash
-go run ./cmd/gopact agent init-cluster support-cluster -out /tmp/support-cluster
+go run ./cmd/gopact agent init-cluster support-cluster -out /tmp/support-cluster \
+  -agent triage:support.triage:"Classify support requests." \
+  -agent docs:knowledge.search:"Search product documentation." \
+  -agent billing:billing:"Handle billing questions."
 (cd /tmp/support-cluster && go test ./...)
 go run ./cmd/gopact agent verify /tmp/support-cluster
 ```
 
-Generated clusters use `GOPACT_A2A_REGISTRY_URL` for mesh bootstrap and `GOPACT_A2A_REGISTRAR_URL` for optional external registration.
+Omit `-agent` to generate the default planner/worker/reviewer cluster. Generated clusters use `GOPACT_A2A_REGISTRY_URL` for mesh bootstrap and `GOPACT_A2A_REGISTRAR_URL` for optional external registration.
 
 Build a self-bootstrap release evidence bundle from a recorded run export and observed verification report:
 

@@ -44,6 +44,15 @@ gopact agent init support-agent
 gopact agent run ./support-agent
 ```
 
+Users can also start from a local domain-agent cluster:
+
+```bash
+gopact agent init-cluster support-cluster \
+  -agent triage:support.triage:"Classify support requests." \
+  -agent docs:knowledge.search:"Search product documentation." \
+  -agent billing:billing:"Handle billing questions."
+```
+
 Application code should stay direct:
 
 ```go
