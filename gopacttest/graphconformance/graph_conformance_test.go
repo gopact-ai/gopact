@@ -33,6 +33,7 @@ func TestCheckGraphConformanceCoversSelfBootstrapCases(t *testing.T) {
 		"loop-step-limit-fails",
 		"step-export-resumes-completed-boundary",
 		"interrupted-step-export-resumes-with-request",
+		"step-export-verifies-artifacts-before-resume",
 		"runnable-node-runs-subgraph",
 		"runnable-node-streams-nested-events",
 		"node-emits-nested-events",
