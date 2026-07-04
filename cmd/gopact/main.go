@@ -568,14 +568,17 @@ func verifyAgentRegistry(path string) (string, error) {
 }
 
 func requireRegistryHTTPPath(cardLabel, field, value string) error {
-	value = strings.TrimSpace(value)
-	if value == "" {
+	pathValue := strings.TrimSpace(value)
+	if pathValue == "" {
 		return fmt.Errorf("agents.json %s missing %s", cardLabel, field)
 	}
-	if !strings.HasPrefix(value, "/") {
+	if pathValue != value {
+		return fmt.Errorf("agents.json %s %s must not have surrounding whitespace", cardLabel, field)
+	}
+	if !strings.HasPrefix(pathValue, "/") {
 		return fmt.Errorf("agents.json %s %s must start with /", cardLabel, field)
 	}
-	if strings.HasPrefix(value, "//") {
+	if strings.HasPrefix(pathValue, "//") {
 		return fmt.Errorf("agents.json %s %s must be a local HTTP path", cardLabel, field)
 	}
 	return nil
