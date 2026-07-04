@@ -620,12 +620,18 @@ func verifyAgentEnvExample(path string) error {
 		if err := requireDotEnvKeys(keys, agentEnvExampleRequiredKeys); err != nil {
 			return err
 		}
-		return requireDotEnvHTTPURLs(assignments, []string{"GOPACT_AGENT_URL"})
+		if err := requireDotEnvHTTPURLs(assignments, []string{"GOPACT_AGENT_URL"}); err != nil {
+			return err
+		}
+		return allowEmptyDotEnvHTTPURLs(assignments, []string{"GOPACT_A2A_REGISTRAR_URL"})
 	default:
 		if err := requireDotEnvKeys(keys, clusterEnvExampleRequiredKeys); err != nil {
 			return err
 		}
-		return requireDotEnvHTTPURLs(assignments, []string{"GOPACT_CLUSTER_URL", "GOPACT_A2A_REGISTRY_URL"})
+		if err := requireDotEnvHTTPURLs(assignments, []string{"GOPACT_CLUSTER_URL", "GOPACT_A2A_REGISTRY_URL"}); err != nil {
+			return err
+		}
+		return allowEmptyDotEnvHTTPURLs(assignments, []string{"GOPACT_A2A_REGISTRAR_URL"})
 	}
 }
 
@@ -655,6 +661,19 @@ func requireDotEnvHTTPURLs(assignments []dotEnvAssignment, required []string) er
 	for _, key := range required {
 		if !isAbsoluteHTTPURL(values[key]) {
 			return fmt.Errorf(".env.example %s must be an absolute http(s) URL", key)
+		}
+	}
+	return nil
+}
+
+func allowEmptyDotEnvHTTPURLs(assignments []dotEnvAssignment, keys []string) error {
+	values := make(map[string]string, len(assignments))
+	for _, assignment := range assignments {
+		values[assignment.key] = strings.TrimSpace(assignment.value)
+	}
+	for _, key := range keys {
+		if values[key] != "" && !isAbsoluteHTTPURL(values[key]) {
+			return fmt.Errorf(".env.example %s must be empty or an absolute http(s) URL", key)
 		}
 	}
 	return nil
