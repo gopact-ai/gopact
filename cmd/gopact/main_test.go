@@ -680,7 +680,7 @@ func TestRunReleaseBundleRejectsMismatchedObservedReport(t *testing.T) {
 }
 
 func TestDefaultSDKVersionFallbackUsesCurrentReleasedTag(t *testing.T) {
-	want := "v0.0.53"
+	want := "v0.0.54"
 	if got := defaultSDKVersion(); got != want {
 		t.Fatalf("defaultSDKVersion() = %q, want %s", got, want)
 	}
