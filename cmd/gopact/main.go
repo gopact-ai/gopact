@@ -513,14 +513,22 @@ func verifyAgentRegistry(path string) (string, error) {
 		hasA2AHTTPProtocol := false
 		for j, protocol := range card.Protocols {
 			protocolLabel := fmt.Sprintf("%s protocols[%d]", label, j)
-			if strings.TrimSpace(protocol.Name) == "" {
+			protocolName := strings.TrimSpace(protocol.Name)
+			if protocolName == "" {
 				return "", fmt.Errorf("agents.json %s missing name", protocolLabel)
 			}
-			if strings.TrimSpace(protocol.Transport) == "" {
+			if protocolName != protocol.Name {
+				return "", fmt.Errorf("agents.json %s name must not have surrounding whitespace", protocolLabel)
+			}
+			protocolTransport := strings.TrimSpace(protocol.Transport)
+			if protocolTransport == "" {
 				return "", fmt.Errorf("agents.json %s missing transport", protocolLabel)
 			}
-			if strings.EqualFold(strings.TrimSpace(protocol.Name), "a2a") &&
-				strings.EqualFold(strings.TrimSpace(protocol.Transport), "http") {
+			if protocolTransport != protocol.Transport {
+				return "", fmt.Errorf("agents.json %s transport must not have surrounding whitespace", protocolLabel)
+			}
+			if strings.EqualFold(protocolName, "a2a") &&
+				strings.EqualFold(protocolTransport, "http") {
 				hasA2AHTTPProtocol = true
 			}
 		}
