@@ -428,6 +428,9 @@ func verifyAgentScaffold(ctx context.Context, dir string, stdout, stderr io.Writ
 	if err := verifyAgentGitignore(filepath.Join(dir, ".gitignore")); err != nil {
 		return agentVerifyReport{}, err
 	}
+	if err := verifyAgentEnvExample(filepath.Join(dir, ".env.example")); err != nil {
+		return agentVerifyReport{}, err
+	}
 
 	agentName, err := verifyAgentRegistry(filepath.Join(dir, "agents.json"))
 	if err != nil {
@@ -444,7 +447,7 @@ func verifyAgentScaffold(ctx context.Context, dir string, stdout, stderr io.Writ
 	}
 	return agentVerifyReport{
 		AgentName: agentName,
-		Checks:    len(agentVerifyRequiredFiles) + 2,
+		Checks:    len(agentVerifyRequiredFiles) + 3,
 	}, nil
 }
 
@@ -529,11 +532,109 @@ func verifyAgentGitignore(path string) error {
 	return nil
 }
 
+var (
+	agentEnvExampleProfileKeys = []string{
+		"GOPACT_AGENT_ADDR",
+		"GOPACT_AGENT_URL",
+	}
+	agentEnvExampleRequiredKeys = []string{
+		"GOPACT_AGENT_ADDR",
+		"GOPACT_AGENT_URL",
+		"GOPACT_A2A_REGISTRAR_URL",
+	}
+	clusterEnvExampleProfileKeys = []string{
+		"GOPACT_CLUSTER_ADDR",
+		"GOPACT_CLUSTER_URL",
+		"GOPACT_A2A_REGISTRY_URL",
+	}
+	clusterEnvExampleRequiredKeys = []string{
+		"GOPACT_CLUSTER_ADDR",
+		"GOPACT_CLUSTER_URL",
+		"GOPACT_A2A_REGISTRY_URL",
+		"GOPACT_A2A_REGISTRAR_URL",
+	}
+)
+
+func verifyAgentEnvExample(path string) error {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	assignments, err := parseDotEnvAssignments(body)
+	if err != nil {
+		return err
+	}
+	keys := make(map[string]bool, len(assignments))
+	for _, assignment := range assignments {
+		keys[assignment.key] = true
+	}
+
+	hasAgentProfile := hasAnyEnvKey(keys, agentEnvExampleProfileKeys)
+	hasClusterProfile := hasAnyEnvKey(keys, clusterEnvExampleProfileKeys)
+	switch {
+	case hasAgentProfile && hasClusterProfile:
+		return errors.New(".env.example must define either agent or cluster scaffold environment variables, not both")
+	case !hasAgentProfile && !hasClusterProfile:
+		return errors.New(".env.example must define agent or cluster scaffold environment variables")
+	case hasAgentProfile:
+		return requireDotEnvKeys(keys, agentEnvExampleRequiredKeys)
+	default:
+		return requireDotEnvKeys(keys, clusterEnvExampleRequiredKeys)
+	}
+}
+
+func hasAnyEnvKey(keys map[string]bool, candidates []string) bool {
+	for _, key := range candidates {
+		if keys[key] {
+			return true
+		}
+	}
+	return false
+}
+
+func requireDotEnvKeys(keys map[string]bool, required []string) error {
+	for _, key := range required {
+		if !keys[key] {
+			return fmt.Errorf(".env.example missing %s", key)
+		}
+	}
+	return nil
+}
+
 func agentRegistryCardLabel(index int) string {
 	if index == 0 {
 		return "first card"
 	}
 	return fmt.Sprintf("card[%d]", index)
+}
+
+type dotEnvAssignment struct {
+	key   string
+	value string
+}
+
+func parseDotEnvAssignments(body []byte) ([]dotEnvAssignment, error) {
+	var assignments []dotEnvAssignment
+	for lineNo, raw := range strings.Split(string(body), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("parse .env line %d: missing =", lineNo+1)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" || strings.ContainsAny(key, " \t\r\n") {
+			return nil, fmt.Errorf("parse .env line %d: invalid key", lineNo+1)
+		}
+		assignments = append(assignments, dotEnvAssignment{
+			key:   key,
+			value: strings.TrimSpace(value),
+		})
+	}
+	return assignments, nil
 }
 
 func agentRunEnv(dir string, env []string) ([]string, error) {
@@ -552,25 +653,16 @@ func agentRunEnv(dir string, env []string) ([]string, error) {
 			seen[key] = struct{}{}
 		}
 	}
-	for lineNo, raw := range strings.Split(string(body), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
+	assignments, err := parseDotEnvAssignments(body)
+	if err != nil {
+		return nil, err
+	}
+	for _, assignment := range assignments {
+		if _, ok := seen[assignment.key]; ok {
 			continue
 		}
-		line = strings.TrimPrefix(line, "export ")
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			return nil, fmt.Errorf("parse .env line %d: missing =", lineNo+1)
-		}
-		key = strings.TrimSpace(key)
-		if key == "" || strings.ContainsAny(key, " \t\r\n") {
-			return nil, fmt.Errorf("parse .env line %d: invalid key", lineNo+1)
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		env = append(env, key+"="+strings.TrimSpace(value))
-		seen[key] = struct{}{}
+		env = append(env, assignment.key+"="+assignment.value)
+		seen[assignment.key] = struct{}{}
 	}
 	return env, nil
 }
@@ -1366,7 +1458,7 @@ gopact agent verify .
 GOPACT_AGENT_ADDR=:8080 gopact agent run .
 ` + "```" + `
 
-The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register this agent with a renewable lease. ` + "`gopact agent verify`" + ` checks the scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array. The running agent also serves a registry document at ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register this agent with a renewable lease. ` + "`gopact agent verify`" + ` checks the scaffold files, registry shape, ` + "`.env.example`" + ` environment contract, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when local address or public URL overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables.
 `
 
 const clusterMainGoTemplate = `package main
@@ -2021,5 +2113,5 @@ The cluster runs configured A2A HTTP agents under ` + "`/agents/<agent-name>`" +
 - ` + "`{{ .Name }}`" + ` (` + "`{{ .Capability }}`" + `): {{ .Description }}
 {{- end }}
 
-The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. Generated mesh bootstrap helper code reads ` + "`GOPACT_A2A_REGISTRY_URL`" + `, defaulting to ` + "`GOPACT_CLUSTER_URL`" + ` plus ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register all cluster agents with renewable leases. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, ` + "`GOPACT_A2A_REGISTRY_URL`" + `, or ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables. Pass repeated ` + "`-agent name[:capability[:description]]`" + ` flags to generate a cluster around your own domain agents.
+The local registry is stored in ` + "`agents.json`" + ` as a bare A2A agent-card array, and the running cluster serves an HTTP registry document at ` + "`/agents.json`" + `. Generated mesh bootstrap helper code reads ` + "`GOPACT_A2A_REGISTRY_URL`" + `, defaulting to ` + "`GOPACT_CLUSTER_URL`" + ` plus ` + "`/agents.json`" + `. Set ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` to a writable A2A registry root to register all cluster agents with renewable leases. ` + "`gopact agent verify`" + ` checks required scaffold files, registry shape, ` + "`.env.example`" + ` environment contract, and ` + "`go test ./...`" + ` without loading local provider credentials. Copy ` + "`.env.example`" + ` to ` + "`.env`" + ` when ` + "`GOPACT_CLUSTER_ADDR`" + `, ` + "`GOPACT_CLUSTER_URL`" + `, ` + "`GOPACT_A2A_REGISTRY_URL`" + `, or ` + "`GOPACT_A2A_REGISTRAR_URL`" + ` overrides are needed; ` + "`gopact agent run`" + ` loads ` + "`.env`" + ` from this directory without overriding existing environment variables. Pass repeated ` + "`-agent name[:capability[:description]]`" + ` flags to generate a cluster around your own domain agents.
 `

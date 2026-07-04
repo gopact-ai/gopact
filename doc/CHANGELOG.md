@@ -32,6 +32,7 @@ This file records user-visible changes to `gopact` core. Internal reshuffling, p
 - `a2a.Mesh.BootstrapEnv` and `a2a.Mesh.SyncEnv` now apply mesh-level HTTP agent options while discovering environment-configured agents.
 - A2A mesh bootstrap now coalesces duplicate discovered card names before registering callable HTTP/JSON-RPC agents, so the latest source wins consistently.
 - `gopact agent verify` now validates every card in a bare-array A2A registry instead of only the first card.
+- `gopact agent verify` now validates `.env.example` declares the standard generated agent or cluster environment variables.
 - Feature coverage now names the tested graph orchestration surface: step export/import, interrupted step resume, branch routing, DAG fan-in, dynamic fan-out, loop step limits, runnable subgraphs, and node-emitted nested events.
 - Workflow orchestration matrix now records the `gopact-ext` human review template, durable scheduler, Dev Agent self-bootstrap workflow, and Dev Agent workspace adapter including policy-approved plan patch apply as completed with offline proof.
 - README and `doc/` structure now separate first-reader documentation, design records, maintainer process, and historical execution plans.

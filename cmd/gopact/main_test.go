@@ -533,6 +533,62 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsDotEnvExampleWithoutScaffoldEnvContract(t *testing.T) {
+	tests := []struct {
+		name       string
+		envExample string
+		wantError  string
+	}{
+		{
+			name: "missing agent registrar url",
+			envExample: `GOPACT_AGENT_ADDR=:8080
+GOPACT_AGENT_URL=http://localhost:8080
+`,
+			wantError: ".env.example missing GOPACT_A2A_REGISTRAR_URL",
+		},
+		{
+			name: "missing cluster registry url",
+			envExample: `GOPACT_CLUSTER_ADDR=:8080
+GOPACT_CLUSTER_URL=http://localhost:8080
+GOPACT_A2A_REGISTRAR_URL=
+`,
+			wantError: ".env.example missing GOPACT_A2A_REGISTRY_URL",
+		},
+		{
+			name:       "unknown scaffold env",
+			envExample: "GOPACT_OTHER=value\n",
+			wantError:  ".env.example must define agent or cluster scaffold environment variables",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, validVerifyRegistry("verify-agent"))
+			if err := os.WriteFile(filepath.Join(dir, ".env.example"), []byte(tt.envExample), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("run() code = %d, want %d", code, exitError)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantError) {
+				t.Fatalf("stderr missing %q:\n%s", tt.wantError, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAgentVerifyReportsGoTestFailure(t *testing.T) {
 	dir := t.TempDir()
 	writeVerifyAgentModule(t, dir, `package main
@@ -833,7 +889,7 @@ func writeVerifyAgentModule(t *testing.T, dir string, testBody string, registry 
 		"main.go":      "package main\n\nfunc main() {}\n",
 		"main_test.go": testBody,
 		"README.md":    "# verify-agent\n",
-		".env.example": "GOPACT_AGENT_ADDR=:8080\n",
+		".env.example": "GOPACT_AGENT_ADDR=:8080\nGOPACT_AGENT_URL=http://localhost:8080\nGOPACT_A2A_REGISTRAR_URL=\n",
 		".gitignore":   ".env\n.env.*\n!.env.example\n",
 		"agents.json":  registry,
 	}
