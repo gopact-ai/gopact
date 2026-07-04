@@ -486,11 +486,16 @@ func verifyAgentRegistry(path string) (string, error) {
 	if len(cards) == 0 {
 		return "", errors.New("agents.json must contain at least one agent card")
 	}
+	seenNames := map[string]bool{}
 	for i, card := range cards {
 		label := agentRegistryCardLabel(i)
 		if card.Name == "" {
 			return "", fmt.Errorf("agents.json %s missing name", label)
 		}
+		if seenNames[card.Name] {
+			return "", fmt.Errorf("agents.json %s duplicates name %q", label, card.Name)
+		}
+		seenNames[card.Name] = true
 		if card.URL == "" {
 			return "", fmt.Errorf("agents.json %s missing url", label)
 		}
