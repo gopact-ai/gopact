@@ -948,6 +948,58 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsRegistryCardHealthPathWithSurroundingWhitespace(t *testing.T) {
+	tests := []struct {
+		name      string
+		health    string
+		wantError string
+	}{
+		{
+			name:      "health path with surrounding whitespace",
+			health:    `"health_path": " /healthz ", "readiness_path": "/readyz"`,
+			wantError: "agents.json first card health path must not have surrounding whitespace",
+		},
+		{
+			name:      "readiness path with surrounding whitespace",
+			health:    `"health_path": "/healthz", "readiness_path": " /readyz "`,
+			wantError: "agents.json first card readiness path must not have surrounding whitespace",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, `[
+  {
+    "name": "verify-agent",
+    "url": "http://localhost:8080",
+    "protocols": [{"name": "a2a", "transport": "http"}],
+    "capabilities": ["chat"],
+    "streaming": true,
+    "health": {`+tt.health+`}
+  }
+]`)
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("run() code = %d, want %d", code, exitError)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantError) {
+				t.Fatalf("stderr missing %q:\n%s", tt.wantError, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAgentVerifyRejectsGitignoreWithoutDotEnvBoundary(t *testing.T) {
 	tests := []struct {
 		name      string
