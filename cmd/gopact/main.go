@@ -506,6 +506,7 @@ func verifyAgentRegistry(path string) (string, error) {
 		if len(card.Protocols) == 0 {
 			return "", fmt.Errorf("agents.json %s missing protocols", label)
 		}
+		hasA2AHTTPProtocol := false
 		for j, protocol := range card.Protocols {
 			protocolLabel := fmt.Sprintf("%s protocols[%d]", label, j)
 			if strings.TrimSpace(protocol.Name) == "" {
@@ -514,6 +515,13 @@ func verifyAgentRegistry(path string) (string, error) {
 			if strings.TrimSpace(protocol.Transport) == "" {
 				return "", fmt.Errorf("agents.json %s missing transport", protocolLabel)
 			}
+			if strings.EqualFold(strings.TrimSpace(protocol.Name), "a2a") &&
+				strings.EqualFold(strings.TrimSpace(protocol.Transport), "http") {
+				hasA2AHTTPProtocol = true
+			}
+		}
+		if !hasA2AHTTPProtocol {
+			return "", fmt.Errorf("agents.json %s missing a2a http protocol", label)
 		}
 		if len(card.Capabilities) == 0 {
 			return "", fmt.Errorf("agents.json %s missing capabilities", label)
