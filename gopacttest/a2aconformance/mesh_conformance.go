@@ -58,6 +58,7 @@ func CheckAgentMeshConformance(ctx context.Context, harness AgentMeshConformance
 		checkMeshFacadeBootstrapsMultipleSources(ctx),
 		checkMeshFacadeBootstrapHTTPAgentOptions(ctx, task),
 		checkMeshFacadeBootstrapJSONRPCAgentOptions(ctx, task),
+		checkMeshFacadeSyncPrunesUnreadyHTTPAgents(ctx, task),
 		checkMeshFacadeCallsByName(ctx, harness.Agent, query, harness.ExpectedCard, task),
 		checkMeshFacadeOperationTimeout(ctx, task),
 		checkMeshFacadePropagatesRuntimeIDs(ctx, task),
@@ -363,6 +364,76 @@ func checkMeshFacadeBootstrapJSONRPCAgentOptions(ctx context.Context, task a2a.T
 	}
 	if result.Output != "jsonrpc header accepted" {
 		return failedAgentMeshConformance(caseName, fmt.Errorf("route output = %q, want jsonrpc header accepted", result.Output))
+	}
+	return passedAgentMeshConformance(caseName)
+}
+
+func checkMeshFacadeSyncPrunesUnreadyHTTPAgents(ctx context.Context, task a2a.Task) AgentMeshConformanceResult {
+	const caseName = "mesh-sync-prunes-unready-http-agents"
+	const readinessPath = "/readyz"
+
+	staleCard := a2a.AgentCard{
+		Name:         "gopact-a2a-sync-stale-probe",
+		Capabilities: []string{"sync.probe"},
+		Health:       &a2a.HealthHints{ReadinessPath: readinessPath},
+	}
+	readyCard := a2a.AgentCard{
+		Name:         "gopact-a2a-sync-ready-probe",
+		Capabilities: []string{"sync.probe"},
+		Health:       &a2a.HealthHints{ReadinessPath: readinessPath},
+	}
+	staleServer := newMeshConformanceHTTPAgent(staleCard, false, "stale")
+	defer staleServer.Close()
+	readyServer := newMeshConformanceHTTPAgent(readyCard, true, "ready")
+	defer readyServer.Close()
+	staleCard.URL = staleServer.URL
+	readyCard.URL = readyServer.URL
+
+	events := []gopact.Event{}
+	mesh, err := a2a.NewMesh(a2a.WithMeshEventSink(func(_ context.Context, event gopact.Event) error {
+		events = append(events, event)
+		return nil
+	}))
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	result, err := mesh.Sync(ctx, a2a.NewStaticDiscoverer(staleCard, readyCard))
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if err := checkCardNames(result.Bootstrap.Cards, []string{staleCard.Name, readyCard.Name}); err != nil {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("bootstrap cards: %w", err))
+	}
+	if err := checkCardNames(result.Eviction.Cards, []string{staleCard.Name}); err != nil {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("evicted cards: %w", err))
+	}
+	if err := checkCardNames(result.Cards, []string{readyCard.Name}); err != nil {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("final cards: %w", err))
+	}
+	if !hasEventType(result.Events, gopact.EventA2AAgentCardFetched) ||
+		!hasEventType(result.Events, gopact.EventA2AAgentRegistered) ||
+		!hasEventType(result.Events, gopact.EventA2AAgentEvicted) {
+		return failedAgentMeshConformance(caseName, errors.New("sync result missing bootstrap/register/eviction evidence"))
+	}
+	if !hasEventType(events, gopact.EventA2AAgentCardFetched) ||
+		!hasEventType(events, gopact.EventA2AAgentRegistered) ||
+		!hasEventType(events, gopact.EventA2AAgentEvicted) {
+		return failedAgentMeshConformance(caseName, errors.New("sync sink missing bootstrap/register/eviction evidence"))
+	}
+	if len(result.Eviction.Events) != 1 ||
+		result.Eviction.Events[0].Metadata["agent_name"] != staleCard.Name ||
+		result.Eviction.Events[0].Metadata["eviction_reason"] != "readiness_failed" {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("eviction events = %+v, want stale readiness evidence", result.Eviction.Events))
+	}
+	routed, err := mesh.Route(ctx, a2a.RouteQuery{
+		Require: []string{"sync.probe"},
+		Task:    task,
+	})
+	if err != nil {
+		return failedAgentMeshConformance(caseName, err)
+	}
+	if routed.Output != "ready: "+task.Input {
+		return failedAgentMeshConformance(caseName, fmt.Errorf("route output = %q, want ready: %s", routed.Output, task.Input))
 	}
 	return passedAgentMeshConformance(caseName)
 }
@@ -1502,6 +1573,25 @@ func requireHTTPHeader(next http.Handler, key string, value string) http.Handler
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func newMeshConformanceHTTPAgent(card a2a.AgentCard, ready bool, output string) *httptest.Server {
+	handler := a2a.NewHTTPHandler(a2a.FakeAgent{
+		CardValue: card,
+		SendFunc: func(ctx context.Context, task a2a.Task) (a2a.Result, error) {
+			if err := ctx.Err(); err != nil {
+				return a2a.Result{}, err
+			}
+			return a2a.Result{TaskID: task.ID, Output: output + ": " + task.Input}, nil
+		},
+	})
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/readyz" && !ready {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
 }
 
 func passedAgentMeshConformance(name string) AgentMeshConformanceResult {
