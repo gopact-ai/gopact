@@ -28,7 +28,7 @@ const (
 	exitError = 1
 	exitUsage = 2
 
-	fallbackSDKVersion = "v0.0.54"
+	fallbackSDKVersion = "v0.0.55"
 	scaffoldGoVersion  = "1.25"
 )
 
