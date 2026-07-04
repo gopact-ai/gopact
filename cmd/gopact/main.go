@@ -497,6 +497,15 @@ func verifyAgentRegistry(path string) (string, error) {
 		if len(card.Protocols) == 0 {
 			return "", fmt.Errorf("agents.json %s missing protocols", label)
 		}
+		for j, protocol := range card.Protocols {
+			protocolLabel := fmt.Sprintf("%s protocols[%d]", label, j)
+			if protocol.Name == "" {
+				return "", fmt.Errorf("agents.json %s missing name", protocolLabel)
+			}
+			if protocol.Transport == "" {
+				return "", fmt.Errorf("agents.json %s missing transport", protocolLabel)
+			}
+		}
 		if len(card.Capabilities) == 0 {
 			return "", fmt.Errorf("agents.json %s missing capabilities", label)
 		}
