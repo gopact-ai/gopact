@@ -48,12 +48,15 @@ go run ./cmd/gopact agent run /tmp/support-agent
 生成一个本地 A2A agent cluster scaffold：
 
 ```bash
-go run ./cmd/gopact agent init-cluster support-cluster -module example.com/support-cluster -out /tmp/support-cluster
+go run ./cmd/gopact agent init-cluster support-cluster -module example.com/support-cluster -out /tmp/support-cluster \
+  -agent triage:support.triage:"Classify support requests." \
+  -agent docs:knowledge.search:"Search product documentation." \
+  -agent billing:billing:"Handle billing questions."
 (cd /tmp/support-cluster && go test ./...)
 go run ./cmd/gopact agent verify /tmp/support-cluster
 ```
 
-生成的 cluster 使用 `GOPACT_A2A_REGISTRY_URL` 做 mesh bootstrap，使用 `GOPACT_A2A_REGISTRAR_URL` 做可选外部注册。
+不传 `-agent` 时会生成默认 planner/worker/reviewer cluster。生成的 cluster 使用 `GOPACT_A2A_REGISTRY_URL` 做 mesh bootstrap，使用 `GOPACT_A2A_REGISTRAR_URL` 做可选外部注册。
 
 从已记录的 run export 和已观察 verification report 构建 self-bootstrap release evidence bundle：
 
