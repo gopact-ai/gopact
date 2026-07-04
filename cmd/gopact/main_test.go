@@ -905,6 +905,56 @@ func TestVerifyRuns(t *testing.T) {}
 	}
 }
 
+func TestRunAgentVerifyRejectsDotEnvExampleInvalidRegistrarURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		envExample string
+	}{
+		{
+			name: "agent registrar url without scheme",
+			envExample: `GOPACT_AGENT_ADDR=:8080
+GOPACT_AGENT_URL=http://localhost:8080
+GOPACT_A2A_REGISTRAR_URL=localhost:9090
+`,
+		},
+		{
+			name: "cluster registrar url without scheme",
+			envExample: `GOPACT_CLUSTER_ADDR=:8080
+GOPACT_CLUSTER_URL=http://localhost:8080
+GOPACT_A2A_REGISTRY_URL=http://localhost:8080/agents.json
+GOPACT_A2A_REGISTRAR_URL=localhost:9090
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeVerifyAgentModule(t, dir, `package main
+
+import "testing"
+
+func TestVerifyRuns(t *testing.T) {}
+`, validVerifyRegistry("verify-agent"))
+			if err := os.WriteFile(filepath.Join(dir, ".env.example"), []byte(tt.envExample), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{"agent", "verify", dir}, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("run() code = %d, want %d", code, exitError)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), ".env.example GOPACT_A2A_REGISTRAR_URL must be empty or an absolute http(s) URL") {
+				t.Fatalf("stderr missing registrar url error:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAgentVerifyReportsGoTestFailure(t *testing.T) {
 	dir := t.TempDir()
 	writeVerifyAgentModule(t, dir, `package main
