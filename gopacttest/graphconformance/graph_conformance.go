@@ -32,6 +32,7 @@ func CheckGraphConformance(ctx context.Context) []GraphConformanceResult {
 		checkBranchCanEndWithNoTargets(ctx),
 		checkBranchRejectsMissingTarget(ctx),
 		checkBranchResumeUsesCheckpointQueue(ctx),
+		checkCheckpointVerifiesEffectArtifactsBeforeResume(ctx),
 		checkDAGFanInRunsJoinAfterParents(ctx),
 		checkDAGFanInStopsWhenParentFails(ctx),
 		checkDAGFanInPreservesEdgeOrder(ctx),
@@ -201,6 +202,78 @@ func checkBranchResumeUsesCheckpointQueue(ctx context.Context) GraphConformanceR
 		return failedGraphConformance(name, err)
 	}
 	return requireTrace(name, got, []string{"decide", "next"})
+}
+
+func checkCheckpointVerifiesEffectArtifactsBeforeResume(ctx context.Context) GraphConformanceResult {
+	const name = "checkpoint-verifies-effect-artifacts-before-resume"
+	const threadID = "thread-checkpoint-artifacts"
+	wantErr := errors.New("checkpoint artifact integrity mismatch")
+	store := &checkpointStore{
+		latest: graph.Checkpoint[traceState]{
+			ID:       "checkpoint-artifacts",
+			ThreadID: threadID,
+			Step:     1,
+			Node:     "persisted",
+			Phase:    gopact.StepCompleted,
+			State:    traceState{Trace: []string{"persisted"}},
+			Queue:    []string{"after"},
+			Effects: []gopact.EffectRecord{
+				{
+					ID:      "artifact-effect",
+					Type:    "artifact_write",
+					Applied: true,
+					Artifacts: []gopact.ArtifactRef{
+						{ID: "checkpoint-effect-artifact", SHA256: "sha-checkpoint"},
+					},
+				},
+			},
+		},
+		hasLatest: true,
+	}
+	afterRan := false
+	g := graph.New[traceState]()
+	g.AddNode("persisted", failNode("checkpointed node reran"))
+	g.AddNode("after", func(context.Context, traceState) (traceState, error) {
+		afterRan = true
+		return traceState{}, nil
+	})
+	g.AddEdge(graph.Start, "persisted")
+	g.AddEdge("persisted", "after")
+	g.AddEdge("after", graph.End)
+
+	run, err := g.Compile()
+	if err != nil {
+		return failedGraphConformance(name, err)
+	}
+	var gotRefs []gopact.ArtifactRef
+	events, err := collectRunEvents(run.Run(ctx, traceState{},
+		graph.WithThreadID(threadID),
+		graph.WithCheckpointLoader[traceState](store),
+		graph.WithArtifactVerifier(graph.ArtifactVerifierFunc(func(_ context.Context, refs []gopact.ArtifactRef) error {
+			gotRefs = append(gotRefs, refs...)
+			return wantErr
+		})),
+	))
+	if !errors.Is(err, wantErr) {
+		return failedGraphConformance(name, fmt.Errorf("run error = %v, want %v", err, wantErr))
+	}
+	if afterRan {
+		return failedGraphConformance(name, errors.New("successor ran after failed checkpoint artifact verification"))
+	}
+	if len(gotRefs) != 1 || gotRefs[0].ID != "checkpoint-effect-artifact" {
+		return failedGraphConformance(name, fmt.Errorf("verified artifact refs = %+v, want checkpoint effect artifact", gotRefs))
+	}
+	wantTypes := []gopact.EventType{
+		gopact.EventRunStarted,
+		gopact.EventRunFailed,
+	}
+	if !reflect.DeepEqual(eventTypes(events), wantTypes) {
+		return failedGraphConformance(name, fmt.Errorf("events = %v, want %v", eventTypes(events), wantTypes))
+	}
+	if events[1].Node != "persisted" || events[1].Step != 1 {
+		return failedGraphConformance(name, fmt.Errorf("run failed event = %+v, want checkpoint boundary", events[1]))
+	}
+	return passedGraphConformance(name)
 }
 
 func checkDAGFanInRunsJoinAfterParents(ctx context.Context) GraphConformanceResult {
