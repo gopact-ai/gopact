@@ -10,16 +10,17 @@ import (
 var (
 	errNilRunner   = errors.New("gopact: runner is nil")
 	errNilRunnable = errors.New("gopact: runnable is nil")
+	errNilStreamer = errors.New("gopact: event streamer is nil")
 )
 
-// EventRunnable is the minimal event stream contract accepted by the root Runner facade.
-type EventRunnable interface {
+// EventStreamer is the minimal event stream contract accepted by the root Runner facade.
+type EventStreamer interface {
 	Run(ctx context.Context, input any, opts ...RunOption) iter.Seq2[Event, error]
 }
 
-// Runner applies SDK defaults around a runnable stream.
+// Runner applies SDK defaults around an event stream.
 type Runner struct {
-	runnable         EventRunnable
+	streamer         EventStreamer
 	ids              RuntimeIDs
 	eventMiddlewares []EventHandler
 	pluginHost       *PluginHost
@@ -52,11 +53,11 @@ func ResolveRunOptions(opts ...RunOption) RunConfig {
 }
 
 // NewRunner creates a root SDK runner facade.
-func NewRunner(runnable EventRunnable, opts ...RunnerOption) (*Runner, error) {
-	if runnable == nil {
-		return nil, errNilRunnable
+func NewRunner(streamer EventStreamer, opts ...RunnerOption) (*Runner, error) {
+	if streamer == nil {
+		return nil, errNilStreamer
 	}
-	runner := &Runner{runnable: runnable}
+	runner := &Runner{streamer: streamer}
 	for _, opt := range opts {
 		if opt == nil {
 			continue
@@ -151,13 +152,13 @@ func WithEvents(sink EventSink) RunOption {
 	}
 }
 
-// Run streams events from the wrapped runnable with SDK identity defaults applied.
+// Run streams events from the wrapped event stream with SDK identity defaults applied.
 func (r *Runner) Run(ctx context.Context, input any, opts ...RunOption) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
 		if ctx == nil {
 			ctx = context.TODO()
 		}
-		if r == nil || r.runnable == nil {
+		if r == nil || r.streamer == nil {
 			yield(Event{Type: EventRunFailed, Err: errNilRunner, CreatedAt: now()}, errNilRunner)
 			return
 		}
@@ -184,7 +185,7 @@ func (r *Runner) Run(ctx context.Context, input any, opts ...RunOption) iter.Seq
 
 		runOpts := append([]RunOption(nil), opts...)
 		runOpts = append(runOpts, WithRuntimeIDs(ids))
-		for event, err := range r.runnable.Run(ctx, input, runOpts...) {
+		for event, err := range r.streamer.Run(ctx, input, runOpts...) {
 			event = event.WithRuntimeDefaults(ids)
 			if err != nil {
 				event.Err = err

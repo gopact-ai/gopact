@@ -24,7 +24,7 @@ type RunnableAgentOption func(*RunnableAgent) error
 // RunnableAgent exposes a local gopact runnable behind the A2A Agent contract.
 type RunnableAgent struct {
 	card         AgentCard
-	runnable     gopact.EventRunnable
+	runnable     gopact.EventStreamer
 	inputMapper  RunnableInputMapper
 	resultMapper RunnableResultMapper
 }
@@ -35,7 +35,7 @@ var (
 )
 
 // NewRunnableAgent creates an A2A agent adapter for a local gopact runnable.
-func NewRunnableAgent(card AgentCard, runnable gopact.EventRunnable, opts ...RunnableAgentOption) (*RunnableAgent, error) {
+func NewRunnableAgent(card AgentCard, runnable gopact.EventStreamer, opts ...RunnableAgentOption) (*RunnableAgent, error) {
 	if card.Name == "" {
 		return nil, ErrCardNameRequired
 	}
