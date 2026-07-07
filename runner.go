@@ -12,14 +12,14 @@ var (
 	errNilRunnable = errors.New("gopact: runnable is nil")
 )
 
-// Runnable is the minimal stream contract accepted by the root Runner facade.
-type Runnable interface {
+// EventRunnable is the minimal event stream contract accepted by the root Runner facade.
+type EventRunnable interface {
 	Run(ctx context.Context, input any, opts ...RunOption) iter.Seq2[Event, error]
 }
 
 // Runner applies SDK defaults around a runnable stream.
 type Runner struct {
-	runnable         Runnable
+	runnable         EventRunnable
 	ids              RuntimeIDs
 	eventMiddlewares []EventHandler
 	pluginHost       *PluginHost
@@ -37,6 +37,7 @@ type RunConfig struct {
 	StepExport          *StepExport
 	ResumeRequest       *ResumeRequest
 	JSONSchemaValidator JSONSchemaValidator
+	EventSink           EventSink
 }
 
 // ResolveRunOptions returns the configuration described by run options.
@@ -51,7 +52,7 @@ func ResolveRunOptions(opts ...RunOption) RunConfig {
 }
 
 // NewRunner creates a root SDK runner facade.
-func NewRunner(runnable Runnable, opts ...RunnerOption) (*Runner, error) {
+func NewRunner(runnable EventRunnable, opts ...RunnerOption) (*Runner, error) {
 	if runnable == nil {
 		return nil, errNilRunnable
 	}
@@ -127,6 +128,29 @@ func WithJSONSchemaValidator(validator JSONSchemaValidator) RunOption {
 	}
 }
 
+// EventSink receives production evidence events emitted by a run.
+type EventSink interface {
+	Emit(ctx context.Context, event Event) error
+}
+
+// EventSinkFunc adapts a function into an EventSink.
+type EventSinkFunc func(context.Context, Event) error
+
+// Emit calls f.
+func (f EventSinkFunc) Emit(ctx context.Context, event Event) error {
+	if f == nil {
+		return nil
+	}
+	return f(ctx, event)
+}
+
+// WithEvents attaches an optional event sink to one run call.
+func WithEvents(sink EventSink) RunOption {
+	return func(cfg *RunConfig) {
+		cfg.EventSink = sink
+	}
+}
+
 // Run streams events from the wrapped runnable with SDK identity defaults applied.
 func (r *Runner) Run(ctx context.Context, input any, opts ...RunOption) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
@@ -165,7 +189,7 @@ func (r *Runner) Run(ctx context.Context, input any, opts ...RunOption) iter.Seq
 			if err != nil {
 				event.Err = err
 			}
-			if !r.emitEvent(ctx, yield, event, err, middlewares) {
+			if !r.emitEvent(ctx, yield, event, err, middlewares, cfg.EventSink) {
 				return
 			}
 		}
@@ -195,7 +219,7 @@ func (r *Runner) eventMiddlewareChain() []EventHandler {
 	return middlewares
 }
 
-func (r *Runner) emitEvent(ctx context.Context, yield func(Event, error) bool, event Event, streamErr error, middlewares []EventHandler) bool {
+func (r *Runner) emitEvent(ctx context.Context, yield func(Event, error) bool, event Event, streamErr error, middlewares []EventHandler, sink EventSink) bool {
 	emitted := false
 	keepGoing := true
 
@@ -206,6 +230,11 @@ func (r *Runner) emitEvent(ctx context.Context, yield func(Event, error) bool, e
 				return fmt.Errorf("gopact: publish event: %w", err)
 			}
 			c.Event = event
+		}
+		if sink != nil {
+			if err := sink.Emit(c.Context, c.Event); err != nil {
+				return fmt.Errorf("gopact: emit event: %w", err)
+			}
 		}
 		emitted = true
 		if !yield(c.Event, streamErr) {

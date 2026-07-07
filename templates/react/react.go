@@ -356,7 +356,7 @@ func WithRouteHint(routeHint string) Option {
 	}
 }
 
-// Run implements gopact.Runnable.
+// Run implements gopact.EventRunnable.
 func (a *Agent) Run(ctx context.Context, input any, opts ...gopact.RunOption) iter.Seq2[gopact.Event, error] {
 	return func(yield func(gopact.Event, error) bool) {
 		if ctx == nil {

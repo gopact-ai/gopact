@@ -493,7 +493,7 @@ func (r *Runnable[S]) Run(ctx context.Context, initial S, opts ...InvokeOption) 
 }
 
 // AsRunnable adapts a typed graph runnable to the root gopact.Runner facade.
-func (r *Runnable[S]) AsRunnable(opts ...InvokeOption) gopact.Runnable {
+func (r *Runnable[S]) AsRunnable(opts ...InvokeOption) gopact.EventRunnable {
 	return runnableAdapter[S]{
 		runnable: r,
 		opts:     append([]InvokeOption(nil), opts...),
