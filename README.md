@@ -1,4 +1,4 @@
-# gopact
+# 🧠 gopact
 
 <!-- gopact:doc-language: en -->
 
@@ -7,6 +7,14 @@ Chinese documentation: [README_zh.md](README_zh.md)
 `gopact` is an Agent-first, Workflow-native Go ADK core.
 
 > **Go 1.27+ only.** This project is built around generic methods and celebrates what we see as one of Go's most consequential language changes of the past decade. Until Go 1.27 is officially released, it requires a development toolchain and should be treated as a preview, not a stable release.
+
+## Choose your path
+
+| You want to... | Go to |
+| --- | --- |
+| Build typed workflows and Agent runtimes | This repository |
+| Add model adapters, Agent compositions, or stores | [gopact-ext](https://github.com/gopact-ai/gopact-ext) |
+| Run complete quickstarts and integrations | [gopact-examples](https://github.com/gopact-ai/gopact-examples) |
 
 It contains only:
 
