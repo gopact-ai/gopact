@@ -1,0 +1,405 @@
+package workflow
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/gopact-ai/gopact"
+	"github.com/gopact-ai/gopact/runlog"
+)
+
+// SnapshotStore loads a read model for a run.
+type SnapshotStore interface {
+	Load(context.Context, SnapshotRequest) (Snapshot, error)
+}
+
+// SnapshotRequest identifies the snapshot range to load.
+type SnapshotRequest struct {
+	RunID string
+	After int64
+	Limit int
+}
+
+// SessionRunsRequest identifies the session whose runs should be listed.
+type SessionRunsRequest struct {
+	SessionID string
+}
+
+// RunSummary is a session-scoped presentation view of one run.
+type RunSummary struct {
+	SessionID         string
+	RunID             string
+	DefinitionID      string
+	DefinitionVersion string
+	ParentRunID       string
+	Status            CheckpointStatus
+	StartedAt         time.Time
+	UpdatedAt         time.Time
+	EndedAt           time.Time
+}
+
+// ListSessionRuns groups a session's append-ordered records into run summaries.
+func ListSessionRuns(ctx context.Context, log runlog.Log, request SessionRunsRequest) ([]RunSummary, error) {
+	if request.SessionID == "" {
+		return nil, fmt.Errorf("%w: session id is required", runlog.ErrInvalidQuery)
+	}
+	if log == nil {
+		return nil, fmt.Errorf("workflow: list session runs: %w", runlog.ErrNilLog)
+	}
+	records, err := log.List(ctx, runlog.Query{SessionID: request.SessionID})
+	if err != nil {
+		return nil, fmt.Errorf("workflow: list session runs: %w", err)
+	}
+	summaries := make([]RunSummary, 0)
+	byRunID := make(map[string]int)
+	for _, record := range records {
+		index, exists := byRunID[record.RunID]
+		if !exists {
+			index = len(summaries)
+			byRunID[record.RunID] = index
+			summaries = append(summaries, RunSummary{
+				SessionID:         record.SessionID,
+				RunID:             record.RunID,
+				DefinitionID:      record.DefinitionID,
+				DefinitionVersion: record.DefinitionVersion,
+				ParentRunID:       record.ParentRunID,
+				StartedAt:         record.Timestamp,
+			})
+		}
+		summary := &summaries[index]
+		if record.SessionID != request.SessionID || record.SessionID != summary.SessionID ||
+			record.DefinitionID != summary.DefinitionID || record.DefinitionVersion != summary.DefinitionVersion ||
+			record.ParentRunID != summary.ParentRunID {
+			return nil, fmt.Errorf("workflow: run %q contains inconsistent session, definition, or parent identity", record.RunID)
+		}
+		summary.UpdatedAt = record.Timestamp
+		summary.applyLifecycle(record)
+	}
+	return summaries, nil
+}
+
+func (summary *RunSummary) applyLifecycle(record runlog.Record) {
+	switch record.EventType {
+	case EventWorkflowStarted, EventWorkflowResumed, EventWorkflowRetryStarted, EventWorkflowJumpStarted:
+		summary.reopen()
+	case EventWorkflowInterrupted:
+		summary.interrupt()
+	case EventWorkflowCompleted:
+		summary.end(CheckpointCompleted, record.Timestamp)
+	case EventWorkflowFailed:
+		summary.end(CheckpointFailed, record.Timestamp)
+	case EventWorkflowCanceled:
+		summary.end(CheckpointCanceled, record.Timestamp)
+	case EventWorkflowTerminated:
+		summary.end(CheckpointTerminated, record.Timestamp)
+	}
+}
+
+func (summary *RunSummary) reopen() {
+	summary.Status = CheckpointRunning
+	summary.EndedAt = time.Time{}
+}
+
+func (summary *RunSummary) interrupt() {
+	summary.Status = CheckpointInterrupted
+	summary.EndedAt = time.Time{}
+}
+
+func (summary *RunSummary) end(status CheckpointStatus, timestamp time.Time) {
+	summary.Status = status
+	summary.EndedAt = timestamp
+}
+
+// RunMeta is the snapshot run identity view.
+type RunMeta struct {
+	SessionID   string
+	RunID       string
+	ParentRunID string
+	SourceRunID string
+}
+
+// Snapshot is a read model built from runlog/checkpoint/artifact refs.
+type Snapshot struct {
+	RunMeta         RunMeta
+	WorkflowName    string
+	TopologyVersion string
+	Timeline        []runlog.Record
+	Checkpoints     []CheckpointView
+	Missing         []MissingRef
+}
+
+// CheckpointView identifies one stable workflow checkpoint without exposing its payload.
+type CheckpointView struct {
+	ID            string
+	Version       int64
+	EventSeq      int64
+	Status        CheckpointStatus
+	SchemaVersion int
+	ReplayStatus  ReplayStatus
+	Root          bool
+}
+
+// MissingRef marks a missing artifact or view input.
+type MissingRef struct {
+	Kind string
+	Ref  string
+}
+
+// Snapshot loads the execution view saved by this workflow's configured stores.
+func (wf *Workflow[I, O]) Snapshot(ctx context.Context, request SnapshotRequest) (Snapshot, error) {
+	compiled, err := wf.compile()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	history, ok := compiled.checkpointer.(CheckpointHistory)
+	if !ok {
+		return Snapshot{}, errors.New("workflow: checkpointer does not provide checkpoint history")
+	}
+	return NewRunLogSnapshotStore(compiled.journal, history).Load(ctx, request)
+}
+
+// RunLogSnapshotStore builds snapshots from a RunLog.
+type RunLogSnapshotStore struct {
+	log         runlog.Log
+	checkpoints CheckpointHistory
+}
+
+// NewRunLogSnapshotStore creates a snapshot store over log and checkpoint history.
+func NewRunLogSnapshotStore(log runlog.Log, checkpoints CheckpointHistory) RunLogSnapshotStore {
+	return RunLogSnapshotStore{log: log, checkpoints: checkpoints}
+}
+
+// Load implements SnapshotStore.
+func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Snapshot, error) {
+	if s.log == nil {
+		return Snapshot{}, errors.New("workflow: runlog is nil")
+	}
+	if s.checkpoints == nil {
+		return Snapshot{}, errors.New("workflow: checkpoint history is nil")
+	}
+	if req.RunID == "" {
+		return Snapshot{}, errors.New("workflow: snapshot run id is required")
+	}
+	records, err := s.log.List(ctx, runlog.Query{RunID: req.RunID, After: req.After, Limit: req.Limit})
+	if err != nil {
+		return Snapshot{}, err
+	}
+	history, err := s.checkpoints.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: req.RunID})
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot := Snapshot{RunMeta: RunMeta{RunID: req.RunID}, Timeline: cloneRunLogRecords(records)}
+	if err := snapshot.projectTimeline(records); err != nil {
+		return Snapshot{}, err
+	}
+	if err := snapshot.projectCheckpoints(history); err != nil {
+		return Snapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func (snapshot *Snapshot) projectTimeline(records []runlog.Record) error {
+	for index, record := range records {
+		if record.RunID != snapshot.RunMeta.RunID {
+			return fmt.Errorf("workflow: runlog returned record for run %q, want %q", record.RunID, snapshot.RunMeta.RunID)
+		}
+		if index == 0 {
+			snapshot.RunMeta.SessionID = record.SessionID
+			snapshot.RunMeta.ParentRunID = record.ParentRunID
+			snapshot.RunMeta.SourceRunID = record.SourceRunID
+		} else if !snapshot.sameLineage(record) {
+			return errors.New("workflow: runlog contains inconsistent run lineage")
+		}
+		if record.PayloadRef != "" && record.Payload == nil {
+			snapshot.Missing = append(snapshot.Missing, MissingRef{Kind: "event_payload", Ref: record.PayloadRef})
+		}
+	}
+	return nil
+}
+
+func (snapshot Snapshot) sameLineage(record runlog.Record) bool {
+	return record.SessionID == snapshot.RunMeta.SessionID && record.ParentRunID == snapshot.RunMeta.ParentRunID && record.SourceRunID == snapshot.RunMeta.SourceRunID
+}
+
+func (snapshot *Snapshot) projectCheckpoints(history []CheckpointRecord) error {
+	latest, root, err := snapshot.stableCheckpoints(history)
+	if err != nil {
+		return err
+	}
+	for _, record := range snapshot.Timeline {
+		checkpoint, ok := latest[record.Sequence]
+		if !ok {
+			continue
+		}
+		snapshot.Checkpoints = append(snapshot.Checkpoints, workflowCheckpointView(checkpoint, record.Sequence == root))
+	}
+	return nil
+}
+
+func (snapshot *Snapshot) stableCheckpoints(history []CheckpointRecord) (map[int64]CheckpointRecord, int64, error) {
+	latest := make(map[int64]CheckpointRecord)
+	var root int64
+	for _, record := range history {
+		if err := snapshot.acceptCheckpointIdentity(record); err != nil {
+			return nil, 0, err
+		}
+		if record.ConfirmedSequence <= 0 || record.PendingSequence != 0 {
+			continue
+		}
+		latest[record.ConfirmedSequence] = cloneCheckpointRecord(record)
+		if root == 0 || record.ConfirmedSequence < root {
+			root = record.ConfirmedSequence
+		}
+	}
+	return latest, root, nil
+}
+
+func (snapshot *Snapshot) acceptCheckpointIdentity(record CheckpointRecord) error {
+	if record.RunID != snapshot.RunMeta.RunID {
+		return fmt.Errorf("%w: snapshot checkpoint run %q does not match %q", ErrCheckpointMismatch, record.RunID, snapshot.RunMeta.RunID)
+	}
+	if record.SessionID == "" {
+		return fmt.Errorf("%w: snapshot checkpoint session id is empty", ErrCheckpointMismatch)
+	}
+	if snapshot.RunMeta.SessionID == "" {
+		snapshot.RunMeta.SessionID = record.SessionID
+	} else if record.SessionID != snapshot.RunMeta.SessionID {
+		return fmt.Errorf("%w: snapshot checkpoint session %q does not match %q", ErrCheckpointMismatch, record.SessionID, snapshot.RunMeta.SessionID)
+	}
+	if record.SchemaVersion != checkpointSchemaVersion {
+		return fmt.Errorf("%w: snapshot checkpoint schema is incompatible", ErrCheckpointMismatch)
+	}
+	if snapshot.WorkflowName == "" {
+		snapshot.WorkflowName = record.WorkflowName
+		snapshot.TopologyVersion = record.TopologyVersion
+		return nil
+	}
+	if record.WorkflowName != snapshot.WorkflowName || record.TopologyVersion != snapshot.TopologyVersion || record.SchemaVersion != checkpointSchemaVersion {
+		return fmt.Errorf("%w: snapshot checkpoint identity is inconsistent", ErrCheckpointMismatch)
+	}
+	return nil
+}
+
+func workflowCheckpointView(record CheckpointRecord, root bool) CheckpointView {
+	return CheckpointView{
+		ID: record.ID, Version: record.Version, EventSeq: record.ConfirmedSequence,
+		Status: record.Status, SchemaVersion: record.SchemaVersion, ReplayStatus: record.ReplayStatus, Root: root,
+	}
+}
+
+// ForkRequest asks a loaded snapshot to start a new run.
+type ForkRequest struct {
+	SourceRunID  string
+	FromEventSeq int64
+	Patch        ForkPatch
+}
+
+// ForkPatch contains overrides for a new forked run.
+type ForkPatch struct {
+	WorkflowInput *InputPatch
+}
+
+// InputPatch replaces the workflow input for a fork.
+type InputPatch struct {
+	Value any
+}
+
+// Fork starts a new run from a safe root snapshot and workflow input patch.
+func (s Snapshot) Fork[I, O any](ctx context.Context, target *Workflow[I, O], req ForkRequest, opts ...gopact.RunOption) (O, error) {
+	var zero O
+	if target == nil {
+		return zero, errNilWorkflow
+	}
+	compiled, err := target.compile()
+	if err != nil {
+		return zero, err
+	}
+	if req.SourceRunID == "" || req.SourceRunID != s.RunMeta.RunID {
+		return zero, fmt.Errorf(
+			"workflow: fork source run id %q does not match snapshot run id %q",
+			req.SourceRunID,
+			s.RunMeta.RunID,
+		)
+	}
+	if len(s.Timeline) == 0 {
+		return zero, errors.New("workflow: fork snapshot has empty timeline")
+	}
+	if req.FromEventSeq <= 0 {
+		return zero, errors.New("workflow: fork event sequence must be positive")
+	}
+	checkpoint, ok := s.checkpoint(req.FromEventSeq)
+	if !ok {
+		return zero, fmt.Errorf("workflow: fork event sequence %d is not a stable checkpoint boundary", req.FromEventSeq)
+	}
+	if !checkpoint.Root || checkpoint.ReplayStatus != ReplaySafe {
+		return zero, errors.New("workflow: generic fork requires a safe root checkpoint")
+	}
+	if s.WorkflowName != compiled.name || s.TopologyVersion != compiled.topologyVersion || checkpoint.SchemaVersion != checkpointSchemaVersion {
+		return zero, fmt.Errorf("%w: fork target does not match snapshot topology", ErrCheckpointMismatch)
+	}
+	if req.Patch.WorkflowInput == nil {
+		return zero, errors.New("workflow: fork workflow input patch is required")
+	}
+	input, ok := req.Patch.WorkflowInput.Value.(I)
+	if !ok {
+		return zero, fmt.Errorf(
+			"workflow: fork workflow input has type %T, want %s",
+			req.Patch.WorkflowInput.Value,
+			typeOf[I](),
+		)
+	}
+	config := gopact.ResolveRunOptions(opts...)
+	if err := config.RunConfigError(); err != nil {
+		return zero, err
+	}
+	if config.RunID == s.RunMeta.RunID {
+		return zero, errors.New("workflow: fork cannot reuse source run id")
+	}
+	association := forkAssociationOption{association: runlog.Association{SourceRunID: req.SourceRunID, SourceEventSeq: req.FromEventSeq}}
+	forkOptions := append([]gopact.RunOption(nil), opts...)
+	forkOptions = append(forkOptions, association)
+	return compiled.Invoke(ctx, input, forkOptions...)
+}
+
+func (s Snapshot) checkpoint(sequence int64) (CheckpointView, bool) {
+	for _, checkpoint := range s.Checkpoints {
+		if checkpoint.EventSeq == sequence {
+			return checkpoint, true
+		}
+	}
+	return CheckpointView{}, false
+}
+
+type forkAssociationOption struct {
+	association runlog.Association
+}
+
+func (option forkAssociationOption) ApplyRunOption(config *gopact.RunConfig) {
+	for index, sink := range config.EventSinks {
+		if associating, ok := sink.(runlog.AssociatingSink); ok {
+			config.EventSinks[index] = associating.Associate(option.association)
+		}
+	}
+}
+
+func cloneRunLogRecords(records []runlog.Record) []runlog.Record {
+	cloned := make([]runlog.Record, len(records))
+	for index, record := range records {
+		record.Payload = append([]byte(nil), record.Payload...)
+		if record.Metadata != nil {
+			record.Metadata = cloneRunLogMetadata(record.Metadata)
+		}
+		cloned[index] = record
+	}
+	return cloned
+}
+
+func cloneRunLogMetadata(metadata map[string]string) map[string]string {
+	cloned := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	return cloned
+}

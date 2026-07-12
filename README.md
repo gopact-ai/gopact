@@ -1,99 +1,49 @@
 # gopact
 
-#### Go SDK contracts for typed, observable, and resumable agent workflows.
-
-[![CI](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gopact-ai/gopact/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/gopact-ai/gopact.svg)](https://pkg.go.dev/github.com/gopact-ai/gopact)
-[![License](https://img.shields.io/github/license/gopact-ai/gopact)](LICENSE)
-
 <!-- gopact:doc-language: en -->
 
 Chinese documentation: [README_zh.md](README_zh.md)
 
-`gopact` is the provider-neutral core for building Go agent systems with typed workflow graphs, event streams, checkpoints, resumable runs, tool/MCP/A2A boundaries, policy hooks, and release evidence.
+`gopact` is an Agent-first, Workflow-native Go ADK core.
 
-`gopact` stays small on purpose. Model providers, production agent templates, development-agent helpers, and runnable examples live in sibling repositories:
+> **Go 1.27+ only.** This project is built around generic methods and celebrates what we see as one of Go's most consequential language changes of the past decade. Until Go 1.27 is officially released, it requires a development toolchain and should be treated as a preview, not a stable release.
 
-- [`gopact`](https://github.com/gopact-ai/gopact): core SDK, public contracts, reference implementations, and conformance helpers.
-- [`gopact-ext`](https://github.com/gopact-ai/gopact-ext): official providers, agent templates, and development-agent helpers.
-- [`gopact-examples`](https://github.com/gopact-ai/gopact-examples): runnable quickstarts for workflows, providers, and agent clusters.
+It contains only:
 
-## Installation
+- root `gopact` shared Model, Tool, Event, and Invokable protocols and facts;
+- `agent` Identity/Request/Response, typed observations, tool contracts, and immutable directories;
+- `workflow` as the sole execution runtime, with typed nodes/routes/joins, hooks/middleware, guards, checkpoints, history, and same-Run control;
+- `runlog` append/query/sink contracts and an in-memory implementation;
+- `provider` model registry/routing helpers and basic provider normalization;
+- `gopacttest` reusable model and Agent conformance helpers.
 
-Go 1.25 or newer is required.
+Official providers, concrete Agents, and the SQLite adapter live in `gopact-ext`; runnable examples live in `gopact-examples`.
 
-```bash
-go get github.com/gopact-ai/gopact
-```
+`SessionID` is runtime correlation metadata for relating multiple Runs, not a Session container. Agent Context is the final `gopact.ModelRequest` explicitly built by business or concrete-Agent Workflow logic; core does not inject implicit conversation or semantic-memory state.
 
-The core SDK does not read `.env`, configuration files, or local secrets. Hosts inject models, tools, storage, channels, and policy through Go interfaces and options.
+## Requirements
 
-## Usage
+Go 1.27 or newer is required. This repository intentionally uses Go 1.27+ generic object methods in both Agent and workflow implementer APIs.
 
-Run the smallest executable graph example:
-
-```bash
-go test -run Example_graphRun .
-```
-
-Generate and test an A2A HTTP agent scaffold:
+## Quick Check
 
 ```bash
-go run ./cmd/gopact agent init support-agent -out /tmp/support-agent
-(cd /tmp/support-agent && go test ./...)
-go run ./cmd/gopact agent verify /tmp/support-agent
-go run ./cmd/gopact agent run /tmp/support-agent
+go test ./...
+go test -race ./...
+go vet ./...
 ```
 
-Set `GOPACT_A2A_REGISTRAR_URL` to a writable A2A registry root when a generated agent should register itself with a renewable lease.
+Validation uses focused native gates: `gofmt`, `go mod tidy -diff`, `go test`, `go test -race`, `go vet`, and `govulncheck`. No aggregate third-party linter is required.
 
-Generate a local A2A agent cluster scaffold:
+## Minimal Workflow
 
-```bash
-go run ./cmd/gopact agent init-cluster support-cluster -out /tmp/support-cluster \
-  -agent triage:support.triage:"Classify support requests." \
-  -agent docs:knowledge.search:"Search product documentation." \
-  -agent billing:billing:"Handle billing questions."
-(cd /tmp/support-cluster && go test ./...)
-go run ./cmd/gopact agent verify /tmp/support-cluster
+```go
+wf := workflow.New[string, int]("length")
+count := wf.Node("count", func(_ context.Context, input string) (int, error) {
+    return len(input), nil
+})
+wf.Entry(count)
+wf.Exit(count)
+
+out, err := wf.Invoke(ctx, "gopact")
 ```
-
-Omit `-agent` to generate the default planner/worker/reviewer cluster. Generated clusters use `GOPACT_A2A_REGISTRY_URL` for mesh bootstrap and `GOPACT_A2A_REGISTRAR_URL` for optional external registration.
-
-Build a self-bootstrap release evidence bundle from a recorded run export and observed verification report:
-
-```bash
-go run ./cmd/gopact release-bundle -run-export /path/to/run-export.json -report /path/to/verification-report.json > release-bundle.json
-```
-
-Use [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) when you want a complete runnable provider or agent-template path.
-
-## Features
-
-- Typed graph runtime with named nodes, edges, middleware, events, and step snapshots.
-- Checkpoint stores, codecs, resume payload validation, and stable recovery boundaries.
-- Provider-neutral `ModelRequest`, model response, streaming, tool-call, and conformance contracts.
-- Local tools, MCP servers, and A2A agents behind explicit capability boundaries.
-- Policy, redaction, artifact verification, and secret-handling hooks for host-owned safety.
-- `VerificationRecorder` support for tests, CI, file snapshots, review evidence, and release evidence.
-
-See [doc/FEATURES.md](doc/FEATURES.md) for the executable feature matrix.
-
-## Stability
-
-`gopact` is pre-v1. It is ready for API review, conformance work, extension development, and early application integration. Public APIs may still change before v1.
-
-The core repository intentionally does not ship production model providers, cloud storage adapters, vector databases, or UI channels. Those belong in `gopact-ext` or host applications.
-
-## Documentation
-
-- [doc/README.md](doc/README.md): documentation index.
-- [doc/FEATURES.md](doc/FEATURES.md): core capability matrix and offline verification commands.
-- [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md): PR, CI, auto-merge, and public repository governance.
-
-## Contributing
-
-- [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md): development setup and pull request checklist.
-- [doc/SECURITY.md](doc/SECURITY.md): security policy and vulnerability reporting.
-- [doc/CHANGELOG.md](doc/CHANGELOG.md): user-visible changes.
-- [MIT License](LICENSE).
