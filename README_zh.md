@@ -4,104 +4,46 @@
 
 [英文文档](./README.md)
 
-## 中文
+`gopact` 是 Agent-first、Workflow-native 的 Go ADK core。
 
-`gopact` 是一个面向 Go 应用的 Agent SDK core。它不绑定具体模型厂商、存储后端或 UI 渠道，而是提供可测试的运行时契约：typed graph、event stream、checkpoint/resume、tool/MCP/A2A 边界、policy/redaction，以及 release evidence。
+> **仅支持 Go 1.27+。** 本项目围绕泛型方法构建，也借此庆祝我们眼中 Go 近十年来最具影响力的语言演进之一。Go 1.27 正式发布前，本项目需要开发版工具链，应视为预览而非稳定版本。
 
-官方仓库分工：
+当前仓库只保留：
 
-| 仓库 | 职责 |
-| --- | --- |
-| [`gopact`](https://github.com/gopact-ai/gopact) | core SDK、公共契约、参考实现、conformance helper |
-| [`gopact-ext`](https://github.com/gopact-ai/gopact-ext) | 官方 provider、agent template、dev-agent helper 等扩展模块 |
-| [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) | 可运行 quickstart、provider 示例、workflow 示例 |
+- root `gopact`：Model、Tool、Event、Invokable 等共享协议和事实；
+- `agent`：Agent Identity/Request/Response、typed Observation、Tool contract 和 immutable Directory；
+- `workflow`：唯一执行 runtime，提供 typed node/route/join、hook/middleware、guard、checkpoint、history 与同 Run control；
+- `runlog`：append/query/sink contract 与内存实现；
+- `provider`：provider registry/router/fallback 和 basic provider normalization；
+- `gopacttest`：跨仓可复用的 Model 与 Agent conformance helper。
 
-## 安装
+官方 provider、concrete Agent 和 SQLite adapter 位于 `gopact-ext`，可运行示例位于 `gopact-examples`。
 
-需要 Go 1.25 或更新版本：
+`SessionID` 是关联多个 Run 的 runtime metadata，不是 Session 容器。Agent Context 是由业务或具体 Agent 的 Workflow 逻辑显式构造的最终 `gopact.ModelRequest`；core 不隐式注入会话或 semantic Memory 状态。
 
-```bash
-go get github.com/gopact-ai/gopact
-```
+## 要求
 
-SDK 不读取 `.env`、配置文件或本地 secret。模型、工具、存储、channel 和安全策略都由宿主应用通过 Go options 或接口显式注入。
+需要 Go 1.27 或更新版本。本仓库按 Go 1.27+ 设计，Agent 与 workflow 的实现者 API 都使用泛型对象方法。
 
-## 快速开始
-
-运行 core 中最小 graph 示例：
+## 快速检查
 
 ```bash
-go test -run Example_graphRun .
+go test ./...
+go test -race ./...
+go vet ./...
 ```
 
-生成一个可测试的 A2A HTTP agent scaffold：
+项目使用聚焦的原生门禁进行验证：`gofmt`、`go mod tidy -diff`、`go test`、`go test -race`、`go vet` 与 `govulncheck`，不依赖聚合式第三方 lint 工具。
 
-```bash
-go run ./cmd/gopact agent init support-agent -module example.com/support-agent -out /tmp/support-agent
-(cd /tmp/support-agent && go test ./...)
-go run ./cmd/gopact agent verify /tmp/support-agent
-go run ./cmd/gopact agent run /tmp/support-agent
+## 最小 workflow
+
+```go
+wf := workflow.New[string, int]("length")
+count := wf.Node("count", func(_ context.Context, input string) (int, error) {
+    return len(input), nil
+})
+wf.Entry(count)
+wf.Exit(count)
+
+out, err := wf.Invoke(ctx, "gopact")
 ```
-
-需要让生成的 agent 自动注册到可写 A2A registry 时，设置 `GOPACT_A2A_REGISTRAR_URL`；运行时会注册 agent card 并维持可续租 lease。
-
-生成一个本地 A2A agent cluster scaffold：
-
-```bash
-go run ./cmd/gopact agent init-cluster support-cluster -module example.com/support-cluster -out /tmp/support-cluster \
-  -agent triage:support.triage:"Classify support requests." \
-  -agent docs:knowledge.search:"Search product documentation." \
-  -agent billing:billing:"Handle billing questions."
-(cd /tmp/support-cluster && go test ./...)
-go run ./cmd/gopact agent verify /tmp/support-cluster
-```
-
-不传 `-agent` 时会生成默认 planner/worker/reviewer cluster。生成的 cluster 使用 `GOPACT_A2A_REGISTRY_URL` 做 mesh bootstrap，使用 `GOPACT_A2A_REGISTRAR_URL` 做可选外部注册。
-
-从已记录的 run export 和已观察 verification report 构建 self-bootstrap release evidence bundle：
-
-```bash
-go run ./cmd/gopact release-bundle -run-export /path/to/run-export.json -report /path/to/verification-report.json > release-bundle.json
-```
-
-需要模型 provider 或完整 agent template 时，从 [`gopact-examples`](https://github.com/gopact-ai/gopact-examples) 开始；core 仓库只保留 provider-neutral 契约和离线可测实现。
-
-## 核心概念
-
-| 概念 | 说明 |
-| --- | --- |
-| `graph` | 类型化 workflow runtime，负责 node、edge、middleware、event 和 step 边界 |
-| `checkpoint` | checkpoint store、codec、resume payload 校验和稳定恢复点 |
-| `ModelRequest` / provider | provider-neutral 模型请求、响应、tool call、streaming 和 conformance 契约 |
-| `tools` / `mcp` / `a2a` | 本地工具、MCP server、远程 agent 的统一能力边界 |
-| `Policy` / redaction | 外部动作、secret、prompt/tool payload 和 artifact 的安全边界 |
-| `VerificationRecorder` | 记录已经观察到的测试、CI、文件快照、review 和 release evidence |
-
-## 当前稳定性
-
-`gopact` 仍处于 pre-v1。当前适合：
-
-- 评审和收敛 Agent SDK public API；
-- 编写可恢复 workflow、A2A mesh、MCP/tool 边界和 conformance 测试；
-- 为 `gopact-ext` 和业务应用开发 provider、backend、channel、agent template。
-
-当前不承诺：
-
-- v1 前 public API 完全稳定；
-- core 直接内置生产模型厂商、云存储、向量库或外部 UI 渠道；
-- 不经过宿主应用配置就自动读取环境变量、secret 或远端配置。
-
-## 文档地图
-
-| 文档 | 用途 |
-| --- | --- |
-| [doc/README.md](doc/README.md) | 完整文档索引 |
-| [doc/FEATURES.md](doc/FEATURES.md) | core 能力矩阵和离线验收命令 |
-| [doc/maintainers/repository-governance.md](doc/maintainers/repository-governance.md) | PR、CI、自动合并和公开仓库治理 |
-
-## 贡献与安全
-
-- 贡献流程：[doc/CONTRIBUTING.md](doc/CONTRIBUTING.md)
-- 安全策略：[doc/SECURITY.md](doc/SECURITY.md)
-- 变更记录：[doc/CHANGELOG.md](doc/CHANGELOG.md)
-- 许可证：[MIT](LICENSE)

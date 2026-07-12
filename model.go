@@ -2,356 +2,450 @@ package gopact
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"iter"
 )
 
-// ChatModel 是 agent 对模型 provider 的最小依赖契约。
-type ChatModel interface {
-	Generate(ctx context.Context, request ModelRequest) (Message, error)
+// Model is the provider-neutral model protocol.
+type Model interface {
+	NewRequest(messages ...Message) ModelRequest
+	Invoke(context.Context, ModelRequest, ...ModelCallOption) (ModelResponse, error)
 }
 
-// ResponseModel returns a full model response with route, usage, and middleware events.
-type ResponseModel interface {
-	Generate(ctx context.Context, request ModelRequest) (ModelResponse, error)
-}
-
-// StreamingModel streams model invocation events, including route and fallback attempts.
+// StreamingModel is the optional model output streaming protocol.
 type StreamingModel interface {
-	Stream(ctx context.Context, request ModelRequest) iter.Seq2[Event, error]
+	Model
+	InvokeStream(context.Context, ModelRequest, ...ModelCallOption) iter.Seq2[ModelOutputChunk, error]
 }
 
-// StreamingResponseModel is the adapter input for models that expose both response and stream APIs.
-type StreamingResponseModel interface {
-	ResponseModel
-	StreamingModel
+// ModelCallConfig is per-call model execution configuration.
+type ModelCallConfig struct {
+	ModelEventSinks []ModelEventSink
+	Extensions      map[string]any
 }
 
-var errNilResponseModel = errors.New("gopact: response model is nil")
-
-// AdaptResponseModel adapts a full response model to the minimal ChatModel contract.
-func AdaptResponseModel(model ResponseModel) ChatModel {
-	return responseModelAdapter{model: model}
+// ModelCallOption mutates per-call model execution configuration.
+type ModelCallOption interface {
+	ApplyModelCallOption(*ModelCallConfig)
 }
 
-// AdaptStreamingModel adapts a streaming response model to ChatModel while preserving Stream.
-func AdaptStreamingModel(model StreamingResponseModel) ChatModel {
-	return streamingModelAdapter{model: model}
+type modelCallOptionFunc func(*ModelCallConfig)
+
+func (f modelCallOptionFunc) ApplyModelCallOption(cfg *ModelCallConfig) {
+	f(cfg)
 }
 
-type responseModelAdapter struct {
-	model ResponseModel
-}
-
-func (a responseModelAdapter) Generate(ctx context.Context, request ModelRequest) (Message, error) {
-	if a.model == nil {
-		return Message{}, errNilResponseModel
-	}
-	response, err := a.model.Generate(ctx, request)
-	if err != nil {
-		return Message{}, err
-	}
-	return response.Message, nil
-}
-
-type streamingModelAdapter struct {
-	model StreamingResponseModel
-}
-
-func (a streamingModelAdapter) Generate(ctx context.Context, request ModelRequest) (Message, error) {
-	if a.model == nil {
-		return Message{}, errNilResponseModel
-	}
-	response, err := a.model.Generate(ctx, request)
-	if err != nil {
-		return Message{}, err
-	}
-	return response.Message, nil
-}
-
-func (a streamingModelAdapter) Stream(ctx context.Context, request ModelRequest) iter.Seq2[Event, error] {
-	return func(yield func(Event, error) bool) {
-		if a.model == nil {
-			err := errNilResponseModel
-			yield(Event{Type: EventModelProviderAttemptFailed, IDs: request.IDs, Err: err, CreatedAt: now()}, err)
-			return
-		}
-		for event, err := range a.model.Stream(ctx, request) {
-			if !yield(event, err) {
-				return
-			}
-		}
-	}
-}
-
-// ModelRequest 向模型 provider 传递消息、工具 schema，以及可选的结构化输出提示。
-type ModelRequest struct {
-	IDs             RuntimeIDs     `json:"ids,omitempty"`
-	Model           string         `json:"model,omitempty"`
-	Messages        []Message      `json:"messages"`
-	Tools           []ToolSpec     `json:"tools,omitempty"`
-	ToolChoice      ToolChoice     `json:"tool_choice,omitempty"`
-	ResponseSchema  JSONSchema     `json:"response_schema,omitempty"`
-	RouteHint       string         `json:"route_hint,omitempty"`
-	Capabilities    []Capability   `json:"capabilities,omitempty"`
-	Budget          Budget         `json:"budget,omitempty"`
-	Temperature     *float64       `json:"temperature,omitempty"`
-	TopP            *float64       `json:"top_p,omitempty"`
-	ThinkingType    string         `json:"thinking_type,omitempty"`
-	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
-}
-
-// ModelRequestOption configures a ModelRequest without exposing provider-specific request shapes.
-type ModelRequestOption interface {
-	ApplyModelRequestOption(*ModelRequest)
-}
-
-// ModelRequestOptionFunc adapts a function into a ModelRequestOption.
-type ModelRequestOptionFunc func(*ModelRequest)
-
-func (f ModelRequestOptionFunc) ApplyModelRequestOption(request *ModelRequest) {
-	if f != nil {
-		f(request)
-	}
-}
-
-// NewModelRequest creates a provider-neutral model request from request options.
-func NewModelRequest(opts ...ModelRequestOption) ModelRequest {
-	return ApplyModelRequestOptions(ModelRequest{}, opts...)
-}
-
-// ApplyModelRequestOptions applies request options to a mutable-safe request copy.
-func ApplyModelRequestOptions(request ModelRequest, opts ...ModelRequestOption) ModelRequest {
-	request = copyModelRequest(request)
+// ResolveModelCallOptions materializes model call options into one config.
+func ResolveModelCallOptions(opts ...ModelCallOption) ModelCallConfig {
+	var cfg ModelCallConfig
 	for _, opt := range opts {
 		if opt != nil {
-			opt.ApplyModelRequestOption(&request)
+			opt.ApplyModelCallOption(&cfg)
 		}
 	}
-	return request
+	return cfg
 }
 
-func WithMessages(messages ...Message) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Messages = copyMessages(messages)
-	})
+// ModelEventSink receives model process events.
+type ModelEventSink interface {
+	EmitModelEvent(context.Context, ModelEvent) error
 }
 
-func WithTools(tools ...ToolSpec) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Tools = copyToolSpecs(tools)
-	})
+// ModelEventHandler adapts a function into a ModelEventSink.
+type ModelEventHandler func(context.Context, ModelEvent) error
+
+// EmitModelEvent implements ModelEventSink.
+func (h ModelEventHandler) EmitModelEvent(ctx context.Context, event ModelEvent) error {
+	if h == nil {
+		return nil
+	}
+	return h(ctx, event)
 }
 
-func WithToolChoice(choice ToolChoice) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.ToolChoice = choice
-		if choice.Mode != "" && choice.Mode != ToolChoiceModeNone {
-			addCapability(request, CapabilityToolCalling)
+// WithModelEventHandler attaches a model event handler to one call.
+func WithModelEventHandler(handler ModelEventHandler) ModelCallOption {
+	return WithModelEventSink(handler)
+}
+
+// WithModelEventSink attaches a model event sink to one call.
+func WithModelEventSink(sink ModelEventSink) ModelCallOption {
+	return modelCallOptionFunc(func(cfg *ModelCallConfig) {
+		if sink != nil {
+			cfg.ModelEventSinks = append(cfg.ModelEventSinks, sink)
 		}
 	})
 }
 
-func WithAutoToolChoice() ModelRequestOption {
-	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeAuto})
+// Message is a provider-neutral model message.
+type Message struct {
+	Role  string
+	Parts []MessagePart
 }
 
-func RequireToolCall() ModelRequestOption {
-	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeRequired})
+// MessagePart is one provider-neutral message content part.
+type MessagePart struct {
+	Type string
+	Text string
+	Ref  *ArtifactRef
 }
 
-func RequireTool(name string) ModelRequestOption {
-	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeNamed, Name: name})
+// UserMessage creates a text user message.
+func UserMessage(text string) Message {
+	return Message{Role: "user", Parts: []MessagePart{{Type: "text", Text: text}}}
 }
 
-func DisableToolCalls() ModelRequestOption {
-	return WithToolChoice(ToolChoice{Mode: ToolChoiceModeNone})
+// ArtifactRef is an opaque reference to external content.
+type ArtifactRef struct {
+	URI    string
+	Kind   string
+	Digest string
 }
 
-func WithModelRequestIDs(ids RuntimeIDs) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.IDs = ids
-	})
+// RetryHint describes whether a failed operation may be retried.
+type RetryHint struct {
+	Retryable bool
+	Message   string
 }
 
-func WithModel(model string) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Model = model
-	})
+// ToolSpec describes a model-visible tool.
+type ToolSpec struct {
+	Name        string
+	Description string
+	Schema      json.RawMessage
+	Metadata    map[string]string
 }
 
-func WithResponseSchema(schema JSONSchema) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.ResponseSchema = copyJSONSchema(schema)
-	})
+// ToolCall is one model-requested tool invocation.
+type ToolCall struct {
+	ID           string
+	Name         string
+	Arguments    json.RawMessage
+	ArgumentsRef string
+	SourceRef    string
 }
 
-func WithRouteHint(route string) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.RouteHint = route
-	})
+// ToolOutcome is one closed tool-boundary execution fact.
+type ToolOutcome interface {
+	isToolOutcome()
+	ToolCallID() string
+	ToolName() string
 }
 
-func WithBudget(budget Budget) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Budget = budget
-	})
+// ToolResult is the payload of a successful tool invocation.
+type ToolResult struct {
+	DataRef      string
+	ArtifactRefs []ArtifactRef
+	EffectRefs   []ArtifactRef
+	Preview      string
 }
 
-func WithMaxInputTokens(tokens int) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Budget.MaxInputTokens = tokens
-	})
+// ToolRejection describes a business, policy, or permission rejection.
+type ToolRejection struct {
+	Reason    string
+	Message   string
+	RetryHint *RetryHint
+	Ref       string
 }
 
-func WithMaxOutputTokens(tokens int) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Budget.MaxOutputTokens = tokens
-	})
+// ToolError describes a classified tool execution failure.
+type ToolError struct {
+	Kind              string
+	Message           string
+	RetryableForModel bool
+	Feedback          string
+	RawRef            string
+	PartialRefs       []ArtifactRef
 }
 
-func WithMaxCostUSD(cost float64) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Budget.MaxCostUSD = cost
-	})
+// ToolInterrupt describes external input required to continue a tool call.
+type ToolInterrupt struct {
+	InterruptID         string
+	Reason              string
+	ResolutionSchemaRef string
+	PayloadRef          string
+	RunID               string
+	CheckpointID        string
 }
 
-func WithTemperature(temperature float64) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Temperature = &temperature
-	})
+// ToolResultOutcome reports a successful tool invocation.
+type ToolResultOutcome struct {
+	CallID string
+	Name   string
+	Result ToolResult
 }
 
-func WithTopP(topP float64) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.TopP = &topP
-	})
+func (ToolResultOutcome) isToolOutcome() {}
+
+// ToolCallID returns the originating call ID.
+func (o ToolResultOutcome) ToolCallID() string { return o.CallID }
+
+// ToolName returns the invoked tool name.
+func (o ToolResultOutcome) ToolName() string { return o.Name }
+
+// ToolRejectedOutcome reports a rejected tool invocation.
+type ToolRejectedOutcome struct {
+	CallID    string
+	Name      string
+	Rejection ToolRejection
 }
 
-func WithThinkingType(thinkingType string) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.ThinkingType = thinkingType
-	})
+func (ToolRejectedOutcome) isToolOutcome() {}
+
+// ToolCallID returns the originating call ID.
+func (o ToolRejectedOutcome) ToolCallID() string { return o.CallID }
+
+// ToolName returns the invoked tool name.
+func (o ToolRejectedOutcome) ToolName() string { return o.Name }
+
+// ToolErrorOutcome reports a failed tool invocation that was classified at the tool boundary.
+type ToolErrorOutcome struct {
+	CallID string
+	Name   string
+	Error  ToolError
 }
 
-func WithReasoningEffort(effort string) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.ReasoningEffort = effort
-	})
+func (ToolErrorOutcome) isToolOutcome() {}
+
+// ToolCallID returns the originating call ID.
+func (o ToolErrorOutcome) ToolCallID() string { return o.CallID }
+
+// ToolName returns the invoked tool name.
+func (o ToolErrorOutcome) ToolName() string { return o.Name }
+
+// ToolInterruptOutcome reports a tool invocation waiting for external input.
+type ToolInterruptOutcome struct {
+	CallID    string
+	Name      string
+	Interrupt ToolInterrupt
 }
 
-func WithCapabilities(capabilities ...Capability) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Capabilities = append([]Capability(nil), capabilities...)
-	})
-}
+func (ToolInterruptOutcome) isToolOutcome() {}
 
-func EnableCapability(capability Capability) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		addCapability(request, capability)
-	})
-}
+// ToolCallID returns the originating call ID.
+func (o ToolInterruptOutcome) ToolCallID() string { return o.CallID }
 
-func EnableStreaming() ModelRequestOption {
-	return EnableCapability(CapabilityStreaming)
-}
+// ToolName returns the invoked tool name.
+func (o ToolInterruptOutcome) ToolName() string { return o.Name }
 
-func EnableToolCalling() ModelRequestOption {
-	return EnableCapability(CapabilityToolCalling)
-}
-
-func EnableJSONSchema() ModelRequestOption {
-	return EnableCapability(CapabilityJSONSchema)
-}
-
-func EnableVision() ModelRequestOption {
-	return EnableCapability(CapabilityVision)
-}
-
-func EnableReasoning() ModelRequestOption {
-	return EnableCapability(CapabilityReasoning)
-}
-
-func EnableStructuredOutput() ModelRequestOption {
-	return EnableCapability(CapabilityStructuredOutput)
-}
-
-func WithMetadata(metadata map[string]any) ModelRequestOption {
-	return ModelRequestOptionFunc(func(request *ModelRequest) {
-		request.Metadata = copyAnyMap(metadata)
-	})
-}
-
-// Capability describes a hard capability a model request or route candidate must support.
-type Capability string
-
-const (
-	CapabilityToolCalling      Capability = "tool_calling"
-	CapabilityStreaming        Capability = "streaming"
-	CapabilityJSONSchema       Capability = "json_schema"
-	CapabilityVision           Capability = "vision"
-	CapabilityReasoning        Capability = "reasoning"
-	CapabilityStructuredOutput Capability = "structured_output"
-)
-
-// ToolChoice controls whether and how a provider should select tools.
+// ToolChoice constrains model tool selection.
 type ToolChoice struct {
-	Mode ToolChoiceMode `json:"mode,omitempty"`
-	Name string         `json:"name,omitempty"`
+	Mode string
+	Name string
 }
 
-// ToolChoiceMode is provider-neutral; adapters translate it to native API shapes.
-type ToolChoiceMode string
+// SchemaRef describes an inline schema or schema reference.
+type SchemaRef struct {
+	Value json.RawMessage
+	URI   string
+}
 
+// Modality identifies a model input or output modality.
+type Modality string
+
+// ReasoningConfig carries provider-neutral reasoning controls.
+type ReasoningConfig struct {
+	Effort string
+}
+
+// OutputProtocol describes a model output decoder contract.
+type OutputProtocol interface {
+	Name() string
+	Claims() []OutputClaim
+	NewDecoder(ProtocolSink) OutputDecoder
+}
+
+// OutputClaim describes model output claimed by a protocol.
+type OutputClaim struct {
+	Channel OutputChannel
+	Kind    OutputClaimKind
+	Key     string
+}
+
+// OutputChannel identifies a model output stream channel.
+type OutputChannel string
+
+// Model output channels.
 const (
-	ToolChoiceModeAuto     ToolChoiceMode = "auto"
-	ToolChoiceModeRequired ToolChoiceMode = "required"
-	ToolChoiceModeNone     ToolChoiceMode = "none"
-	ToolChoiceModeNamed    ToolChoiceMode = "named"
+	OutputChannelAssistantText OutputChannel = "assistant_text"
+	OutputChannelReasoning     OutputChannel = "reasoning"
+	OutputChannelToolCall      OutputChannel = "tool_call"
 )
 
-func addCapability(request *ModelRequest, capability Capability) {
-	for _, existing := range request.Capabilities {
-		if existing == capability {
-			return
-		}
-	}
-	request.Capabilities = append(request.Capabilities, capability)
+// OutputClaimKind describes how an output claim matches frames.
+type OutputClaimKind string
+
+// Output claim kinds.
+const (
+	OutputClaimChannel OutputClaimKind = "channel"
+	OutputClaimTag     OutputClaimKind = "tag"
+)
+
+// ProtocolSink receives decoded protocol facts.
+type ProtocolSink interface {
+	EmitModelEvent(ModelEvent) error
+	AddToolCall(ToolCall) error
 }
 
-// Budget carries model-call budget hints.
-type Budget struct {
-	MaxInputTokens  int     `json:"max_input_tokens,omitempty"`
-	MaxOutputTokens int     `json:"max_output_tokens,omitempty"`
-	MaxCostUSD      float64 `json:"max_cost_usd,omitempty"`
+// OutputDecoder consumes model output frames.
+type OutputDecoder interface {
+	Write(OutputFrame) error
+	Close() error
 }
 
-// Usage captures normalized model usage and cost metadata.
-type Usage struct {
-	InputTokens  int     `json:"input_tokens,omitempty"`
-	OutputTokens int     `json:"output_tokens,omitempty"`
-	TotalTokens  int     `json:"total_tokens,omitempty"`
-	CostUSD      float64 `json:"cost_usd,omitempty"`
+// OutputFrame is one model output protocol frame.
+type OutputFrame struct {
+	Channel OutputChannel
+	Bytes   []byte
+	Text    string
 }
 
-// ModelRoute records how a model request was routed.
-type ModelRoute struct {
-	RouteName     string         `json:"route_name,omitempty"`
-	Provider      string         `json:"provider,omitempty"`
-	Model         string         `json:"model,omitempty"`
-	Endpoint      string         `json:"endpoint,omitempty"`
-	Attempt       int            `json:"attempt,omitempty"`
-	ConfigVersion string         `json:"config_version,omitempty"`
-	Reason        string         `json:"reason,omitempty"`
-	Metadata      map[string]any `json:"metadata,omitempty"`
+// ModelRequest is a provider-neutral model request.
+type ModelRequest struct {
+	Model           string
+	Messages        []Message
+	Tools           []ToolSpec
+	ToolChoice      ToolChoice
+	ResponseSchema  SchemaRef
+	Modalities      []Modality
+	Temperature     *float64
+	TopP            *float64
+	MaxOutputTokens int
+	Reasoning       ReasoningConfig
+	Stop            []string
+	Seed            *int64
+	OutputProtocols []OutputProtocol
+	Metadata        map[string]string
+	Extensions      map[string]any
 }
 
-// ModelResponse is a provider-neutral model response with normalized route and usage metadata.
+// WithTools returns a request with replaced tools.
+func (r ModelRequest) WithTools(tools ...ToolSpec) ModelRequest {
+	r.Tools = append([]ToolSpec(nil), tools...)
+	return r
+}
+
+// WithTemperature returns a request with temperature set.
+func (r ModelRequest) WithTemperature(value float64) ModelRequest {
+	v := value
+	r.Temperature = &v
+	return r
+}
+
+// WithReasoning returns a request with reasoning controls set.
+func (r ModelRequest) WithReasoning(cfg ReasoningConfig) ModelRequest {
+	r.Reasoning = cfg
+	return r
+}
+
+// ModelResponse is the normalized result of one model call.
 type ModelResponse struct {
-	Message  Message        `json:"message"`
-	Route    ModelRoute     `json:"route,omitempty"`
-	Usage    Usage          `json:"usage,omitempty"`
-	Events   []Event        `json:"events,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Message          Message
+	Intent           ModelIntent
+	Usage            Usage
+	FinishReason     string
+	ProviderMetadata map[string]any
+}
+
+// ModelIntentType identifies a model terminal decision.
+type ModelIntentType string
+
+// Model intent types.
+const (
+	ModelIntentFinal    ModelIntentType = "final"
+	ModelIntentToolCall ModelIntentType = "tool_call"
+	ModelIntentRefusal  ModelIntentType = "refusal"
+	ModelIntentRepair   ModelIntentType = "repair"
+)
+
+// ModelIntent is a typed terminal model decision.
+type ModelIntent interface {
+	IntentType() ModelIntentType
+	isModelIntent()
+}
+
+// FinalIntent indicates a final assistant response.
+type FinalIntent struct{}
+
+// IntentType returns ModelIntentFinal.
+func (FinalIntent) IntentType() ModelIntentType { return ModelIntentFinal }
+func (FinalIntent) isModelIntent()              {}
+
+// ToolCallIntent requests tool execution.
+type ToolCallIntent struct {
+	Calls []ToolCall
+}
+
+// IntentType returns ModelIntentToolCall.
+func (ToolCallIntent) IntentType() ModelIntentType { return ModelIntentToolCall }
+func (ToolCallIntent) isModelIntent()              {}
+
+// RefusalIntent reports a model refusal.
+type RefusalIntent struct {
+	Refusal Refusal
+}
+
+// IntentType returns ModelIntentRefusal.
+func (RefusalIntent) IntentType() ModelIntentType { return ModelIntentRefusal }
+func (RefusalIntent) isModelIntent()              {}
+
+// RepairIntent requests a repaired model context.
+type RepairIntent struct {
+	Repair RepairRequest
+}
+
+// IntentType returns ModelIntentRepair.
+func (RepairIntent) IntentType() ModelIntentType { return ModelIntentRepair }
+func (RepairIntent) isModelIntent()              {}
+
+// Refusal describes why a model refused.
+type Refusal struct {
+	Reason  string
+	Message Message
+	Ref     string
+}
+
+// RepairRequest describes a requested repair turn.
+type RepairRequest struct {
+	Reason  string
+	Message Message
+	Ref     string
+}
+
+// Usage summarizes model token usage.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+}
+
+// ModelOutputChunk is one typed model output stream item.
+type ModelOutputChunk struct {
+	Text  string
+	Parts []MessagePart
+}
+
+// ModelEventType identifies a model process event.
+type ModelEventType string
+
+// Model event types.
+const (
+	ModelEventProviderAttemptStarted  ModelEventType = "provider.attempt_started"
+	ModelEventProviderAttemptFinished ModelEventType = "provider.attempt_finished"
+	ModelEventMessageDelta            ModelEventType = "message.delta"
+	ModelEventReasoningDelta          ModelEventType = "reasoning.delta"
+	ModelEventToolCallDelta           ModelEventType = "tool_call.delta"
+	ModelEventUsage                   ModelEventType = "usage"
+	ModelEventFinish                  ModelEventType = "finish"
+	ModelEventRefusal                 ModelEventType = "refusal"
+	ModelEventIntent                  ModelEventType = "intent"
+)
+
+// ModelEvent is a bounded process event emitted during a model call.
+type ModelEvent struct {
+	Type       ModelEventType
+	Source     string
+	Bytes      []byte
+	Summary    string
+	Payload    json.RawMessage
+	PayloadRef string
 }
