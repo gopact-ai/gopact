@@ -1,4 +1,4 @@
-# gopact
+# 🧠 gopact
 
 <!-- gopact:doc-language: zh -->
 
@@ -7,6 +7,14 @@
 `gopact` 是 Agent-first、Workflow-native 的 Go ADK core。
 
 > **仅支持 Go 1.27+。** 本项目围绕泛型方法构建，也借此庆祝我们眼中 Go 近十年来最具影响力的语言演进之一。Go 1.27 正式发布前，本项目需要开发版工具链，应视为预览而非稳定版本。
+
+## 选择入口
+
+| 你想要…… | 前往 |
+| --- | --- |
+| 构建类型安全的 Workflow 和 Agent runtime | 当前仓库 |
+| 添加模型 adapter、Agent 组合或 Store | [gopact-ext](https://github.com/gopact-ai/gopact-ext) |
+| 运行完整的 quickstart 和集成示例 | [gopact-examples](https://github.com/gopact-ai/gopact-examples) |
 
 当前仓库只保留：
 
