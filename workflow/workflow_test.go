@@ -1294,8 +1294,15 @@ func TestWorkflowNodeRunInfoCarriesExecutionLineage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if received.SessionID != "session-1" || received.RunID != "run-1" || received.ParentRunID != "parent-1" || received.Depth != 2 {
+	if received.SessionID != "session-1" || received.RunID != "run-1" || received.ParentRunID != "parent-1" || received.Depth != 2 ||
+		received.NodeID != "work" || received.ActivationID == "" || received.Attempt != 1 {
 		t.Fatalf("RunInfoFromContext() = %+v, want run lineage", received)
+	}
+}
+
+func TestRunInfoFromContextAcceptsNil(t *testing.T) {
+	if got := RunInfoFromContext(nil); got != (RunInfo{}) {
+		t.Fatalf("RunInfoFromContext(nil) = %+v, want zero value", got)
 	}
 }
 
@@ -3535,6 +3542,10 @@ func (store failingWorkflowStore) Finish(context.Context, CheckpointRecord, int6
 	return store.err
 }
 
+func (store failingWorkflowStore) RenewLease(context.Context, CheckpointLease) error {
+	return store.err
+}
+
 func (store failingWorkflowStore) Append(context.Context, runlog.Record) error {
 	return store.err
 }
@@ -3609,5 +3620,15 @@ func (r *recordingCheckpointer) Finish(_ context.Context, rec CheckpointRecord, 
 	}
 	r.finished = append(r.finished, rec)
 	r.records[rec.RunID] = rec
+	return nil
+}
+
+func (r *recordingCheckpointer) RenewLease(_ context.Context, lease CheckpointLease) error {
+	rec, ok := r.records[lease.RunID]
+	if !ok || rec.Status != CheckpointRunning || rec.OwnerID != lease.OwnerID || rec.ClaimSequence != lease.ClaimSequence {
+		return ErrCheckpointLeaseLost
+	}
+	rec.LeaseExpiresAt = lease.ExpiresAt
+	r.records[lease.RunID] = rec
 	return nil
 }

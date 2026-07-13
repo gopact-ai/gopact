@@ -43,6 +43,23 @@ go vet ./...
 
 项目使用聚焦的原生门禁进行验证：`gofmt`、`go mod tidy -diff`、`go test`、`go test -race`、`go vet` 与 `govulncheck`，不依赖聚合式第三方 lint 工具。
 
+## 生产执行
+
+未配置持久化选项时，Workflow 会在内存中保留 checkpoint 和 RunLog 事件。该默认值适合测试和短生命周期本地程序；长驻服务应配置带明确保留策略的持久化 Store：
+
+```go
+wf := workflow.New[Input, Output](
+    "agent",
+    workflow.WithCheckpointer(store),
+    workflow.WithJournal(store),
+    workflow.WithCheckpointLease(3*time.Minute, time.Minute),
+)
+```
+
+配置后的 Store 是权威数据源，写入失败会直接终止 Run。Checkpointer 必须支持原子续租；续租失败时，runtime 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。节点实现必须在 Context 被取消后及时停止。
+
+Workflow 恢复采用 at-least-once 语义。Heartbeat 可以避免健康的长耗时节点仅因原租约过期而被接管，但 checkpoint 协议无法让任意外部 API 自动获得 exactly-once 语义。发送消息、扣款、修改库存或调用计费模型时，必须使用跨 Resume 稳定的幂等键，例如 `RunInfo.RunID + "/" + RunInfo.ActivationID`。
+
 ## 最小 workflow
 
 ```go

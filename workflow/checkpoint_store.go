@@ -85,6 +85,28 @@ func (store *MemoryCheckpointer) Load(ctx context.Context, runID string) (Checkp
 	return cloneCheckpointRecord(record), nil
 }
 
+// RenewLease extends the current ownership claim without creating a history version.
+func (store *MemoryCheckpointer) RenewLease(ctx context.Context, lease CheckpointLease) error {
+	if store == nil {
+		return errors.New("workflow: checkpointer is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if lease.RunID == "" || lease.OwnerID == "" || lease.ClaimSequence <= 0 || lease.ExpiresAt.IsZero() {
+		return fmt.Errorf("%w: invalid checkpoint lease", ErrInvalidCheckpoint)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	current, exists := store.records[lease.RunID]
+	if !exists || current.Status != CheckpointRunning || current.OwnerID != lease.OwnerID || current.ClaimSequence != lease.ClaimSequence {
+		return ErrCheckpointLeaseLost
+	}
+	current.LeaseExpiresAt = lease.ExpiresAt
+	store.records[lease.RunID] = cloneCheckpointRecord(current)
+	return nil
+}
+
 // Save writes a non-terminal checkpoint using CAS.
 func (store *MemoryCheckpointer) Save(ctx context.Context, record CheckpointRecord, version int64) error {
 	return store.write(ctx, record, version, false)

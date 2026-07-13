@@ -34,11 +34,14 @@ var (
 	ErrInvalidCheckpoint = errors.New("workflow: invalid checkpoint")
 	// ErrCheckpointMismatch reports incompatible workflow or topology identity.
 	ErrCheckpointMismatch = errors.New("workflow: checkpoint identity mismatch")
+	// ErrCheckpointLeaseLost reports that another owner may execute the Run.
+	ErrCheckpointLeaseLost = errors.New("workflow: checkpoint lease lost")
 )
 
 const (
 	resumeExtensionKey                = "gopact.workflow.resume"
-	checkpointLease                   = time.Minute
+	defaultCheckpointLeaseDuration    = time.Minute
+	defaultCheckpointLeaseRenewEvery  = 20 * time.Second
 	defaultMaxSteps                   = 1024
 	defaultMaxParallelism             = 1
 	initialActivationSequence         = 2
@@ -127,73 +130,83 @@ const (
 
 // Workflow is a typed workflow builder.
 type Workflow[I, O any] struct {
-	compileMu       sync.Mutex
-	name            string
-	nodes           map[string]runtimeNode
-	edges           map[string][]string
-	predecessors    map[string][]string
-	entry           string
-	exits           map[string]struct{}
-	duplicateNodes  map[string]struct{}
-	checkpointer    Checkpointer
-	checkpointerSet bool
-	journal         runlog.Log
-	journalSet      bool
-	maxSteps        int
-	maxParallelism  int
-	beforeWorkflow  []LifecycleHook[WorkflowContext[I, O]]
-	afterWorkflow   []LifecycleHook[WorkflowContext[I, O]]
-	plugins         []Plugin
-	topologyVersion string
-	topologySet     bool
-	contextKey      *workflowContextKey
-	contextType     reflect.Type
-	contextInit     func(any) (any, error)
-	contextSet      bool
-	contextTwice    bool
-	compiled        *compiled[I, O]
+	compileMu                 sync.Mutex
+	name                      string
+	nodes                     map[string]runtimeNode
+	edges                     map[string][]string
+	predecessors              map[string][]string
+	entry                     string
+	exits                     map[string]struct{}
+	duplicateNodes            map[string]struct{}
+	checkpointer              Checkpointer
+	checkpointerSet           bool
+	journal                   runlog.Log
+	journalSet                bool
+	maxSteps                  int
+	maxParallelism            int
+	checkpointLeaseDuration   time.Duration
+	checkpointLeaseRenewEvery time.Duration
+	beforeWorkflow            []LifecycleHook[WorkflowContext[I, O]]
+	afterWorkflow             []LifecycleHook[WorkflowContext[I, O]]
+	plugins                   []Plugin
+	topologyVersion           string
+	topologySet               bool
+	contextKey                *workflowContextKey
+	contextType               reflect.Type
+	contextInit               func(any) (any, error)
+	contextSet                bool
+	contextTwice              bool
+	compiled                  *compiled[I, O]
 }
 
 // RunInfo identifies the current Workflow execution without exposing scheduler state.
 type RunInfo struct {
-	SessionID   string
-	RunID       string
-	ParentRunID string
-	Depth       int
+	SessionID    string
+	RunID        string
+	ParentRunID  string
+	Depth        int
+	NodeID       string
+	ActivationID string
+	Attempt      int
 }
 
 // RunInfoFromContext returns the current Workflow execution identity.
 func RunInfoFromContext(ctx context.Context) RunInfo {
+	if ctx == nil {
+		return RunInfo{}
+	}
 	info, _ := ctx.Value(runInfoContextKey{}).(RunInfo)
 	return info
 }
 
 // compiled is the immutable internal execution plan.
 type compiled[I, O any] struct {
-	name              string
-	nodes             map[string]runtimeNode
-	edges             map[string][]string
-	predecessors      map[string][]string
-	entry             string
-	exits             map[string]struct{}
-	checkpointer      Checkpointer
-	journal           runlog.Log
-	maxSteps          int
-	maxParallelism    int
-	beforeWorkflow    []LifecycleHook[WorkflowContext[I, O]]
-	afterWorkflow     []LifecycleHook[WorkflowContext[I, O]]
-	eventTypes        map[string]EventTypeValidator
-	nodeMiddlewares   []erasedNodeMiddleware
-	routeMiddlewares  []erasedRouteMiddleware
-	joinMiddlewares   []erasedJoinMiddleware
-	eventSinkWrappers []EventSinkWrapper
-	topologyVersion   string
-	backEdges         map[topologyEdge]struct{}
-	contextKey        *workflowContextKey
-	contextType       reflect.Type
-	contextInit       func(any) (any, error)
-	activeMu          sync.Mutex
-	activeRuns        map[string]context.CancelCauseFunc
+	name                      string
+	nodes                     map[string]runtimeNode
+	edges                     map[string][]string
+	predecessors              map[string][]string
+	entry                     string
+	exits                     map[string]struct{}
+	checkpointer              Checkpointer
+	journal                   runlog.Log
+	maxSteps                  int
+	maxParallelism            int
+	checkpointLeaseDuration   time.Duration
+	checkpointLeaseRenewEvery time.Duration
+	beforeWorkflow            []LifecycleHook[WorkflowContext[I, O]]
+	afterWorkflow             []LifecycleHook[WorkflowContext[I, O]]
+	eventTypes                map[string]EventTypeValidator
+	nodeMiddlewares           []erasedNodeMiddleware
+	routeMiddlewares          []erasedRouteMiddleware
+	joinMiddlewares           []erasedJoinMiddleware
+	eventSinkWrappers         []EventSinkWrapper
+	topologyVersion           string
+	backEdges                 map[topologyEdge]struct{}
+	contextKey                *workflowContextKey
+	contextType               reflect.Type
+	contextInit               func(any) (any, error)
+	activeMu                  sync.Mutex
+	activeRuns                map[string]context.CancelCauseFunc
 }
 
 // Node is a typed workflow topology vertex.
@@ -254,16 +267,30 @@ type CheckpointRecord struct {
 	ConfirmedSequence int64
 	PendingSequence   int64
 	ReplayStatus      ReplayStatus
+	OwnerID           string
+	LeaseExpiresAt    time.Time
+	ClaimSequence     int64
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
 
+// CheckpointLease identifies one Run ownership claim to renew.
+type CheckpointLease struct {
+	RunID         string
+	OwnerID       string
+	ClaimSequence int64
+	ExpiresAt     time.Time
+}
+
 // Checkpointer persists workflow checkpoint records.
+// RenewLease must atomically extend only the current running claim when both
+// OwnerID and ClaimSequence still match, and return ErrCheckpointLeaseLost otherwise.
 type Checkpointer interface {
 	Create(ctx context.Context, rec CheckpointRecord) error
 	Load(ctx context.Context, runID string) (CheckpointRecord, error)
 	Save(ctx context.Context, rec CheckpointRecord, version int64) error
 	Finish(ctx context.Context, rec CheckpointRecord, version int64) error
+	RenewLease(ctx context.Context, lease CheckpointLease) error
 }
 
 // CheckpointHistoryRequest bounds an ordered workflow checkpoint history query.
@@ -367,15 +394,17 @@ func (f buildOptionFunc) applyBuildOption(cfg *buildConfig) {
 }
 
 type buildConfig struct {
-	maxSteps        int
-	maxParallelism  int
-	checkpointer    Checkpointer
-	checkpointerSet bool
-	journal         runlog.Log
-	journalSet      bool
-	plugins         []Plugin
-	topologyVersion string
-	topologySet     bool
+	maxSteps                  int
+	maxParallelism            int
+	checkpointer              Checkpointer
+	checkpointerSet           bool
+	journal                   runlog.Log
+	journalSet                bool
+	checkpointLeaseDuration   time.Duration
+	checkpointLeaseRenewEvery time.Duration
+	plugins                   []Plugin
+	topologyVersion           string
+	topologySet               bool
 }
 
 // WithMaxSteps limits scheduler steps for one workflow run.
@@ -389,6 +418,15 @@ func WithMaxSteps(n int) BuildOption {
 func WithMaxParallelism(n int) BuildOption {
 	return buildOptionFunc(func(cfg *buildConfig) {
 		cfg.maxParallelism = n
+	})
+}
+
+// WithCheckpointLease configures Run ownership duration and renewal frequency.
+// Both values must be positive, and renewEvery must be less than duration.
+func WithCheckpointLease(duration, renewEvery time.Duration) BuildOption {
+	return buildOptionFunc(func(cfg *buildConfig) {
+		cfg.checkpointLeaseDuration = duration
+		cfg.checkpointLeaseRenewEvery = renewEvery
 	})
 }
 
@@ -406,7 +444,7 @@ func WithStrictCheckpointer(store Checkpointer) BuildOption {
 	return WithCheckpointer(store)
 }
 
-// WithJournal configures best-effort append-only workflow history persistence.
+// WithJournal configures authoritative append-only workflow history persistence.
 func WithJournal(journal runlog.Log) BuildOption {
 	return buildOptionFunc(func(cfg *buildConfig) {
 		cfg.journal = journal
@@ -506,7 +544,11 @@ func SettleQuorum(m int) SettlePolicy {
 
 // New creates a typed workflow builder.
 func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
-	cfg := buildConfig{maxSteps: defaultMaxSteps, maxParallelism: defaultMaxParallelism}
+	cfg := buildConfig{
+		maxSteps: defaultMaxSteps, maxParallelism: defaultMaxParallelism,
+		checkpointLeaseDuration:   defaultCheckpointLeaseDuration,
+		checkpointLeaseRenewEvery: defaultCheckpointLeaseRenewEvery,
+	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt.applyBuildOption(&cfg)
@@ -520,21 +562,23 @@ func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
 		cfg.journal = store
 	}
 	return &Workflow[I, O]{
-		name:            name,
-		nodes:           make(map[string]runtimeNode),
-		edges:           make(map[string][]string),
-		predecessors:    make(map[string][]string),
-		exits:           make(map[string]struct{}),
-		duplicateNodes:  make(map[string]struct{}),
-		checkpointer:    cfg.checkpointer,
-		checkpointerSet: cfg.checkpointerSet,
-		journal:         cfg.journal,
-		journalSet:      cfg.journalSet,
-		maxSteps:        cfg.maxSteps,
-		maxParallelism:  cfg.maxParallelism,
-		plugins:         append([]Plugin(nil), cfg.plugins...),
-		topologyVersion: cfg.topologyVersion,
-		topologySet:     cfg.topologySet,
+		name:                      name,
+		nodes:                     make(map[string]runtimeNode),
+		edges:                     make(map[string][]string),
+		predecessors:              make(map[string][]string),
+		exits:                     make(map[string]struct{}),
+		duplicateNodes:            make(map[string]struct{}),
+		checkpointer:              cfg.checkpointer,
+		checkpointerSet:           cfg.checkpointerSet,
+		journal:                   cfg.journal,
+		journalSet:                cfg.journalSet,
+		maxSteps:                  cfg.maxSteps,
+		maxParallelism:            cfg.maxParallelism,
+		checkpointLeaseDuration:   cfg.checkpointLeaseDuration,
+		checkpointLeaseRenewEvery: cfg.checkpointLeaseRenewEvery,
+		plugins:                   append([]Plugin(nil), cfg.plugins...),
+		topologyVersion:           cfg.topologyVersion,
+		topologySet:               cfg.topologySet,
 	}
 }
 
@@ -687,6 +731,16 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 	if wf.maxParallelism <= 0 {
 		return nil, fmt.Errorf("workflow: max parallelism must be positive, got %d", wf.maxParallelism)
 	}
+	if wf.checkpointLeaseDuration <= 0 {
+		return nil, fmt.Errorf("workflow: checkpoint lease must be positive, got %s", wf.checkpointLeaseDuration)
+	}
+	if wf.checkpointLeaseRenewEvery <= 0 || wf.checkpointLeaseRenewEvery >= wf.checkpointLeaseDuration {
+		return nil, fmt.Errorf(
+			"workflow: checkpoint lease renewal %s must be positive and less than lease %s",
+			wf.checkpointLeaseRenewEvery,
+			wf.checkpointLeaseDuration,
+		)
+	}
 	if wf.checkpointerSet && wf.checkpointer == nil {
 		return nil, errors.New("workflow: checkpointer is nil")
 	}
@@ -754,29 +808,31 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 	}
 
 	compiled := &compiled[I, O]{
-		name:              wf.name,
-		nodes:             copyNodes(wf.nodes),
-		edges:             copyEdges(wf.edges),
-		predecessors:      copyEdges(wf.predecessors),
-		entry:             wf.entry,
-		exits:             copyExitSet(wf.exits),
-		checkpointer:      wf.checkpointer,
-		journal:           wf.journal,
-		maxSteps:          wf.maxSteps,
-		maxParallelism:    wf.maxParallelism,
-		beforeWorkflow:    append([]LifecycleHook[WorkflowContext[I, O]](nil), wf.beforeWorkflow...),
-		afterWorkflow:     append([]LifecycleHook[WorkflowContext[I, O]](nil), wf.afterWorkflow...),
-		eventTypes:        plugins.eventTypes,
-		nodeMiddlewares:   plugins.nodeMiddlewares,
-		routeMiddlewares:  plugins.routeMiddlewares,
-		joinMiddlewares:   plugins.joinMiddlewares,
-		eventSinkWrappers: plugins.eventSinkWrappers,
-		topologyVersion:   wf.compiledTopologyVersion(plugins),
-		backEdges:         findTopologyBackEdges(wf.entry, wf.edges),
-		contextKey:        wf.contextKey,
-		contextType:       wf.contextType,
-		contextInit:       wf.contextInit,
-		activeRuns:        make(map[string]context.CancelCauseFunc),
+		name:                      wf.name,
+		nodes:                     copyNodes(wf.nodes),
+		edges:                     copyEdges(wf.edges),
+		predecessors:              copyEdges(wf.predecessors),
+		entry:                     wf.entry,
+		exits:                     copyExitSet(wf.exits),
+		checkpointer:              wf.checkpointer,
+		journal:                   wf.journal,
+		maxSteps:                  wf.maxSteps,
+		maxParallelism:            wf.maxParallelism,
+		checkpointLeaseDuration:   wf.checkpointLeaseDuration,
+		checkpointLeaseRenewEvery: wf.checkpointLeaseRenewEvery,
+		beforeWorkflow:            append([]LifecycleHook[WorkflowContext[I, O]](nil), wf.beforeWorkflow...),
+		afterWorkflow:             append([]LifecycleHook[WorkflowContext[I, O]](nil), wf.afterWorkflow...),
+		eventTypes:                plugins.eventTypes,
+		nodeMiddlewares:           plugins.nodeMiddlewares,
+		routeMiddlewares:          plugins.routeMiddlewares,
+		joinMiddlewares:           plugins.joinMiddlewares,
+		eventSinkWrappers:         plugins.eventSinkWrappers,
+		topologyVersion:           wf.compiledTopologyVersion(plugins),
+		backEdges:                 findTopologyBackEdges(wf.entry, wf.edges),
+		contextKey:                wf.contextKey,
+		contextType:               wf.contextType,
+		contextInit:               wf.contextInit,
+		activeRuns:                make(map[string]context.CancelCauseFunc),
 	}
 	wf.compiled = compiled
 	return compiled, nil
@@ -934,6 +990,78 @@ type workflowExecution[I, O any] struct {
 	cancel         context.CancelCauseFunc
 	eventMu        sync.Mutex
 	sinkFailure    error
+	leaseHeartbeat *checkpointLeaseHeartbeat
+}
+
+type checkpointLeaseHeartbeat struct {
+	cancel context.CancelFunc
+	done   <-chan error
+	once   sync.Once
+	err    error
+}
+
+func (heartbeat *checkpointLeaseHeartbeat) stop() error {
+	if heartbeat == nil {
+		return nil
+	}
+	heartbeat.once.Do(func() {
+		heartbeat.cancel()
+		heartbeat.err = <-heartbeat.done
+	})
+	return heartbeat.err
+}
+
+func (execution *workflowExecution[I, O]) startCheckpointLeaseHeartbeat() {
+	record := execution.checkpoint
+	if execution.compiled.checkpointer == nil || record.ID == "" || record.Status != CheckpointRunning ||
+		record.OwnerID == "" || record.ClaimSequence <= 0 {
+		return
+	}
+	ctx, cancel := context.WithCancel(execution.ctx)
+	done := make(chan error, 1)
+	execution.leaseHeartbeat = &checkpointLeaseHeartbeat{cancel: cancel, done: done}
+	lease := CheckpointLease{RunID: record.RunID, OwnerID: record.OwnerID, ClaimSequence: record.ClaimSequence}
+	go func() {
+		done <- execution.runCheckpointLeaseHeartbeat(ctx, lease)
+	}()
+}
+
+func (execution *workflowExecution[I, O]) runCheckpointLeaseHeartbeat(ctx context.Context, lease CheckpointLease) error {
+	ticker := time.NewTicker(execution.compiled.checkpointLeaseRenewEvery)
+	defer ticker.Stop()
+	for {
+		stopped, err := execution.renewCheckpointLeaseOnTick(ctx, ticker.C, &lease)
+		if stopped {
+			return err
+		}
+	}
+}
+
+func (execution *workflowExecution[I, O]) renewCheckpointLeaseOnTick(ctx context.Context, ticks <-chan time.Time, lease *CheckpointLease) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return true, nil
+	case <-ticks:
+		err := execution.renewCheckpointLease(ctx, lease)
+		return err != nil, err
+	}
+}
+
+func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Context, lease *CheckpointLease) error {
+	lease.ExpiresAt = time.Now().Add(execution.compiled.checkpointLeaseDuration)
+	renewCtx, cancel := context.WithTimeout(ctx, execution.compiled.checkpointLeaseRenewEvery)
+	err := execution.compiled.checkpointer.RenewLease(renewCtx, *lease)
+	cancel()
+	if err == nil || ctx.Err() != nil {
+		return nil
+	}
+	cause := fmt.Errorf("%w: renew checkpoint lease: %w", ErrCheckpointLeaseLost, err)
+	execution.cancel(errors.Join(context.Canceled, cause))
+	return cause
+}
+
+func (execution *workflowExecution[I, O]) stopCheckpointLeaseHeartbeat() error {
+	return execution.leaseHeartbeat.stop()
 }
 
 func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink[O], opts ...gopact.RunOption) (outputs []O, err error) {
@@ -1044,6 +1172,10 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		execution.sessionID = checkpoint.SessionID
 	}
 	execution.checkpoint = checkpoint
+	execution.startCheckpointLeaseHeartbeat()
+	defer func() {
+		err = errors.Join(err, execution.stopCheckpointLeaseHeartbeat())
+	}()
 	defer func() {
 		if err != nil && execution.eventError() != nil {
 			err = errors.Join(err, execution.releaseCheckpointLease())
@@ -1091,6 +1223,9 @@ func (c *compiled[I, O]) initialContext(input I) (any, error) {
 }
 
 func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
+	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
+		return err
+	}
 	record := execution.checkpoint
 	if execution.compiled.checkpointer == nil || record.ID == "" || checkpointTerminal(record.Status) {
 		return nil
@@ -1099,7 +1234,7 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 	if err != nil {
 		return err
 	}
-	if meta.OwnerID == "" && meta.LeaseExpiresAt.IsZero() {
+	if record.OwnerID == "" && record.LeaseExpiresAt.IsZero() && meta.OwnerID == "" && meta.LeaseExpiresAt.IsZero() {
 		return nil
 	}
 	meta.OwnerID = ""
@@ -1109,6 +1244,8 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 		return err
 	}
 	record.Payload = payload
+	record.OwnerID = ""
+	record.LeaseExpiresAt = time.Time{}
 	record.UpdatedAt = time.Now()
 	if err := execution.compiled.checkpointer.Save(context.WithoutCancel(execution.ctx), record, record.Version); err != nil {
 		return err
@@ -1414,6 +1551,7 @@ func (execution *workflowExecution[I, O]) nodeContext(ctx context.Context, curre
 	ctx = context.WithValue(ctx, runInfoContextKey{}, RunInfo{
 		SessionID: execution.sessionID, RunID: execution.runID,
 		ParentRunID: execution.parentRunID, Depth: execution.depth,
+		NodeID: current.node, ActivationID: current.id, Attempt: attempt,
 	})
 	if resolved, ok := execution.ctx.Value(resumedInterruptsContextKey{}).(map[string][]resumedInterrupt); ok {
 		if interrupts := resolved[current.id]; len(interrupts) > 0 {
@@ -1567,6 +1705,9 @@ func checkpointInterruptsForActivation(current activation, interrupt InterruptEr
 }
 
 func (execution *workflowExecution[I, O]) finishInterrupt(state runState, waits []checkpointInterrupt, first InterruptError, requests []InterruptRequest) error {
+	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
+		return err
+	}
 	seen := make(map[string]struct{}, len(requests))
 	for _, interrupt := range requests {
 		if _, ok := seen[interrupt.ID]; ok {
@@ -1678,6 +1819,9 @@ func (execution *workflowExecution[I, O]) route(node runtimeNode, current activa
 }
 
 func (execution *workflowExecution[I, O]) handleError(cause error) error {
+	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
+		return err
+	}
 	if canceled := execution.cancellationCause(); canceled != nil {
 		return execution.cancelRun(canceled)
 	}
@@ -1718,6 +1862,9 @@ func (execution *workflowExecution[I, O]) commitTerminalError(status CheckpointS
 }
 
 func (execution *workflowExecution[I, O]) finish() error {
+	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
+		return err
+	}
 	return execution.commitTerminal(CheckpointCompleted, gopact.Event{Type: EventWorkflowCompleted})
 }
 
@@ -1934,7 +2081,7 @@ func (c *compiled[I, O]) prepareCheckpoint(ctx context.Context, req checkpointPr
 	}
 	now := time.Now()
 	meta := c.checkpointMeta(checkpointPayloadMeta{
-		OwnerID: req.OwnerID, LeaseExpiresAt: now.Add(checkpointLease), ClaimSequence: 1,
+		OwnerID: req.OwnerID, LeaseExpiresAt: now.Add(c.checkpointLeaseDuration), ClaimSequence: 1,
 	})
 	payload, err := encodeCheckpointPayloadWithMeta(req.State, req.Outputs, req.NextStep, meta)
 	if err != nil {
@@ -1944,6 +2091,7 @@ func (c *compiled[I, O]) prepareCheckpoint(ctx context.Context, req checkpointPr
 		ID: "checkpoint:" + req.RunID, SessionID: req.SessionID, RunID: req.RunID, WorkflowName: c.name,
 		TopologyVersion: c.topologyVersion, SchemaVersion: checkpointSchemaVersion,
 		Version: 1, Status: CheckpointRunning, Payload: payload, ReplayStatus: ReplayUnknown,
+		OwnerID: meta.OwnerID, LeaseExpiresAt: meta.LeaseExpiresAt, ClaimSequence: meta.ClaimSequence,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := c.checkpointer.Create(ctx, rec); err != nil {
@@ -2050,12 +2198,24 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 		return CheckpointRecord{}, err
 	}
 	now := time.Now()
-	if payload.OwnerID != "" && payload.LeaseExpiresAt.After(now) {
+	currentOwnerID := rec.OwnerID
+	if currentOwnerID == "" {
+		currentOwnerID = payload.OwnerID
+	}
+	leaseExpiresAt := rec.LeaseExpiresAt
+	if leaseExpiresAt.IsZero() {
+		leaseExpiresAt = payload.LeaseExpiresAt
+	}
+	claimSequence := rec.ClaimSequence
+	if claimSequence == 0 {
+		claimSequence = payload.ClaimSequence
+	}
+	if currentOwnerID != "" && leaseExpiresAt.After(now) {
 		return CheckpointRecord{}, fmt.Errorf(
 			"workflow: checkpoint run %q is leased by owner %q until %s: %w",
 			rec.RunID,
-			payload.OwnerID,
-			payload.LeaseExpiresAt.Format(time.RFC3339Nano),
+			currentOwnerID,
+			leaseExpiresAt.Format(time.RFC3339Nano),
 			ErrCheckpointConflict,
 		)
 	}
@@ -2068,8 +2228,8 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 		payload.PendingInterrupts = nil
 	}
 	payload.OwnerID = ownerID
-	payload.LeaseExpiresAt = now.Add(checkpointLease)
-	payload.ClaimSequence++
+	payload.LeaseExpiresAt = now.Add(c.checkpointLeaseDuration)
+	payload.ClaimSequence = claimSequence + 1
 	claimed, err := encodeCheckpointPayloadWithMeta(payload.state(), payload.Outputs, payload.NextStep, payload.meta())
 	if err != nil {
 		return CheckpointRecord{}, err
@@ -2077,6 +2237,9 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 	next := rec
 	next.Payload = claimed
 	next.Status = CheckpointRunning
+	next.OwnerID = payload.OwnerID
+	next.LeaseExpiresAt = payload.LeaseExpiresAt
+	next.ClaimSequence = payload.ClaimSequence
 	next.UpdatedAt = now
 	if err := c.checkpointer.Save(ctx, next, rec.Version); err != nil {
 		return CheckpointRecord{}, err
@@ -2126,7 +2289,10 @@ func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWrite
 	if err != nil {
 		return CheckpointRecord{}, err
 	}
-	meta.LeaseExpiresAt = time.Now().Add(checkpointLease)
+	now := time.Now()
+	meta.OwnerID = req.Record.OwnerID
+	meta.ClaimSequence = req.Record.ClaimSequence
+	meta.LeaseExpiresAt = now.Add(c.checkpointLeaseDuration)
 	meta.EventCursor = req.EventCursor
 	meta.PendingEvent = req.PendingEvent
 	meta.PendingTerm = req.PendingTerm
@@ -2137,10 +2303,13 @@ func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWrite
 	next := req.Record
 	next.Payload = payload
 	next.Status = CheckpointRunning
+	next.OwnerID = meta.OwnerID
+	next.LeaseExpiresAt = meta.LeaseExpiresAt
+	next.ClaimSequence = meta.ClaimSequence
 	next.ConfirmedSequence = req.EventCursor
 	next.PendingSequence = pendingEventSequence(req.PendingEvent)
 	next.ReplayStatus = req.ReplayStatus
-	next.UpdatedAt = time.Now()
+	next.UpdatedAt = now
 	if err := c.checkpointer.Save(ctx, next, req.Record.Version); err != nil {
 		return CheckpointRecord{}, err
 	}
@@ -2169,6 +2338,8 @@ func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpoint
 	next := req.Record
 	next.Payload = payload
 	next.Status = CheckpointInterrupted
+	next.OwnerID = ""
+	next.LeaseExpiresAt = time.Time{}
 	next.ConfirmedSequence = req.EventCursor
 	next.PendingSequence = pendingEventSequence(req.PendingEvent)
 	next.ReplayStatus = req.ReplayStatus
@@ -2199,6 +2370,8 @@ func (c *compiled[I, O]) finishCheckpoint(ctx context.Context, status Checkpoint
 	}
 	req.Record.Payload = payload
 	req.Record.Status = status
+	req.Record.OwnerID = ""
+	req.Record.LeaseExpiresAt = time.Time{}
 	req.Record.ConfirmedSequence = req.EventCursor
 	req.Record.PendingSequence = pendingEventSequence(req.PendingEvent)
 	req.Record.ReplayStatus = req.ReplayStatus

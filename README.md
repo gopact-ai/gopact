@@ -43,6 +43,23 @@ go vet ./...
 
 Validation uses focused native gates: `gofmt`, `go mod tidy -diff`, `go test`, `go test -race`, `go vet`, and `govulncheck`. No aggregate third-party linter is required.
 
+## Production execution
+
+Without persistence options, a Workflow keeps checkpoints and RunLog events in memory. That default is intended for tests and short-lived local programs; a long-running service should configure durable stores with an explicit retention policy:
+
+```go
+wf := workflow.New[Input, Output](
+    "agent",
+    workflow.WithCheckpointer(store),
+    workflow.WithJournal(store),
+    workflow.WithCheckpointLease(3*time.Minute, time.Minute),
+)
+```
+
+Configured stores are authoritative and fail closed. A Checkpointer must renew leases atomically; the runtime cancels the node context with `workflow.ErrCheckpointLeaseLost` when renewal fails. Node implementations must stop promptly when their Context is canceled.
+
+Workflow recovery is at-least-once. Heartbeats prevent a healthy long-running node from being reclaimed solely because its original lease expired, but no checkpoint protocol can make an arbitrary external API exactly-once. Calls that send messages, charge money, mutate inventory, or invoke billable models must use an idempotency key stable across resume, such as `RunInfo.RunID + "/" + RunInfo.ActivationID`.
+
 ## Minimal Workflow
 
 ```go

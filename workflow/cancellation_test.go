@@ -79,3 +79,10 @@ func (store *contextCheckpointer) Finish(ctx context.Context, record CheckpointR
 	}
 	return store.recordingCheckpointer.Finish(ctx, record, version)
 }
+
+func (store *contextCheckpointer) RenewLease(ctx context.Context, lease CheckpointLease) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return store.recordingCheckpointer.RenewLease(ctx, lease)
+}
