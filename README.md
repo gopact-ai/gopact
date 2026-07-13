@@ -56,9 +56,13 @@ wf := workflow.New[Input, Output](
 )
 ```
 
+Deployment scope is deliberate: `workflow.MemoryStore` is for tests and short-lived local processes; `stores/sqlite` is for one machine or multiple processes that safely share the same local database file. Multi-host deployments need a distributed database Store that implements atomic Claim and fencing.
+
 Configured stores are authoritative and fail closed. A Checkpointer must claim and renew leases atomically; the runtime cancels the node context with `workflow.ErrCheckpointLeaseLost` when renewal fails. Node implementations must stop promptly when their Context is canceled.
 
 Workflow recovery is at-least-once. Heartbeats prevent a healthy long-running node from being reclaimed solely because its original lease expired, but no checkpoint protocol can make an arbitrary external API exactly-once. Calls that send messages, charge money, mutate inventory, or invoke billable models must use an idempotency key stable across resume, such as `RunInfo.RunID + "/" + RunInfo.ActivationID`.
+
+A stable key provides a reliable guarantee only when either the external API natively deduplicates that key, or application code writes a uniquely constrained dedup/outbox record in the same database transaction as its business data. `gopact` does not provide a generic outbox and cannot atomically combine its checkpoint transaction with an arbitrary remote API. If an explicit business retry is meant to create another side effect, give that operation a new key instead of reusing the recovery key.
 
 High-level history projections are bounded. `ListSessionRuns` and a zero-limit `Snapshot` read at most 10,000 records by default; checkpoint history and Retry/Jump scans use 256-record pages and return `workflow.ErrHistoryLimitExceeded` instead of silently returning an incomplete result. Use an explicit `SnapshotRequest.Limit` for timeline pagination and archive or purge terminal Runs before they outgrow the control-history bound.
 
