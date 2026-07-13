@@ -60,6 +60,8 @@ wf := workflow.New[Input, Output](
 
 Workflow 恢复采用 at-least-once 语义。Heartbeat 可以避免健康的长耗时节点仅因原租约过期而被接管，但 checkpoint 协议无法让任意外部 API 自动获得 exactly-once 语义。发送消息、扣款、修改库存或调用计费模型时，必须使用跨 Resume 稳定的幂等键，例如 `RunInfo.RunID + "/" + RunInfo.ActivationID`。
 
+高层历史投影都有读取边界。`ListSessionRuns` 与未显式设置 Limit 的 `Snapshot` 默认最多读取 10,000 条记录；checkpoint history 以及 Retry/Jump 使用每页 256 条的分页扫描，超过安全上限时返回 `workflow.ErrHistoryLimitExceeded`，不会静默返回不完整结果。Timeline 应通过 `SnapshotRequest.Limit` 显式分页；终态 Run 在超过控制历史上限前应完成归档或清理。
+
 ## 最小 workflow
 
 ```go

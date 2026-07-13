@@ -36,6 +36,8 @@ var (
 	ErrCheckpointMismatch = errors.New("workflow: checkpoint identity mismatch")
 	// ErrCheckpointLeaseLost reports that another owner may execute the Run.
 	ErrCheckpointLeaseLost = errors.New("workflow: checkpoint lease lost")
+	// ErrHistoryLimitExceeded reports a high-level history read that exceeded its configured bound.
+	ErrHistoryLimitExceeded = errors.New("workflow: history limit exceeded")
 )
 
 const (

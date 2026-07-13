@@ -149,11 +149,10 @@ func (c *compiled[I, O]) prepareRetry(ctx context.Context, request RetryRequest)
 	if err != nil {
 		return err
 	}
-	checkpoints, err := history.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: request.RunID})
+	sourceCheckpoint, ok, err := checkpointAtSequence(ctx, history, request.RunID, source.Sequence)
 	if err != nil {
 		return err
 	}
-	sourceCheckpoint, ok := checkpointAtSequence(checkpoints, source.Sequence)
 	if !ok {
 		return fmt.Errorf("workflow: retry source revision %q has no stable checkpoint", source.RevisionID)
 	}
@@ -194,11 +193,10 @@ func (c *compiled[I, O]) prepareJump(ctx context.Context, target string, input a
 	if err != nil {
 		return err
 	}
-	checkpoints, err := history.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: request.RunID})
+	sourceCheckpoint, ok, err := checkpointAtSequence(ctx, history, request.RunID, source.Sequence)
 	if err != nil {
 		return err
 	}
-	sourceCheckpoint, ok := checkpointAtSequence(checkpoints, source.Sequence)
 	if !ok {
 		return fmt.Errorf("workflow: jump source revision %q has no stable checkpoint", source.RevisionID)
 	}
@@ -303,30 +301,88 @@ func (c *compiled[I, O]) patchJumpContext(state *runState, patch any) error {
 }
 
 func (c *compiled[I, O]) controlSource(ctx context.Context, runID, revisionID string) (runlog.Record, error) {
-	records, err := c.journal.List(ctx, runlog.Query{RunID: runID})
+	record, found, err := findRunLogRecord(ctx, c.journal, runID, func(record runlog.Record) bool {
+		return record.RevisionID == revisionID
+	})
 	if err != nil {
 		return runlog.Record{}, err
 	}
-	for _, record := range records {
-		if record.RevisionID == revisionID {
-			return record, nil
-		}
+	if found {
+		return record, nil
 	}
 	return runlog.Record{}, errors.New("workflow: source revision was not found")
 }
 
 func (c *compiled[I, O]) retrySource(ctx context.Context, request RetryRequest) (runlog.Record, error) {
-	records, err := c.journal.List(ctx, runlog.Query{RunID: request.RunID})
+	record, found, err := findRunLogRecord(ctx, c.journal, request.RunID, func(record runlog.Record) bool {
+		return record.EventType == EventNodeStarted && record.NodeID == request.NodeID &&
+			record.NodeExecutionVersion == request.NodeExecutionVersion
+	})
 	if err != nil {
 		return runlog.Record{}, err
 	}
-	for _, record := range records {
-		if record.EventType == EventNodeStarted && record.NodeID == request.NodeID &&
-			record.NodeExecutionVersion == request.NodeExecutionVersion {
-			return record, nil
-		}
+	if found {
+		return record, nil
 	}
 	return runlog.Record{}, errors.New("workflow: retry source node execution was not found")
+}
+
+type runLogMatcher func(runlog.Record) bool
+
+type runLogSearch struct {
+	runID string
+	match runLogMatcher
+	after int64
+	total int
+}
+
+func findRunLogRecord(ctx context.Context, log runlog.Log, runID string, match runLogMatcher) (runlog.Record, bool, error) {
+	if log == nil {
+		return runlog.Record{}, false, runlog.ErrNilLog
+	}
+	search := runLogSearch{runID: runID, match: match}
+	for {
+		limit := min(historyPageSize, defaultHistoryRecordLimit-search.total+1)
+		records, err := log.List(ctx, runlog.Query{RunID: runID, After: search.after, Limit: limit})
+		if err != nil {
+			return runlog.Record{}, false, err
+		}
+		if len(records) > limit {
+			return runlog.Record{}, false, fmt.Errorf("workflow: runlog returned %d records for limit %d", len(records), limit)
+		}
+		if len(records) == 0 {
+			return runlog.Record{}, false, nil
+		}
+		record, found, err := search.accept(records)
+		if err != nil || found {
+			return record, found, err
+		}
+		if len(records) < limit {
+			return runlog.Record{}, false, nil
+		}
+	}
+}
+
+func (search *runLogSearch) accept(records []runlog.Record) (runlog.Record, bool, error) {
+	for _, record := range records {
+		search.total++
+		if search.total > defaultHistoryRecordLimit {
+			return runlog.Record{}, false, fmt.Errorf(
+				"%w: run %q exceeds %d records",
+				ErrHistoryLimitExceeded,
+				search.runID,
+				defaultHistoryRecordLimit,
+			)
+		}
+		if record.RunID != search.runID || record.Sequence != search.after+1 {
+			return runlog.Record{}, false, fmt.Errorf("workflow: runlog history is not contiguous after sequence %d", search.after)
+		}
+		search.after = record.Sequence
+		if search.match(record) {
+			return record, true, nil
+		}
+	}
+	return runlog.Record{}, false, nil
 }
 
 func (c *compiled[I, O]) retryPayload(source runlog.Record, checkpoint, head CheckpointRecord) ([]byte, error) {
@@ -381,14 +437,63 @@ func (c *compiled[I, O]) retryPayload(source runlog.Record, checkpoint, head Che
 	return encodeCheckpointPayloadWithMeta(state, sourcePayload.Outputs, sourcePayload.NextStep, meta)
 }
 
-func checkpointAtSequence(records []CheckpointRecord, sequence int64) (CheckpointRecord, bool) {
-	var selected CheckpointRecord
-	for _, record := range records {
-		if record.ConfirmedSequence == sequence && record.PendingSequence == 0 && record.Version > selected.Version {
-			selected = record
+type checkpointSearch struct {
+	runID        string
+	sequence     int64
+	afterVersion int64
+	total        int
+	selected     CheckpointRecord
+}
+
+func checkpointAtSequence(ctx context.Context, history CheckpointHistory, runID string, sequence int64) (CheckpointRecord, bool, error) {
+	search := checkpointSearch{runID: runID, sequence: sequence}
+	for {
+		limit := min(historyPageSize, defaultHistoryRecordLimit-search.total+1)
+		records, err := history.ListCheckpoints(ctx, CheckpointHistoryRequest{
+			RunID: runID, AfterVersion: search.afterVersion, Limit: limit,
+		})
+		if err != nil {
+			return CheckpointRecord{}, false, err
+		}
+		if len(records) > limit {
+			return CheckpointRecord{}, false, fmt.Errorf("workflow: checkpoint history returned %d records for limit %d", len(records), limit)
+		}
+		if len(records) == 0 {
+			return search.result()
+		}
+		if err := search.accept(records); err != nil {
+			return CheckpointRecord{}, false, err
+		}
+		if len(records) < limit {
+			return search.result()
 		}
 	}
-	return selected, selected.ID != ""
+}
+
+func (search *checkpointSearch) accept(records []CheckpointRecord) error {
+	for _, record := range records {
+		search.total++
+		if search.total > defaultHistoryRecordLimit {
+			return fmt.Errorf(
+				"%w: run %q exceeds %d checkpoints",
+				ErrHistoryLimitExceeded,
+				search.runID,
+				defaultHistoryRecordLimit,
+			)
+		}
+		if record.RunID != search.runID || record.Version <= search.afterVersion {
+			return fmt.Errorf("%w: checkpoint history is not ordered after version %d", ErrCheckpointMismatch, search.afterVersion)
+		}
+		search.afterVersion = record.Version
+		if record.ConfirmedSequence == search.sequence && record.PendingSequence == 0 {
+			search.selected = record
+		}
+	}
+	return nil
+}
+
+func (search checkpointSearch) result() (CheckpointRecord, bool, error) {
+	return search.selected, search.selected.ID != "", nil
 }
 
 func mergeRetryHead(state *runState, head runState) {

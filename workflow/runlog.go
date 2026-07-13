@@ -10,6 +10,11 @@ import (
 	"github.com/gopact-ai/gopact/runlog"
 )
 
+const (
+	defaultHistoryRecordLimit = 10_000
+	historyPageSize           = 256
+)
+
 // SnapshotStore loads a read model for a run.
 type SnapshotStore interface {
 	Load(context.Context, SnapshotRequest) (Snapshot, error)
@@ -25,6 +30,8 @@ type SnapshotRequest struct {
 // SessionRunsRequest identifies the session whose runs should be listed.
 type SessionRunsRequest struct {
 	SessionID string
+	// MaxRecords defaults to 10,000 and may only lower that safety bound.
+	MaxRecords int
 }
 
 // RunSummary is a session-scoped presentation view of one run.
@@ -45,12 +52,23 @@ func ListSessionRuns(ctx context.Context, log runlog.Log, request SessionRunsReq
 	if request.SessionID == "" {
 		return nil, fmt.Errorf("%w: session id is required", runlog.ErrInvalidQuery)
 	}
+	if request.MaxRecords < 0 || request.MaxRecords > defaultHistoryRecordLimit {
+		return nil, fmt.Errorf("%w: max records must be between 0 and %d", runlog.ErrInvalidQuery, defaultHistoryRecordLimit)
+	}
 	if log == nil {
 		return nil, fmt.Errorf("workflow: list session runs: %w", runlog.ErrNilLog)
 	}
-	records, err := log.List(ctx, runlog.Query{SessionID: request.SessionID})
+	limit := request.MaxRecords
+	if limit == 0 {
+		limit = defaultHistoryRecordLimit
+	}
+	queryLimit := limit + 1
+	records, err := log.List(ctx, runlog.Query{SessionID: request.SessionID, Limit: queryLimit})
 	if err != nil {
 		return nil, fmt.Errorf("workflow: list session runs: %w", err)
+	}
+	if len(records) > limit {
+		return nil, fmt.Errorf("%w: session %q exceeds %d records", ErrHistoryLimitExceeded, request.SessionID, limit)
 	}
 	summaries := make([]RunSummary, 0)
 	byRunID := make(map[string]int)
@@ -182,19 +200,28 @@ func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Sna
 	if req.RunID == "" {
 		return Snapshot{}, errors.New("workflow: snapshot run id is required")
 	}
-	records, err := s.log.List(ctx, runlog.Query{RunID: req.RunID, After: req.After, Limit: req.Limit})
+	queryLimit := req.Limit
+	boundedDefault := queryLimit == 0
+	if boundedDefault {
+		queryLimit = defaultHistoryRecordLimit + 1
+	}
+	records, err := s.log.List(ctx, runlog.Query{RunID: req.RunID, After: req.After, Limit: queryLimit})
 	if err != nil {
 		return Snapshot{}, err
 	}
-	history, err := s.checkpoints.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: req.RunID})
-	if err != nil {
-		return Snapshot{}, err
+	if boundedDefault && len(records) > defaultHistoryRecordLimit {
+		return Snapshot{}, fmt.Errorf(
+			"%w: run %q exceeds %d timeline records",
+			ErrHistoryLimitExceeded,
+			req.RunID,
+			defaultHistoryRecordLimit,
+		)
 	}
 	snapshot := Snapshot{RunMeta: RunMeta{RunID: req.RunID}, Timeline: cloneRunLogRecords(records)}
 	if err := snapshot.projectTimeline(records); err != nil {
 		return Snapshot{}, err
 	}
-	if err := snapshot.projectCheckpoints(history); err != nil {
+	if err := snapshot.projectCheckpointHistory(ctx, s.checkpoints); err != nil {
 		return Snapshot{}, err
 	}
 	return snapshot, nil
@@ -223,37 +250,86 @@ func (snapshot Snapshot) sameLineage(record runlog.Record) bool {
 	return record.SessionID == snapshot.RunMeta.SessionID && record.ParentRunID == snapshot.RunMeta.ParentRunID && record.SourceRunID == snapshot.RunMeta.SourceRunID
 }
 
-func (snapshot *Snapshot) projectCheckpoints(history []CheckpointRecord) error {
-	latest, root, err := snapshot.stableCheckpoints(history)
-	if err != nil {
-		return err
+type checkpointProjection struct {
+	snapshot     *Snapshot
+	wanted       map[int64]struct{}
+	latest       map[int64]CheckpointView
+	afterVersion int64
+	root         int64
+	total        int
+}
+
+func (snapshot *Snapshot) projectCheckpointHistory(ctx context.Context, history CheckpointHistory) error {
+	wanted := make(map[int64]struct{}, len(snapshot.Timeline))
+	for _, record := range snapshot.Timeline {
+		wanted[record.Sequence] = struct{}{}
+	}
+	projection := checkpointProjection{
+		snapshot: snapshot,
+		wanted:   wanted,
+		latest:   make(map[int64]CheckpointView, len(wanted)),
+	}
+	for {
+		limit := min(historyPageSize, defaultHistoryRecordLimit-projection.total+1)
+		records, err := history.ListCheckpoints(ctx, CheckpointHistoryRequest{
+			RunID: snapshot.RunMeta.RunID, AfterVersion: projection.afterVersion, Limit: limit,
+		})
+		if err != nil {
+			return err
+		}
+		if len(records) > limit {
+			return fmt.Errorf("workflow: checkpoint history returned %d records for limit %d", len(records), limit)
+		}
+		if len(records) == 0 {
+			break
+		}
+		if err := projection.accept(records); err != nil {
+			return err
+		}
+		if len(records) < limit {
+			break
+		}
 	}
 	for _, record := range snapshot.Timeline {
-		checkpoint, ok := latest[record.Sequence]
+		checkpoint, ok := projection.latest[record.Sequence]
 		if !ok {
 			continue
 		}
-		snapshot.Checkpoints = append(snapshot.Checkpoints, workflowCheckpointView(checkpoint, record.Sequence == root))
+		checkpoint.Root = record.Sequence == projection.root
+		snapshot.Checkpoints = append(snapshot.Checkpoints, checkpoint)
 	}
 	return nil
 }
 
-func (snapshot *Snapshot) stableCheckpoints(history []CheckpointRecord) (map[int64]CheckpointRecord, int64, error) {
-	latest := make(map[int64]CheckpointRecord)
-	var root int64
-	for _, record := range history {
-		if err := snapshot.acceptCheckpointIdentity(record); err != nil {
-			return nil, 0, err
+func (projection *checkpointProjection) accept(records []CheckpointRecord) error {
+	for _, record := range records {
+		projection.total++
+		if projection.total > defaultHistoryRecordLimit {
+			return fmt.Errorf(
+				"%w: run %q exceeds %d checkpoints",
+				ErrHistoryLimitExceeded,
+				projection.snapshot.RunMeta.RunID,
+				defaultHistoryRecordLimit,
+			)
+		}
+		if record.Version <= projection.afterVersion {
+			return fmt.Errorf("%w: checkpoint history is not ordered after version %d", ErrCheckpointMismatch, projection.afterVersion)
+		}
+		projection.afterVersion = record.Version
+		if err := projection.snapshot.acceptCheckpointIdentity(record); err != nil {
+			return err
 		}
 		if record.ConfirmedSequence <= 0 || record.PendingSequence != 0 {
 			continue
 		}
-		latest[record.ConfirmedSequence] = cloneCheckpointRecord(record)
-		if root == 0 || record.ConfirmedSequence < root {
-			root = record.ConfirmedSequence
+		if projection.root == 0 || record.ConfirmedSequence < projection.root {
+			projection.root = record.ConfirmedSequence
+		}
+		if _, ok := projection.wanted[record.ConfirmedSequence]; ok {
+			projection.latest[record.ConfirmedSequence] = workflowCheckpointView(record, false)
 		}
 	}
-	return latest, root, nil
+	return nil
 }
 
 func (snapshot *Snapshot) acceptCheckpointIdentity(record CheckpointRecord) error {

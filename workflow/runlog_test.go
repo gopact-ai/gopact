@@ -3,12 +3,154 @@ package workflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/gopact-ai/gopact/runlog"
 )
+
+func TestListSessionRunsHistoryLimit(t *testing.T) {
+	log := &pagingRunLog{}
+	for sequence := int64(1); sequence <= 3; sequence++ {
+		log.records = append(log.records, sessionRunRecord(
+			"run-a",
+			sequence,
+			EventWorkflowStarted,
+			time.Date(2026, time.July, 13, 12, 0, int(sequence), 0, time.UTC),
+		))
+	}
+	_, err := ListSessionRuns(context.Background(), log, SessionRunsRequest{SessionID: "session-1", MaxRecords: 2})
+	if !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("ListSessionRuns() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	if len(log.queries) != 1 || log.queries[0].Limit != 3 {
+		t.Fatalf("queries = %+v, want limit+1 query", log.queries)
+	}
+}
+
+func TestSnapshotDefaultHistoryLimit(t *testing.T) {
+	log := &pagingRunLog{}
+	for sequence := int64(1); sequence <= 10_001; sequence++ {
+		log.records = append(log.records, sessionRunRecord(
+			"run-1",
+			sequence,
+			"audit.custom",
+			time.Date(2026, time.July, 13, 12, 0, 0, int(sequence), time.UTC),
+		))
+	}
+	_, err := NewRunLogSnapshotStore(log, staticCheckpointHistory{}).Load(
+		context.Background(),
+		SnapshotRequest{RunID: "run-1"},
+	)
+	if !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("Load() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	if len(log.queries) != 1 || log.queries[0].Limit != 10_001 {
+		t.Fatalf("queries = %+v, want default limit+1 query", log.queries)
+	}
+}
+
+func TestSnapshotPagesCheckpointHistory(t *testing.T) {
+	timeline := sessionRunRecord("run-1", 1, "audit.custom", time.Now().UTC())
+	history := &pagingCheckpointHistory{}
+	for version := int64(1); version <= 257; version++ {
+		confirmedSequence := version
+		if version == 257 {
+			confirmedSequence = 1
+		}
+		history.records = append(history.records, CheckpointRecord{
+			ID: fmt.Sprintf("checkpoint:run-1:%d", version), SessionID: "session-1", RunID: "run-1",
+			WorkflowName: "example", TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion,
+			Version: version, Status: CheckpointRunning, ConfirmedSequence: confirmedSequence,
+		})
+	}
+	snapshot, err := NewRunLogSnapshotStore(
+		&pagingRunLog{records: []runlog.Record{timeline}},
+		history,
+	).Load(context.Background(), SnapshotRequest{RunID: "run-1", Limit: 1})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(history.requests) != 2 || history.requests[0].AfterVersion != 0 || history.requests[0].Limit != 256 ||
+		history.requests[1].AfterVersion != 256 || history.requests[1].Limit != 256 {
+		t.Fatalf("history requests = %+v, want pages after 0 and 256", history.requests)
+	}
+	if len(snapshot.Checkpoints) != 1 || snapshot.Checkpoints[0].Version != 257 || !snapshot.Checkpoints[0].Root {
+		t.Fatalf("snapshot checkpoints = %+v, want latest root checkpoint version 257", snapshot.Checkpoints)
+	}
+}
+
+func TestControlPagesHistory(t *testing.T) {
+	log := &pagingRunLog{}
+	for sequence := int64(1); sequence <= 257; sequence++ {
+		record := sessionRunRecord("run-1", sequence, "audit.custom", time.Now().UTC())
+		record.RevisionID = fmt.Sprintf("revision-%d", sequence)
+		log.records = append(log.records, record)
+	}
+	compiled := &compiled[string, string]{journal: log}
+	record, err := compiled.controlSource(context.Background(), "run-1", "revision-257")
+	if err != nil {
+		t.Fatalf("controlSource() error = %v", err)
+	}
+	if record.Sequence != 257 {
+		t.Fatalf("controlSource() sequence = %d, want 257", record.Sequence)
+	}
+	if len(log.queries) != 2 || log.queries[0].After != 0 || log.queries[0].Limit != 256 ||
+		log.queries[1].After != 256 || log.queries[1].Limit != 256 {
+		t.Fatalf("queries = %+v, want pages after 0 and 256", log.queries)
+	}
+
+	history := &pagingCheckpointHistory{}
+	for version := int64(1); version <= 257; version++ {
+		confirmedSequence := version
+		if version == 257 {
+			confirmedSequence = 1
+		}
+		history.records = append(history.records, CheckpointRecord{
+			ID: fmt.Sprintf("checkpoint:run-1:%d", version), RunID: "run-1", Version: version,
+			ConfirmedSequence: confirmedSequence,
+		})
+	}
+	checkpoint, found, err := checkpointAtSequence(context.Background(), history, "run-1", 1)
+	if err != nil {
+		t.Fatalf("checkpointAtSequence() error = %v", err)
+	}
+	if !found || checkpoint.Version != 257 {
+		t.Fatalf("checkpointAtSequence() = %+v, %v, want latest version 257", checkpoint, found)
+	}
+	if len(history.requests) != 2 || history.requests[0].Limit != 256 || history.requests[1].AfterVersion != 256 {
+		t.Fatalf("checkpoint requests = %+v, want two pages", history.requests)
+	}
+}
+
+func TestControlAndCheckpointHistoryLimits(t *testing.T) {
+	log := &pagingRunLog{}
+	history := &pagingCheckpointHistory{}
+	for ordinal := int64(1); ordinal <= 10_001; ordinal++ {
+		record := sessionRunRecord("run-1", ordinal, "audit.custom", time.Now().UTC())
+		record.RevisionID = fmt.Sprintf("revision-%d", ordinal)
+		log.records = append(log.records, record)
+		history.records = append(history.records, CheckpointRecord{
+			ID: fmt.Sprintf("checkpoint:run-1:%d", ordinal), SessionID: "session-1", RunID: "run-1",
+			WorkflowName: "example", TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion,
+			Version: ordinal, Status: CheckpointRunning, ConfirmedSequence: ordinal,
+		})
+	}
+	compiled := &compiled[string, string]{journal: log}
+	if _, err := compiled.controlSource(context.Background(), "run-1", "missing"); !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("controlSource() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	if _, _, err := checkpointAtSequence(context.Background(), history, "run-1", -1); !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("checkpointAtSequence() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	history.requests = nil
+	snapshot := Snapshot{RunMeta: RunMeta{RunID: "run-1"}}
+	if err := snapshot.projectCheckpointHistory(context.Background(), history); !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("projectCheckpointHistory() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+}
 
 func TestListSessionRunsProjectsRunsInFirstEncounterOrder(t *testing.T) {
 	log := runlog.NewMemoryLog()
@@ -292,7 +434,55 @@ type staticRunLog struct {
 	records []runlog.Record
 }
 
+type pagingRunLog struct {
+	records []runlog.Record
+	queries []runlog.Query
+}
+
+func (log *pagingRunLog) Append(context.Context, runlog.Record) error { return nil }
+
+func (log *pagingRunLog) List(_ context.Context, query runlog.Query) ([]runlog.Record, error) {
+	log.queries = append(log.queries, query)
+	records := make([]runlog.Record, 0, query.Limit)
+	for _, record := range log.records {
+		if query.SessionID != "" && record.SessionID != query.SessionID {
+			continue
+		}
+		if query.RunID != "" && record.RunID != query.RunID {
+			continue
+		}
+		if record.Sequence <= query.After {
+			continue
+		}
+		records = append(records, record)
+		if query.Limit > 0 && len(records) == query.Limit {
+			break
+		}
+	}
+	return records, nil
+}
+
 type staticCheckpointHistory []CheckpointRecord
+
+type pagingCheckpointHistory struct {
+	records  []CheckpointRecord
+	requests []CheckpointHistoryRequest
+}
+
+func (history *pagingCheckpointHistory) ListCheckpoints(_ context.Context, request CheckpointHistoryRequest) ([]CheckpointRecord, error) {
+	history.requests = append(history.requests, request)
+	records := make([]CheckpointRecord, 0, request.Limit)
+	for _, record := range history.records {
+		if record.RunID != request.RunID || record.Version <= request.AfterVersion {
+			continue
+		}
+		records = append(records, record)
+		if request.Limit > 0 && len(records) == request.Limit {
+			break
+		}
+	}
+	return records, nil
+}
 
 func (history staticCheckpointHistory) ListCheckpoints(context.Context, CheckpointHistoryRequest) ([]CheckpointRecord, error) {
 	return append([]CheckpointRecord(nil), history...), nil

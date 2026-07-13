@@ -60,6 +60,8 @@ Configured stores are authoritative and fail closed. A Checkpointer must claim a
 
 Workflow recovery is at-least-once. Heartbeats prevent a healthy long-running node from being reclaimed solely because its original lease expired, but no checkpoint protocol can make an arbitrary external API exactly-once. Calls that send messages, charge money, mutate inventory, or invoke billable models must use an idempotency key stable across resume, such as `RunInfo.RunID + "/" + RunInfo.ActivationID`.
 
+High-level history projections are bounded. `ListSessionRuns` and a zero-limit `Snapshot` read at most 10,000 records by default; checkpoint history and Retry/Jump scans use 256-record pages and return `workflow.ErrHistoryLimitExceeded` instead of silently returning an incomplete result. Use an explicit `SnapshotRequest.Limit` for timeline pagination and archive or purge terminal Runs before they outgrow the control-history bound.
+
 ## Minimal Workflow
 
 ```go
