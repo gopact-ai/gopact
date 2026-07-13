@@ -367,17 +367,15 @@ func (f buildOptionFunc) applyBuildOption(cfg *buildConfig) {
 }
 
 type buildConfig struct {
-	maxSteps           int
-	maxParallelism     int
-	checkpointer       Checkpointer
-	checkpointerSet    bool
-	checkpointerStrict bool
-	journal            runlog.Log
-	journalSet         bool
-	journalStrict      bool
-	plugins            []Plugin
-	topologyVersion    string
-	topologySet        bool
+	maxSteps        int
+	maxParallelism  int
+	checkpointer    Checkpointer
+	checkpointerSet bool
+	journal         runlog.Log
+	journalSet      bool
+	plugins         []Plugin
+	topologyVersion string
+	topologySet     bool
 }
 
 // WithMaxSteps limits scheduler steps for one workflow run.
@@ -403,12 +401,9 @@ func WithCheckpointer(store Checkpointer) BuildOption {
 }
 
 // WithStrictCheckpointer configures checkpoint persistence whose failure stops the run.
+// Deprecated: WithCheckpointer is fail-closed.
 func WithStrictCheckpointer(store Checkpointer) BuildOption {
-	return buildOptionFunc(func(cfg *buildConfig) {
-		cfg.checkpointer = store
-		cfg.checkpointerSet = true
-		cfg.checkpointerStrict = true
-	})
+	return WithCheckpointer(store)
 }
 
 // WithJournal configures best-effort append-only workflow history persistence.
@@ -420,12 +415,9 @@ func WithJournal(journal runlog.Log) BuildOption {
 }
 
 // WithStrictJournal configures history persistence whose failure stops the run.
+// Deprecated: WithJournal is fail-closed.
 func WithStrictJournal(journal runlog.Log) BuildOption {
-	return buildOptionFunc(func(cfg *buildConfig) {
-		cfg.journal = journal
-		cfg.journalSet = true
-		cfg.journalStrict = true
-	})
+	return WithJournal(journal)
 }
 
 // WithTopologyVersion identifies workflow behavior not visible in the graph shape.
@@ -523,13 +515,9 @@ func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
 	store := NewMemoryStore()
 	if !cfg.checkpointerSet {
 		cfg.checkpointer = store
-	} else if cfg.checkpointer != nil {
-		cfg.checkpointer = &mirroredCheckpointer{primary: store, mirror: cfg.checkpointer, strict: cfg.checkpointerStrict}
 	}
 	if !cfg.journalSet {
 		cfg.journal = store
-	} else if cfg.journal != nil {
-		cfg.journal = mirroredLog{primary: store, mirror: cfg.journal, strict: cfg.journalStrict}
 	}
 	return &Workflow[I, O]{
 		name:            name,

@@ -353,26 +353,30 @@ func TestWorkflowAcceptsSharedMemoryStoreDirectly(t *testing.T) {
 	}
 }
 
-func TestWorkflowExternalStoreFailuresAreBestEffortByDefault(t *testing.T) {
+func TestWorkflowExternalStoreFailureStopsRun(t *testing.T) {
 	storeErr := errors.New("store unavailable")
 	store := failingWorkflowStore{err: storeErr}
-	wf := New[string, string]("best-effort-store", WithCheckpointer(store), WithJournal(store))
-	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
-		return input + "!", nil
-	})
-	wf.Entry(plan)
-	wf.Exit(plan)
+	tests := []struct {
+		name   string
+		option BuildOption
+	}{
+		{name: "checkpointer", option: WithCheckpointer(store)},
+		{name: "journal", option: WithJournal(store)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wf := New[string, string]("authoritative-"+test.name, test.option)
+			node := testNode(wf, "node", func(_ context.Context, input string) (string, error) {
+				return input, nil
+			})
+			wf.Entry(node)
+			wf.Exit(node)
 
-	output, err := wf.Invoke(context.Background(), "ok", gopact.WithRunID("best-effort-store-run"))
-	if err != nil || output != "ok!" {
-		t.Fatalf("Invoke() = %q, %v, want ok! despite external store failure", output, err)
-	}
-	snapshot, err := wf.Snapshot(context.Background(), SnapshotRequest{RunID: "best-effort-store-run"})
-	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
-	}
-	if len(snapshot.Timeline) == 0 || len(snapshot.Checkpoints) == 0 {
-		t.Fatalf("Snapshot() = %+v, want authoritative in-process facts", snapshot)
+			_, err := wf.Invoke(context.Background(), "input")
+			if !errors.Is(err, storeErr) {
+				t.Fatalf("Invoke() error = %v, want %v", err, storeErr)
+			}
+		})
 	}
 }
 
