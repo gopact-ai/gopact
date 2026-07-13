@@ -132,6 +132,49 @@ func TestWorkflowEventSinkCannotSynchronouslyReenterEmitter(t *testing.T) {
 	}
 }
 
+type reentrantFencedStore struct {
+	*MemoryStore
+	once       sync.Once
+	reentryErr error
+}
+
+func (store *reentrantFencedStore) AppendFenced(ctx context.Context, record runlog.Record, fence runlog.Fence) error {
+	store.once.Do(func() {
+		store.reentryErr = Emit(ctx, gopact.Event{Type: "audit.reentrant"})
+	})
+	return store.MemoryStore.AppendFenced(ctx, record, fence)
+}
+
+func TestWorkflowFencedJournalCannotSynchronouslyReenterEmitter(t *testing.T) {
+	store := &reentrantFencedStore{MemoryStore: NewMemoryStore()}
+	wf := New[string, string](
+		"fenced-journal-reentry",
+		WithCheckpointer(store),
+		WithJournal(store),
+	)
+	node := testNode(wf, "work", func(ctx context.Context, input string) (string, error) {
+		return input, Emit(ctx, gopact.Event{Type: "audit.custom"})
+	})
+	wf.Entry(node)
+	wf.Exit(node)
+	done := make(chan error, 1)
+	go func() {
+		_, err := wf.Invoke(context.Background(), "input")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Invoke() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Invoke() deadlocked when a fenced journal called Emit")
+	}
+	if store.reentryErr == nil || store.reentryErr.Error() != "workflow: event emitter is not available" {
+		t.Fatalf("Emit() error = %v, want event emitter unavailable", store.reentryErr)
+	}
+}
+
 func TestWorkflowJournalReconciliationConfirmsEachPage(t *testing.T) {
 	wf := New[string, string]("journal-pages")
 	node := testNode(wf, "work", func(_ context.Context, input string) (string, error) { return input, nil })
@@ -291,6 +334,183 @@ func TestWorkflowCommittedAndCustomEventsReserveSequenceSerially(t *testing.T) {
 	}
 }
 
+func TestWorkflowStaleOwnerCannotAppendRawEventAfterClaim(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventType string
+	}{
+		{name: "custom", eventType: "audit.custom"},
+		{name: "guard rejected", eventType: EventGuardRejected},
+		{name: "node failed", eventType: EventNodeFailed},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wf := New[string, string]("stale-owner-fence")
+			node := testNode(wf, "work", func(_ context.Context, input string) (string, error) { return input, nil })
+			wf.Entry(node)
+			wf.Exit(node)
+			compiled, err := wf.compile()
+			if err != nil {
+				t.Fatalf("Compile() error = %v", err)
+			}
+			state := journalReconcileTestState()
+			past := time.Now().Add(-time.Minute)
+			payload, err := encodeCheckpointPayloadWithMeta[string](
+				state,
+				nil,
+				1,
+				compiled.checkpointMeta(checkpointPayloadMeta{
+					OwnerID: "owner-old", LeaseExpiresAt: past, ClaimSequence: 1,
+				}),
+			)
+			if err != nil {
+				t.Fatalf("encodeCheckpointPayloadWithMeta() error = %v", err)
+			}
+			checkpoint := workflowCheckpointRecord(compiled, "run-1", 1, CheckpointRunning, payload)
+			checkpoint.OwnerID = "owner-old"
+			checkpoint.LeaseExpiresAt = past
+			checkpoint.ClaimSequence = 1
+			store := NewMemoryCheckpointer()
+			if err := store.Create(t.Context(), checkpoint); err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+			claimed := checkpoint
+			claimed.OwnerID = "owner-new"
+			claimed.LeaseExpiresAt = time.Now().Add(time.Minute)
+			claimed.ClaimSequence++
+			if err := store.Claim(t.Context(), claimed, checkpoint.Version); err != nil {
+				t.Fatalf("Claim() error = %v", err)
+			}
+			journal := runlog.NewMemoryLog()
+			compiled.checkpointer = store
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			execution := workflowExecution[string, string]{
+				compiled: compiled, ctx: ctx, sessionID: checkpoint.SessionID, runID: checkpoint.RunID,
+				ownerID: "owner-old", state: state, step: 1, checkpoint: checkpoint, cancel: cancel,
+				eventSinks: []gopact.EventSink{
+					strictWorkflowEventSink{EventSink: runlog.NewSink(journal)},
+				},
+				executionEpoch: 1, controlOrigin: "natural",
+			}
+			if err := execution.emitEvent(gopact.Event{Type: test.eventType}); !errors.Is(err, ErrCheckpointLeaseLost) {
+				t.Fatalf("emitEvent() error = %v, want ErrCheckpointLeaseLost", err)
+			}
+			if cause := context.Cause(ctx); !errors.Is(cause, ErrCheckpointLeaseLost) {
+				t.Fatalf("execution context cause = %v, want ErrCheckpointLeaseLost", cause)
+			}
+			records, err := journal.List(t.Context(), runlog.Query{RunID: checkpoint.RunID})
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			if len(records) != 0 {
+				t.Fatalf("records = %+v, want stale owner to append nothing", records)
+			}
+		})
+	}
+}
+
+func TestWorkflowObservedEventUsesFencedJournalWithoutCheckpointHistory(t *testing.T) {
+	wf := New[string, string]("fenced-observed-event")
+	node := testNode(wf, "work", func(_ context.Context, input string) (string, error) { return input, nil })
+	wf.Entry(node)
+	wf.Exit(node)
+	compiled, err := wf.compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	state := journalReconcileTestState()
+	now := time.Now().UTC()
+	payload, err := encodeCheckpointPayloadWithMeta[string](
+		state,
+		nil,
+		1,
+		compiled.checkpointMeta(checkpointPayloadMeta{
+			OwnerID: "owner-1", LeaseExpiresAt: now.Add(time.Minute), ClaimSequence: 1,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("encodeCheckpointPayloadWithMeta() error = %v", err)
+	}
+	checkpoint := workflowCheckpointRecord(compiled, "run-1", 1, CheckpointRunning, payload)
+	checkpoint.OwnerID = "owner-1"
+	checkpoint.LeaseExpiresAt = now.Add(time.Minute)
+	checkpoint.ClaimSequence = 1
+	store := NewMemoryStore()
+	if err := store.Create(t.Context(), checkpoint); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	compiled.checkpointer = store
+	compiled.journal = store
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	execution := workflowExecution[string, string]{
+		compiled: compiled, ctx: ctx, sessionID: checkpoint.SessionID, runID: checkpoint.RunID,
+		ownerID: checkpoint.OwnerID, state: state, step: 1, checkpoint: checkpoint, cancel: cancel,
+		eventSinks: []gopact.EventSink{
+			strictWorkflowEventSink{EventSink: runlog.NewSink(store)},
+		},
+		executionEpoch: 1, controlOrigin: "natural",
+	}
+	if err := execution.emitEvent(gopact.Event{Type: "audit.custom"}); err != nil {
+		t.Fatalf("emitEvent() error = %v", err)
+	}
+	loaded, err := store.Load(t.Context(), checkpoint.RunID)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	history, err := store.ListCheckpoints(t.Context(), CheckpointHistoryRequest{RunID: checkpoint.RunID})
+	if err != nil {
+		t.Fatalf("ListCheckpoints() error = %v", err)
+	}
+	records, err := store.List(t.Context(), runlog.Query{RunID: checkpoint.RunID})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if loaded.Version != checkpoint.Version || len(history) != 1 {
+		t.Fatalf("checkpoint version = %d history = %d, want version %d and one state snapshot", loaded.Version, len(history), checkpoint.Version)
+	}
+	if len(records) != 1 || records[0].EventType != "audit.custom" || records[0].Sequence != 1 {
+		t.Fatalf("records = %+v, want one fenced custom event", records)
+	}
+}
+
+func TestWorkflowSeparateFencedStoresUseCheckpointReservation(t *testing.T) {
+	checkpointStore := NewMemoryStore()
+	journalStore := NewMemoryStore()
+	wf := New[string, string](
+		"separate-fenced-stores",
+		WithCheckpointer(checkpointStore),
+		WithJournal(journalStore),
+	)
+	node := testNode(wf, "work", func(ctx context.Context, input string) (string, error) {
+		return input, Emit(ctx, gopact.Event{Type: "audit.custom"})
+	})
+	wf.Entry(node)
+	wf.Exit(node)
+	if _, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("run-separate-stores")); err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	records, err := journalStore.List(t.Context(), runlog.Query{RunID: "run-separate-stores"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	found := false
+	for _, record := range records {
+		found = found || record.EventType == "audit.custom"
+	}
+	if !found {
+		t.Fatalf("records = %+v, want custom event through separate journal", records)
+	}
+	history, err := checkpointStore.ListCheckpoints(t.Context(), CheckpointHistoryRequest{RunID: "run-separate-stores"})
+	if err != nil {
+		t.Fatalf("ListCheckpoints() error = %v", err)
+	}
+	if len(history) < 2 {
+		t.Fatalf("checkpoint history = %d, want fallback reservation versions", len(history))
+	}
+}
+
 func journalReconcileTestState() runState {
 	return runState{
 		queue:        []activation{{id: "act-1", node: "work", input: "input"}},
@@ -418,5 +638,165 @@ func TestWorkflowResumeReconcilesJournalAheadOfCheckpoint(t *testing.T) {
 		if record.Sequence != want {
 			t.Fatalf("record %d sequence = %d, want %d", index, record.Sequence, want)
 		}
+	}
+}
+
+func TestWorkflowResumeReplaysNodeFailedBeforeRetryingActivation(t *testing.T) {
+	store := NewMemoryStore()
+	wantErr := errors.New("node failed")
+	bodyRuns := 0
+	wf := New[string, string](
+		"node-failed-reconcile",
+		WithStrictCheckpointer(store),
+		WithStrictJournal(store),
+	)
+	node := testNode(wf, "work", func(_ context.Context, _ string) (string, error) {
+		bodyRuns++
+		return "", wantErr
+	})
+	wf.Entry(node)
+	wf.Exit(node)
+
+	sinkErr := errors.New("node failed consumer unavailable")
+	_, err := wf.Invoke(
+		t.Context(),
+		"input",
+		gopact.WithRunID("run-node-failed"),
+		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+			if event.Type == EventNodeFailed {
+				return sinkErr
+			}
+			return nil
+		}),
+	)
+	if !errors.Is(err, sinkErr) {
+		t.Fatalf("Invoke() error = %v, want %v", err, sinkErr)
+	}
+	records, err := store.List(t.Context(), runlog.Query{RunID: "run-node-failed"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	var firstFailure runlog.Record
+	for _, record := range records {
+		if record.EventType == EventNodeFailed {
+			firstFailure = record
+			break
+		}
+	}
+	if firstFailure.Sequence == 0 {
+		t.Fatalf("records = %+v, want journaled node.failed", records)
+	}
+
+	var resumed []gopact.Event
+	_, err = wf.Invoke(
+		t.Context(),
+		"ignored",
+		WithResume(ResumeRequest{RunID: "run-node-failed"}),
+		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+			resumed = append(resumed, event)
+			return nil
+		}),
+	)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Resume() error = %v, want %v", err, wantErr)
+	}
+	if bodyRuns != 2 {
+		t.Fatalf("body runs = %d, want failed activation retried once", bodyRuns)
+	}
+	if len(resumed) == 0 || resumed[0].Type != EventNodeFailed ||
+		resumed[0].Sequence != firstFailure.Sequence || resumed[0].RevisionID != firstFailure.RevisionID ||
+		!resumed[0].Timestamp.Equal(firstFailure.Timestamp) {
+		t.Fatalf("resumed events = %+v, want original node.failed replayed first", resumed)
+	}
+	records, err = store.List(t.Context(), runlog.Query{RunID: "run-node-failed"})
+	if err != nil {
+		t.Fatalf("List() after Resume error = %v", err)
+	}
+	matchingSequence := 0
+	for _, record := range records {
+		if record.Sequence == firstFailure.Sequence {
+			matchingSequence++
+		}
+	}
+	if matchingSequence != 1 {
+		t.Fatalf("sequence %d records = %d, want one idempotent journal record", firstFailure.Sequence, matchingSequence)
+	}
+}
+
+func TestWorkflowResumeReplaysGuardRejectedBeforeRetryingActivation(t *testing.T) {
+	store := NewMemoryStore()
+	guardCalls := 0
+	bodyRuns := 0
+	wf := New[string, string](
+		"guard-rejected-reconcile",
+		WithStrictCheckpointer(store),
+		WithStrictJournal(store),
+	)
+	node := testNode(wf, "work", func(_ context.Context, input string) (string, error) {
+		bodyRuns++
+		return input, nil
+	})
+	node.Guard(BeforeRun("policy", GuardFunc[string, string](
+		func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+			guardCalls++
+			return GuardReject[string, string]{
+				Rejection: gopact.GuardRejection{Reason: "blocked"},
+			}, nil
+		},
+	)))
+	wf.Entry(node)
+	wf.Exit(node)
+
+	sinkErr := errors.New("guard rejected consumer unavailable")
+	_, err := wf.Invoke(
+		t.Context(),
+		"input",
+		gopact.WithRunID("run-guard-rejected"),
+		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+			if event.Type == EventGuardRejected {
+				return sinkErr
+			}
+			return nil
+		}),
+	)
+	if !errors.Is(err, sinkErr) {
+		t.Fatalf("Invoke() error = %v, want %v", err, sinkErr)
+	}
+	records, err := store.List(t.Context(), runlog.Query{RunID: "run-guard-rejected"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	var firstRejection runlog.Record
+	for _, record := range records {
+		if record.EventType == EventGuardRejected {
+			firstRejection = record
+			break
+		}
+	}
+	if firstRejection.Sequence == 0 {
+		t.Fatalf("records = %+v, want journaled guard.rejected", records)
+	}
+
+	var resumed []gopact.Event
+	_, err = wf.Invoke(
+		t.Context(),
+		"ignored",
+		WithResume(ResumeRequest{RunID: "run-guard-rejected"}),
+		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+			resumed = append(resumed, event)
+			return nil
+		}),
+	)
+	var rejection gopact.GuardRejection
+	if !errors.As(err, &rejection) {
+		t.Fatalf("Resume() error = %v, want GuardRejection", err)
+	}
+	if guardCalls != 2 || bodyRuns != 0 {
+		t.Fatalf("guard calls = %d body runs = %d, want 2 and 0", guardCalls, bodyRuns)
+	}
+	if len(resumed) == 0 || resumed[0].Type != EventGuardRejected ||
+		resumed[0].Sequence != firstRejection.Sequence || resumed[0].RevisionID != firstRejection.RevisionID ||
+		!resumed[0].Timestamp.Equal(firstRejection.Timestamp) {
+		t.Fatalf("resumed events = %+v, want original guard.rejected replayed first", resumed)
 	}
 }

@@ -287,8 +287,16 @@ type CheckpointLease struct {
 
 // Checkpointer persists workflow checkpoint records.
 // Claim must atomically replace only an expired running or interrupted head.
-// RenewLease must atomically extend only the current running claim when both
-// OwnerID and ClaimSequence still match, and return ErrCheckpointLeaseLost otherwise.
+// RenewLease must atomically extend only the current unexpired running claim
+// when both OwnerID and ClaimSequence still match, and return
+// ErrCheckpointLeaseLost otherwise. A stale renewal may be a no-op but must
+// never shorten the current expiry.
+// Save and Finish must fence writes against the current head's non-empty,
+// unexpired ownership claim. A concurrent RenewLease must never be overwritten
+// by an older snapshot; clearing OwnerID with the current ClaimSequence is an
+// explicit release, interrupt, or terminal transition. An owner/claim mismatch
+// or expired current lease must return ErrCheckpointLeaseLost before reporting
+// a version conflict; a same-claim CAS conflict returns ErrCheckpointConflict.
 type Checkpointer interface {
 	Create(ctx context.Context, rec CheckpointRecord) error
 	Load(ctx context.Context, runID string) (CheckpointRecord, error)
@@ -1061,7 +1069,10 @@ func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Conte
 	if err == nil || ctx.Err() != nil {
 		return nil
 	}
-	cause := fmt.Errorf("%w: renew checkpoint lease: %w", ErrCheckpointLeaseLost, err)
+	cause := markCheckpointLeaseError(
+		fmt.Errorf("%w: renew checkpoint lease: %w", ErrCheckpointLeaseLost, err),
+		CheckpointRecord{RunID: lease.RunID, OwnerID: lease.OwnerID, ClaimSequence: lease.ClaimSequence},
+	)
 	execution.cancel(errors.Join(context.Canceled, cause))
 	return cause
 }
@@ -1238,20 +1249,22 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 	if execution.compiled.checkpointer == nil || record.ID == "" || checkpointTerminal(record.Status) {
 		return nil
 	}
-	meta, err := decodeCheckpointPayloadMeta[O](record.Payload)
+	payload, err := decodeCheckpointPayload[O](record.Payload)
 	if err != nil {
 		return err
 	}
-	if record.OwnerID == "" && record.LeaseExpiresAt.IsZero() && meta.OwnerID == "" && meta.LeaseExpiresAt.IsZero() {
+	if record.OwnerID == "" && record.LeaseExpiresAt.IsZero() &&
+		payload.OwnerID == "" && payload.LeaseExpiresAt.IsZero() {
 		return nil
 	}
+	meta := payload.meta()
 	meta.OwnerID = ""
 	meta.LeaseExpiresAt = time.Time{}
-	payload, err := encodeCheckpointPayloadWithMeta(execution.state, execution.outputs, execution.step, meta)
+	encoded, err := encodeCheckpointPayloadWithMeta(payload.state(), payload.Outputs, payload.NextStep, meta)
 	if err != nil {
 		return err
 	}
-	record.Payload = payload
+	record.Payload = encoded
 	record.OwnerID = ""
 	record.LeaseExpiresAt = time.Time{}
 	record.UpdatedAt = time.Now()
@@ -1301,7 +1314,100 @@ func (execution *workflowExecution[I, O]) emitEvent(event gopact.Event) error {
 func (execution *workflowExecution[I, O]) emit(ctx context.Context, event gopact.Event) error {
 	execution.eventMu.Lock()
 	defer execution.eventMu.Unlock()
-	return execution.emitLocked(ctx, event)
+	return execution.commitObservedEventLocked(ctx, event)
+}
+
+func (execution *workflowExecution[I, O]) commitObservedEventLocked(ctx context.Context, event gopact.Event) error {
+	if execution.checkpoint.ID == "" {
+		return execution.emitLocked(ctx, event)
+	}
+	if execution.sinkFailure != nil {
+		return execution.sinkFailure
+	}
+	if cause := context.Cause(execution.ctx); execution.matchesCheckpointLeaseError(cause) {
+		return cause
+	}
+	if journal, ok := execution.compiled.fencedJournal(); ok {
+		return execution.commitFencedObservedEvent(ctx, event, journal)
+	}
+	commitCtx := context.WithoutCancel(ctx)
+	pending := execution.runtimeEvent(event, execution.sequence+1)
+	replayStatus := replayStatusForEvent(event.Type)
+	request, err := execution.observedEventWriteRequest(&pending, replayStatus)
+	if err != nil {
+		return err
+	}
+	saved, err := execution.compiled.saveCheckpoint(commitCtx, request)
+	if err != nil {
+		return execution.cancelOnCheckpointLeaseError(err)
+	}
+	execution.checkpoint = saved
+	if err := execution.emitLocked(ctx, pending); err != nil {
+		return err
+	}
+	request, err = execution.observedEventWriteRequest(nil, replayStatus)
+	if err != nil {
+		return err
+	}
+	saved, err = execution.compiled.saveCheckpoint(commitCtx, request)
+	if err != nil {
+		return execution.cancelOnCheckpointLeaseError(err)
+	}
+	execution.checkpoint = saved
+	execution.replayStatus = replayStatus
+	return nil
+}
+
+func (execution *workflowExecution[I, O]) commitFencedObservedEvent(ctx context.Context, event gopact.Event, journal runlog.FencedLog) error {
+	execution.sequence++
+	event = execution.runtimeEvent(event, execution.sequence)
+	appendCtx := eventSinkContext{Context: context.WithoutCancel(ctx)}
+	err := journal.AppendFenced(appendCtx, runlog.RecordFromEvent(event), runlog.Fence{
+		OwnerID: execution.checkpoint.OwnerID, ClaimSequence: execution.checkpoint.ClaimSequence,
+	})
+	if errors.Is(err, ErrCheckpointLeaseLost) {
+		leaseError := markCheckpointLeaseError(err, execution.checkpoint)
+		execution.cancel(errors.Join(context.Canceled, leaseError))
+		return leaseError
+	}
+	if err != nil {
+		return execution.recordSinkFailure(err)
+	}
+	if err := (eventDelivery{event: event}).emit(ctx, execution.replaySinks); err != nil {
+		return execution.recordSinkFailure(err)
+	}
+	execution.eventCursor = execution.sequence
+	return nil
+}
+
+func (c *compiled[I, O]) fencedJournal() (runlog.FencedLog, bool) {
+	journal, ok := c.journal.(runlog.FencedLog)
+	if !ok || !sameStoreInstance(c.checkpointer, c.journal) {
+		return nil, false
+	}
+	return journal, true
+}
+
+func sameStoreInstance(left, right any) bool {
+	leftValue := reflect.ValueOf(left)
+	rightValue := reflect.ValueOf(right)
+	if !leftValue.IsValid() || !rightValue.IsValid() || leftValue.Type() != rightValue.Type() ||
+		leftValue.Kind() != reflect.Pointer {
+		return false
+	}
+	return !leftValue.IsNil() && leftValue.Pointer() == rightValue.Pointer()
+}
+
+func (execution *workflowExecution[I, O]) observedEventWriteRequest(pending *gopact.Event, replayStatus ReplayStatus) (checkpointWriteRequest[O], error) {
+	payload, err := decodeCheckpointPayload[O](execution.checkpoint.Payload)
+	if err != nil {
+		return checkpointWriteRequest[O]{}, err
+	}
+	return checkpointWriteRequest[O]{
+		Record: execution.checkpoint, State: payload.state(), Outputs: payload.Outputs,
+		NextStep: payload.NextStep, EventCursor: execution.eventCursor,
+		PendingEvent: pending, PendingTerm: payload.PendingTerm, ReplayStatus: replayStatus,
+	}, nil
 }
 
 func (execution *workflowExecution[I, O]) emitLocked(ctx context.Context, event gopact.Event) error {
@@ -1947,6 +2053,13 @@ func (execution *workflowExecution[I, O]) handleError(cause error) error {
 	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
 		return err
 	}
+	if leaseCause := context.Cause(execution.ctx); execution.matchesCheckpointLeaseError(leaseCause) {
+		return leaseCause
+	}
+	if execution.matchesCheckpointLeaseError(cause) {
+		execution.cancel(errors.Join(context.Canceled, cause))
+		return cause
+	}
 	if canceled := execution.cancellationCause(); canceled != nil {
 		return execution.cancelRun(canceled)
 	}
@@ -1957,11 +2070,14 @@ func (execution *workflowExecution[I, O]) handleError(cause error) error {
 }
 
 func (execution *workflowExecution[I, O]) cancellationCause() error {
+	if execution.ctx.Err() == nil {
+		return nil
+	}
 	cause := context.Cause(execution.ctx)
-	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+	if cause != nil {
 		return cause
 	}
-	return nil
+	return execution.ctx.Err()
 }
 
 func (execution *workflowExecution[I, O]) fail(cause error) error {
@@ -2197,6 +2313,39 @@ type checkpointWriteRequest[O any] struct {
 	PendingEvent *gopact.Event
 	PendingTerm  CheckpointStatus
 	ReplayStatus ReplayStatus
+}
+
+type checkpointLeaseError struct {
+	cause         error
+	runID         string
+	ownerID       string
+	claimSequence int64
+}
+
+func (err *checkpointLeaseError) Error() string { return err.cause.Error() }
+func (err *checkpointLeaseError) Unwrap() error { return err.cause }
+
+func markCheckpointLeaseError(err error, record CheckpointRecord) error {
+	if !errors.Is(err, ErrCheckpointLeaseLost) {
+		return err
+	}
+	return &checkpointLeaseError{
+		cause: err, runID: record.RunID, ownerID: record.OwnerID, claimSequence: record.ClaimSequence,
+	}
+}
+
+func (execution *workflowExecution[I, O]) matchesCheckpointLeaseError(cause error) bool {
+	var leaseError *checkpointLeaseError
+	return errors.As(cause, &leaseError) && leaseError.runID == execution.runID &&
+		leaseError.ownerID == execution.checkpoint.OwnerID &&
+		leaseError.claimSequence == execution.checkpoint.ClaimSequence
+}
+
+func (execution *workflowExecution[I, O]) cancelOnCheckpointLeaseError(cause error) error {
+	if execution.matchesCheckpointLeaseError(cause) {
+		execution.cancel(errors.Join(context.Canceled, cause))
+	}
+	return cause
 }
 
 func (c *compiled[I, O]) prepareCheckpoint(ctx context.Context, req checkpointPrepareRequest[O]) (CheckpointRecord, error) {
@@ -2441,7 +2590,7 @@ func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWrite
 	next.ReplayStatus = req.ReplayStatus
 	next.UpdatedAt = now
 	if err := c.checkpointer.Save(ctx, next, req.Record.Version); err != nil {
-		return CheckpointRecord{}, err
+		return CheckpointRecord{}, markCheckpointLeaseError(err, req.Record)
 	}
 	next.Version++
 	return next, nil
@@ -2451,6 +2600,7 @@ func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpoint
 	if c.checkpointer == nil || req.Record.ID == "" {
 		return req.Record, nil
 	}
+	leaseRecord := req.Record
 	meta, err := decodeCheckpointPayloadMeta[O](req.Record.Payload)
 	if err != nil {
 		return CheckpointRecord{}, err
@@ -2475,7 +2625,7 @@ func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpoint
 	next.ReplayStatus = req.ReplayStatus
 	next.UpdatedAt = time.Now()
 	if err := c.checkpointer.Save(ctx, next, req.Record.Version); err != nil {
-		return CheckpointRecord{}, err
+		return CheckpointRecord{}, markCheckpointLeaseError(err, leaseRecord)
 	}
 	next.Version++
 	return next, nil

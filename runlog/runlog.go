@@ -30,6 +30,22 @@ type Log interface {
 	List(context.Context, Query) ([]Record, error)
 }
 
+// Fence identifies the workflow ownership claim authorizing one append.
+type Fence struct {
+	OwnerID       string
+	ClaimSequence int64
+}
+
+// FencedLog atomically validates workflow ownership and appends one record.
+// A combined workflow Store must serialize AppendFenced with Claim, RenewLease,
+// Save, Finish, and ownership release so none can change the checked claim
+// between validation and append. A rejected or expired fence must return the
+// workflow lease-lost sentinel expected by the caller.
+type FencedLog interface {
+	Log
+	AppendFenced(context.Context, Record, Fence) error
+}
+
 // Association identifies the historical point that created an independent fork.
 type Association struct {
 	SourceRunID    string
@@ -102,7 +118,15 @@ func (s Sink) Emit(ctx context.Context, event gopact.Event) error {
 	if s.log == nil {
 		return ErrNilLog
 	}
-	return s.log.Append(ctx, Record{
+	record := RecordFromEvent(event)
+	record.SourceRunID = s.association.SourceRunID
+	record.SourceEventSeq = s.association.SourceEventSeq
+	return s.log.Append(ctx, record)
+}
+
+// RecordFromEvent projects an event into its durable RunLog representation.
+func RecordFromEvent(event gopact.Event) Record {
+	return Record{
 		DefinitionID:         event.DefinitionID,
 		DefinitionVersion:    event.DefinitionVersion,
 		SessionID:            event.SessionID,
@@ -112,8 +136,6 @@ func (s Sink) Emit(ctx context.Context, event gopact.Event) error {
 		AttemptID:            event.AttemptID,
 		RevisionID:           event.RevisionID,
 		ParentRunID:          event.ParentRunID,
-		SourceRunID:          s.association.SourceRunID,
-		SourceEventSeq:       s.association.SourceEventSeq,
 		Sequence:             event.Sequence,
 		NodeExecutionVersion: event.NodeExecutionVersion,
 		ExecutionEpoch:       event.ExecutionEpoch,
@@ -125,7 +147,7 @@ func (s Sink) Emit(ctx context.Context, event gopact.Event) error {
 		Payload:              append(json.RawMessage(nil), event.Payload...),
 		PayloadRef:           event.PayloadRef,
 		Timestamp:            event.Timestamp,
-	})
+	}
 }
 
 // MemoryLog is an in-memory Log for tests and local execution views.

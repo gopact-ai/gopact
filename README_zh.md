@@ -60,7 +60,9 @@ wf := workflow.New[Input, Output](
 
 配置后的 Store 是权威数据源，写入失败会直接终止 Run。Checkpointer 必须支持原子抢占和续租；续租失败时，runtime 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。节点实现必须在 Context 被取消后及时停止。
 
-Workflow 恢复采用 at-least-once 语义。Heartbeat 可以避免健康的长耗时节点仅因原租约过期而被接管，但 checkpoint 协议无法让任意外部 API 自动获得 exactly-once 语义。发送消息、扣款、修改库存或调用计费模型时，必须使用跨 Resume 稳定的幂等键，例如 `RunInfo.RunID + "/" + RunInfo.ActivationID`。
+多实例持久化执行必须把同一个组合 Store 实例同时配置为 Checkpointer 和 Journal，并使用实现了 `runlog.FencedLog` 的 Store。这样 Store 可以在同一把锁或同一个数据库事务中校验当前 owner/claim 并追加 observed event，关闭 Claim 后旧 owner 继续物理写 journal 的窗口，同时避免每个 observed event 额外产生两份 checkpoint history。若 checkpoint 与 journal 是两个独立后端，runtime 会使用持久化 pending-event 进行恢复，但无法让跨后端的 owner 校验与物理 journal append 成为一个原子操作。
+
+Workflow 恢复采用 at-least-once 语义，journal 到事件消费者的投递同样是 at-least-once；消费者应使用 `(RunID, Sequence)` 或 `RevisionID` 等稳定事件身份去重。Heartbeat 可以避免健康的长耗时节点仅因原租约过期而被接管，但 checkpoint 协议无法让任意外部 API 自动获得 exactly-once 语义。发送消息、扣款、修改库存或调用计费模型时，必须使用跨 Resume 稳定的幂等键，例如 `RunInfo.RunID + "/" + RunInfo.ActivationID`。
 
 稳定 key 只有在两种模式下才能形成可靠保证：外部 API 原生按该 key 去重；或者业务在修改业务数据的同一数据库事务中，写入带唯一约束的 dedup/outbox 记录。`gopact` 不提供通用 outbox，也无法把自身 checkpoint 事务与任意远程 API 合并成一个原子事务。如果显式业务重试确实要再次产生副作用，必须为该操作生成新的 key，不能继续复用恢复幂等键。
 
