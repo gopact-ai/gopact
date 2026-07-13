@@ -49,6 +49,7 @@ const (
 	initialCorrelationEpoch           = 1
 	maxWorkflowEventPayloadBytes      = 64 << 10
 	maxWorkflowCheckpointPayloadBytes = 4 << 20
+	journalReconcilePageSize          = 256
 )
 
 type resumeOptionConflict struct{}
@@ -976,6 +977,7 @@ type workflowExecution[I, O any] struct {
 	ownerID        string
 	depth          int
 	eventSinks     []gopact.EventSink
+	replaySinks    []gopact.EventSink
 	childSinks     []gopact.EventSink
 	sequence       int64
 	eventCursor    int64
@@ -1105,7 +1107,8 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	}
 	defer c.unregisterRun(runID)
 	defer cancel(nil)
-	eventSinks := applyEventSinkWrappers(cfg.EventSinks, c.eventSinkWrappers)
+	replaySinks := applyEventSinkWrappers(cfg.EventSinks, c.eventSinkWrappers)
+	eventSinks := replaySinks
 	if c.journal != nil {
 		journalSink := runlog.NewSink(c.journal)
 		eventSinks = append([]gopact.EventSink{
@@ -1118,7 +1121,8 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		compiled: c, ctx: runCtx, input: input,
 		sessionID: sessionID, runID: runID, parentRunID: parentRunID,
 		ownerID: fmt.Sprintf("workflow-owner-%d", time.Now().UnixNano()), depth: depth,
-		eventSinks: eventSinks, childSinks: append([]gopact.EventSink(nil), cfg.EventSinks...), step: 1, cancel: cancel,
+		eventSinks: eventSinks, replaySinks: replaySinks,
+		childSinks: append([]gopact.EventSink(nil), cfg.EventSinks...), step: 1, cancel: cancel,
 		outputSink: sink, replayStatus: ReplayUnknown, executionEpoch: 1, controlOrigin: "natural",
 	}
 	defer execution.stopLiveIterators()
@@ -1295,6 +1299,10 @@ func (execution *workflowExecution[I, O]) emitEvent(event gopact.Event) error {
 func (execution *workflowExecution[I, O]) emit(ctx context.Context, event gopact.Event) error {
 	execution.eventMu.Lock()
 	defer execution.eventMu.Unlock()
+	return execution.emitLocked(ctx, event)
+}
+
+func (execution *workflowExecution[I, O]) emitLocked(ctx context.Context, event gopact.Event) error {
 	if execution.sinkFailure != nil {
 		return execution.sinkFailure
 	}
@@ -1302,12 +1310,16 @@ func (execution *workflowExecution[I, O]) emit(ctx context.Context, event gopact
 	event = execution.runtimeEvent(event, execution.sequence)
 	delivery := eventDelivery{event: event}
 	if err := delivery.emit(ctx, execution.eventSinks); err != nil {
-		execution.sinkFailure = err
-		execution.cancel(err)
-		return err
+		return execution.recordSinkFailure(err)
 	}
 	execution.eventCursor = execution.sequence
 	return nil
+}
+
+func (execution *workflowExecution[I, O]) recordSinkFailure(err error) error {
+	execution.sinkFailure = err
+	execution.cancel(err)
+	return err
 }
 
 func (execution *workflowExecution[I, O]) runtimeEvent(event gopact.Event, sequence int64) gopact.Event {
@@ -1375,6 +1387,9 @@ func (execution *workflowExecution[I, O]) restore() (bool, error) {
 	if err != nil || complete {
 		return complete, err
 	}
+	if err := execution.reconcileJournal(); err != nil {
+		return false, err
+	}
 	return false, execution.emitEvent(gopact.Event{Type: EventCheckpointLoaded})
 }
 
@@ -1411,13 +1426,19 @@ func (execution *workflowExecution[I, O]) applyResumePayload(payload checkpointP
 }
 
 func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm CheckpointStatus, pending gopact.Event) error {
+	execution.eventMu.Lock()
+	defer execution.eventMu.Unlock()
+	if pending.Sequence != execution.sequence+1 {
+		return fmt.Errorf(
+			"workflow: pending event sequence %d follows %d",
+			pending.Sequence,
+			execution.sequence,
+		)
+	}
 	pending = execution.runtimeEvent(pending, pending.Sequence)
-	delivery := eventDelivery{event: pending}
-	if err := delivery.emit(execution.ctx, execution.eventSinks); err != nil {
+	if err := execution.emitLocked(execution.ctx, pending); err != nil {
 		return err
 	}
-	execution.sequence = pending.Sequence
-	execution.eventCursor = pending.Sequence
 	terminal := pendingTerm
 	if terminal == "" && checkpointTerminal(status) {
 		terminal = status
@@ -1435,6 +1456,96 @@ func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm Chec
 	}
 	execution.checkpoint = saved
 	return nil
+}
+
+func (execution *workflowExecution[I, O]) reconcileJournal() error {
+	if execution.compiled.journal == nil {
+		return nil
+	}
+	execution.eventMu.Lock()
+	defer execution.eventMu.Unlock()
+	for {
+		records, err := execution.compiled.journal.List(execution.ctx, runlog.Query{
+			RunID: execution.runID, After: execution.eventCursor, Limit: journalReconcilePageSize,
+		})
+		if err != nil {
+			return fmt.Errorf("workflow: reconcile journal: %w", err)
+		}
+		if len(records) == 0 {
+			return nil
+		}
+		if err := execution.replayJournalPageLocked(records); err != nil {
+			return err
+		}
+		saved, err := execution.compiled.saveCheckpoint(
+			execution.ctx,
+			execution.writeRequest(execution.step, nil),
+		)
+		if err != nil {
+			return fmt.Errorf("workflow: confirm reconciled journal cursor: %w", err)
+		}
+		execution.checkpoint = saved
+		if len(records) < journalReconcilePageSize {
+			return nil
+		}
+	}
+}
+
+func (execution *workflowExecution[I, O]) replayJournalPageLocked(records []runlog.Record) error {
+	for _, record := range records {
+		if err := execution.validateJournalRecord(record, execution.eventCursor+1); err != nil {
+			return err
+		}
+		if err := (eventDelivery{event: eventFromRunLogRecord(record)}).emit(execution.ctx, execution.replaySinks); err != nil {
+			return execution.recordSinkFailure(err)
+		}
+		execution.sequence = record.Sequence
+		execution.eventCursor = record.Sequence
+	}
+	return nil
+}
+
+func (execution *workflowExecution[I, O]) validateJournalRecord(record runlog.Record, sequence int64) error {
+	switch {
+	case record.Sequence != sequence:
+		return fmt.Errorf("workflow: reconcile journal: sequence %d follows %d", record.Sequence, sequence-1)
+	case record.SessionID != execution.sessionID || record.RunID != execution.runID:
+		return fmt.Errorf("workflow: reconcile journal: sequence %d has inconsistent session or run identity", record.Sequence)
+	case record.DefinitionID != execution.compiled.name || record.DefinitionVersion != execution.compiled.topologyVersion:
+		return fmt.Errorf("workflow: reconcile journal: sequence %d has inconsistent workflow identity", record.Sequence)
+	case record.ParentRunID != execution.parentRunID || record.ExecutionEpoch != execution.executionEpoch ||
+		record.SourceRevisionID != execution.sourceRevision:
+		return fmt.Errorf("workflow: reconcile journal: sequence %d has inconsistent execution identity", record.Sequence)
+	case record.RevisionID == "" || record.EventType == "" || record.Source == "" || record.Timestamp.IsZero():
+		return fmt.Errorf("workflow: reconcile journal: sequence %d is incomplete", record.Sequence)
+	default:
+		return nil
+	}
+}
+
+func eventFromRunLogRecord(record runlog.Record) gopact.Event {
+	return gopact.Event{
+		DefinitionID:         record.DefinitionID,
+		DefinitionVersion:    record.DefinitionVersion,
+		SessionID:            record.SessionID,
+		RunID:                record.RunID,
+		NodeID:               record.NodeID,
+		ActivationID:         record.ActivationID,
+		AttemptID:            record.AttemptID,
+		RevisionID:           record.RevisionID,
+		ParentRunID:          record.ParentRunID,
+		NodeExecutionVersion: record.NodeExecutionVersion,
+		ExecutionEpoch:       record.ExecutionEpoch,
+		SourceRevisionID:     record.SourceRevisionID,
+		Sequence:             record.Sequence,
+		Type:                 record.EventType,
+		Source:               record.Source,
+		Origin:               record.Origin,
+		Timestamp:            record.Timestamp,
+		Summary:              record.Summary,
+		Payload:              append(json.RawMessage(nil), record.Payload...),
+		PayloadRef:           record.PayloadRef,
+	}
 }
 
 func resumedCheckpointResult(status CheckpointStatus) (bool, error) {
@@ -1462,8 +1573,13 @@ func (execution *workflowExecution[I, O]) startAttempt(resume bool) error {
 }
 
 func (execution *workflowExecution[I, O]) commitRunningEvent(event gopact.Event, nextStep int) error {
+	execution.eventMu.Lock()
+	defer execution.eventMu.Unlock()
 	if execution.checkpoint.ID == "" {
-		return execution.emitEvent(event)
+		return execution.emitLocked(execution.ctx, event)
+	}
+	if execution.sinkFailure != nil {
+		return execution.sinkFailure
 	}
 	pending := execution.runtimeEvent(event, execution.sequence+1)
 	replayStatus := replayStatusForEvent(event.Type)
@@ -1474,7 +1590,7 @@ func (execution *workflowExecution[I, O]) commitRunningEvent(event gopact.Event,
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitEvent(pending); err != nil {
+	if err := execution.emitLocked(execution.ctx, pending); err != nil {
 		return err
 	}
 	request = execution.writeRequest(nextStep, nil)
@@ -1737,6 +1853,11 @@ func (execution *workflowExecution[I, O]) finishInterrupt(state runState, waits 
 }
 
 func (execution *workflowExecution[I, O]) commitInterruptEvent(state runState, waits []checkpointInterrupt, event gopact.Event) error {
+	execution.eventMu.Lock()
+	defer execution.eventMu.Unlock()
+	if execution.sinkFailure != nil {
+		return execution.sinkFailure
+	}
 	pending := execution.runtimeEvent(event, execution.sequence+1)
 	request := execution.writeRequest(execution.step, &pending)
 	request.State = state
@@ -1745,7 +1866,7 @@ func (execution *workflowExecution[I, O]) commitInterruptEvent(state runState, w
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitEvent(pending); err != nil {
+	if err := execution.emitLocked(execution.ctx, pending); err != nil {
 		return err
 	}
 	request = execution.writeRequest(execution.step, nil)
@@ -1875,8 +1996,13 @@ func (execution *workflowExecution[I, O]) commitTerminal(status CheckpointStatus
 }
 
 func (execution *workflowExecution[I, O]) commitTerminalEvent(ctx context.Context, status CheckpointStatus, event gopact.Event) error {
+	execution.eventMu.Lock()
+	defer execution.eventMu.Unlock()
 	if execution.checkpoint.ID == "" {
-		return execution.emit(ctx, event)
+		return execution.emitLocked(ctx, event)
+	}
+	if execution.sinkFailure != nil {
+		return execution.sinkFailure
 	}
 	pending := execution.runtimeEvent(event, execution.sequence+1)
 	request := execution.writeRequest(execution.step, &pending)
@@ -1886,7 +2012,7 @@ func (execution *workflowExecution[I, O]) commitTerminalEvent(ctx context.Contex
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emit(ctx, pending); err != nil {
+	if err := execution.emitLocked(ctx, pending); err != nil {
 		return err
 	}
 	return execution.compiled.finishCheckpoint(ctx, status, execution.writeRequest(execution.step, nil))
@@ -2952,6 +3078,9 @@ type eventDelivery struct {
 
 func (delivery eventDelivery) emit(ctx context.Context, sinks []gopact.EventSink) error {
 	event := delivery.event
+	if ctx != nil {
+		ctx = eventSinkContext{Context: ctx}
+	}
 	for _, sink := range sinks {
 		if sink == nil {
 			continue
@@ -2961,6 +3090,15 @@ func (delivery eventDelivery) emit(ctx context.Context, sinks []gopact.EventSink
 		}
 	}
 	return nil
+}
+
+type eventSinkContext struct{ context.Context }
+
+func (ctx eventSinkContext) Value(key any) any {
+	if _, internalEmitter := key.(eventEmitterContextKey); internalEmitter {
+		return nil
+	}
+	return ctx.Context.Value(key)
 }
 
 func applyEventSinkWrappers(sinks []gopact.EventSink, wrappers []EventSinkWrapper) []gopact.EventSink {
