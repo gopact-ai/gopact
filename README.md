@@ -56,7 +56,7 @@ wf := workflow.New[Input, Output](
 )
 ```
 
-Configured stores are authoritative and fail closed. A Checkpointer must renew leases atomically; the runtime cancels the node context with `workflow.ErrCheckpointLeaseLost` when renewal fails. Node implementations must stop promptly when their Context is canceled.
+Configured stores are authoritative and fail closed. A Checkpointer must claim and renew leases atomically; the runtime cancels the node context with `workflow.ErrCheckpointLeaseLost` when renewal fails. Node implementations must stop promptly when their Context is canceled.
 
 Workflow recovery is at-least-once. Heartbeats prevent a healthy long-running node from being reclaimed solely because its original lease expired, but no checkpoint protocol can make an arbitrary external API exactly-once. Calls that send messages, charge money, mutate inventory, or invoke billable models must use an idempotency key stable across resume, such as `RunInfo.RunID + "/" + RunInfo.ActivationID`.
 

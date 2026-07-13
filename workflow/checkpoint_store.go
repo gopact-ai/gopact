@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gopact-ai/gopact/runlog"
 )
@@ -83,6 +84,47 @@ func (store *MemoryCheckpointer) Load(ctx context.Context, runID string) (Checkp
 		return CheckpointRecord{}, ErrCheckpointNotFound
 	}
 	return cloneCheckpointRecord(record), nil
+}
+
+// Claim atomically replaces an expired running or interrupted checkpoint.
+func (store *MemoryCheckpointer) Claim(ctx context.Context, candidate CheckpointRecord, version int64) error {
+	if store == nil {
+		return errors.New("workflow: checkpointer is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if version <= 0 || candidate.Version != version || candidate.Status != CheckpointRunning ||
+		candidate.OwnerID == "" || candidate.ClaimSequence <= 0 || candidate.LeaseExpiresAt.IsZero() {
+		return fmt.Errorf("%w: invalid checkpoint claim", ErrInvalidCheckpoint)
+	}
+	if err := validateCheckpointRecord(candidate); err != nil {
+		return err
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	now := time.Now()
+	if !candidate.LeaseExpiresAt.After(now) {
+		return fmt.Errorf("%w: checkpoint claim lease must be in the future", ErrInvalidCheckpoint)
+	}
+	current, exists := store.records[candidate.RunID]
+	if !exists {
+		return ErrCheckpointNotFound
+	}
+	if current.Version != version || (current.Status != CheckpointRunning && current.Status != CheckpointInterrupted) {
+		return ErrCheckpointConflict
+	}
+	if !sameCheckpointIdentity(current, candidate) {
+		return ErrCheckpointMismatch
+	}
+	if current.LeaseExpiresAt.After(now) || candidate.ClaimSequence != current.ClaimSequence+1 {
+		return ErrCheckpointConflict
+	}
+	candidate = cloneCheckpointRecord(candidate)
+	candidate.Version = version + 1
+	store.records[candidate.RunID] = candidate
+	store.history[candidate.RunID] = append(store.history[candidate.RunID], cloneCheckpointRecord(candidate))
+	return nil
 }
 
 // RenewLease extends the current ownership claim without creating a history version.

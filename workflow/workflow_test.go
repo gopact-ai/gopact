@@ -3516,6 +3516,7 @@ func workflowCheckpointRecord[I, O any](compiled *compiled[I, O], runID string, 
 }
 
 type recordingCheckpointer struct {
+	mu       sync.Mutex
 	records  map[string]CheckpointRecord
 	created  []CheckpointRecord
 	saved    []CheckpointRecord
@@ -3532,6 +3533,10 @@ func (store failingWorkflowStore) Create(context.Context, CheckpointRecord) erro
 
 func (store failingWorkflowStore) Load(context.Context, string) (CheckpointRecord, error) {
 	return CheckpointRecord{}, store.err
+}
+
+func (store failingWorkflowStore) Claim(context.Context, CheckpointRecord, int64) error {
+	return store.err
 }
 
 func (store failingWorkflowStore) Save(context.Context, CheckpointRecord, int64) error {
@@ -3588,6 +3593,8 @@ func (f testRunOptionFunc) ApplyRunOption(cfg *gopact.RunConfig) {
 }
 
 func (r *recordingCheckpointer) Create(_ context.Context, rec CheckpointRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.records == nil {
 		r.records = map[string]CheckpointRecord{}
 	}
@@ -3597,6 +3604,8 @@ func (r *recordingCheckpointer) Create(_ context.Context, rec CheckpointRecord) 
 }
 
 func (r *recordingCheckpointer) Load(_ context.Context, runID string) (CheckpointRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	rec, ok := r.records[runID]
 	if !ok {
 		return CheckpointRecord{}, ErrCheckpointNotFound
@@ -3604,7 +3613,40 @@ func (r *recordingCheckpointer) Load(_ context.Context, runID string) (Checkpoin
 	return rec, nil
 }
 
+func (r *recordingCheckpointer) Claim(_ context.Context, candidate CheckpointRecord, version int64) error {
+	if version <= 0 || candidate.Version != version || candidate.Status != CheckpointRunning ||
+		candidate.OwnerID == "" || candidate.ClaimSequence <= 0 || candidate.LeaseExpiresAt.IsZero() {
+		return ErrInvalidCheckpoint
+	}
+	if err := validateCheckpointRecord(candidate); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	if !candidate.LeaseExpiresAt.After(now) {
+		return ErrInvalidCheckpoint
+	}
+	current, ok := r.records[candidate.RunID]
+	if !ok {
+		return ErrCheckpointNotFound
+	}
+	if current.Version != version || (current.Status != CheckpointRunning && current.Status != CheckpointInterrupted) ||
+		current.LeaseExpiresAt.After(now) || candidate.ClaimSequence != current.ClaimSequence+1 {
+		return ErrCheckpointConflict
+	}
+	if !sameCheckpointIdentity(current, candidate) {
+		return ErrCheckpointMismatch
+	}
+	candidate.Version = version + 1
+	r.saved = append(r.saved, candidate)
+	r.records[candidate.RunID] = candidate
+	return nil
+}
+
 func (r *recordingCheckpointer) Save(_ context.Context, rec CheckpointRecord, version int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.records == nil {
 		r.records = map[string]CheckpointRecord{}
 	}
@@ -3615,6 +3657,8 @@ func (r *recordingCheckpointer) Save(_ context.Context, rec CheckpointRecord, ve
 }
 
 func (r *recordingCheckpointer) Finish(_ context.Context, rec CheckpointRecord, _ int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.records == nil {
 		r.records = map[string]CheckpointRecord{}
 	}
@@ -3624,6 +3668,8 @@ func (r *recordingCheckpointer) Finish(_ context.Context, rec CheckpointRecord, 
 }
 
 func (r *recordingCheckpointer) RenewLease(_ context.Context, lease CheckpointLease) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	rec, ok := r.records[lease.RunID]
 	if !ok || rec.Status != CheckpointRunning || rec.OwnerID != lease.OwnerID || rec.ClaimSequence != lease.ClaimSequence {
 		return ErrCheckpointLeaseLost

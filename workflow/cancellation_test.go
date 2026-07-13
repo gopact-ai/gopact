@@ -66,6 +66,13 @@ func (store *contextCheckpointer) Load(ctx context.Context, runID string) (Check
 	return store.recordingCheckpointer.Load(ctx, runID)
 }
 
+func (store *contextCheckpointer) Claim(ctx context.Context, record CheckpointRecord, version int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return store.recordingCheckpointer.Claim(ctx, record, version)
+}
+
 func (store *contextCheckpointer) Save(ctx context.Context, record CheckpointRecord, version int64) error {
 	if err := ctx.Err(); err != nil {
 		return err

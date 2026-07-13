@@ -56,7 +56,7 @@ wf := workflow.New[Input, Output](
 )
 ```
 
-配置后的 Store 是权威数据源，写入失败会直接终止 Run。Checkpointer 必须支持原子续租；续租失败时，runtime 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。节点实现必须在 Context 被取消后及时停止。
+配置后的 Store 是权威数据源，写入失败会直接终止 Run。Checkpointer 必须支持原子抢占和续租；续租失败时，runtime 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。节点实现必须在 Context 被取消后及时停止。
 
 Workflow 恢复采用 at-least-once 语义。Heartbeat 可以避免健康的长耗时节点仅因原租约过期而被接管，但 checkpoint 协议无法让任意外部 API 自动获得 exactly-once 语义。发送消息、扣款、修改库存或调用计费模型时，必须使用跨 Resume 稳定的幂等键，例如 `RunInfo.RunID + "/" + RunInfo.ActivationID`。
 

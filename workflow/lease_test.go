@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -10,6 +11,107 @@ import (
 
 	"github.com/gopact-ai/gopact"
 )
+
+func TestMemoryCheckpointerClaimRejectsLeaseRenewedAfterLoad(t *testing.T) {
+	ctx := context.Background()
+	past := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	future := time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC)
+	store := NewMemoryCheckpointer()
+	record := CheckpointRecord{
+		ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: "example",
+		TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+		Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: []byte(`{"state":"ready"}`),
+		OwnerID: "owner-a", ClaimSequence: 1, LeaseExpiresAt: past,
+		CreatedAt: past, UpdatedAt: past,
+	}
+	if err := store.Create(ctx, record); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	stale, err := store.Load(ctx, record.RunID)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if err := store.RenewLease(ctx, CheckpointLease{
+		RunID: record.RunID, OwnerID: "owner-a", ClaimSequence: 1, ExpiresAt: future,
+	}); err != nil {
+		t.Fatalf("RenewLease() error = %v", err)
+	}
+	stale.OwnerID = "owner-b"
+	stale.LeaseExpiresAt = future
+	stale.ClaimSequence++
+	if err := store.Claim(ctx, stale, stale.Version); !errors.Is(err, ErrCheckpointConflict) {
+		t.Fatalf("Claim() error = %v, want ErrCheckpointConflict", err)
+	}
+	loaded, err := store.Load(ctx, record.RunID)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.OwnerID != "owner-a" || !loaded.LeaseExpiresAt.Equal(future) || loaded.ClaimSequence != 1 || loaded.Version != 1 {
+		t.Fatalf("Load() = %+v, want owner-a expiry %v claim sequence 1 version 1", loaded, future)
+	}
+}
+
+func TestMemoryCheckpointerClaimAllowsOneConcurrentClaimant(t *testing.T) {
+	ctx := context.Background()
+	past := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	future := time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC)
+	store := NewMemoryCheckpointer()
+	record := CheckpointRecord{
+		ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: "example",
+		TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+		Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: []byte(`{"state":"ready"}`),
+		OwnerID: "expired-owner", ClaimSequence: 1, LeaseExpiresAt: past,
+		CreatedAt: past, UpdatedAt: past,
+	}
+	if err := store.Create(ctx, record); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	head, err := store.Load(ctx, record.RunID)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var wait sync.WaitGroup
+	for _, ownerID := range []string{"owner-a", "owner-b"} {
+		candidate := head
+		candidate.OwnerID = ownerID
+		candidate.LeaseExpiresAt = future
+		candidate.ClaimSequence++
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			results <- store.Claim(ctx, candidate, head.Version)
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+
+	succeeded, conflicted := 0, 0
+	for err := range results {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrCheckpointConflict):
+			conflicted++
+		default:
+			t.Fatalf("Claim() error = %v", err)
+		}
+	}
+	if succeeded != 1 || conflicted != 1 {
+		t.Fatalf("Claim() results = %d succeeded, %d conflicted; want 1 and 1", succeeded, conflicted)
+	}
+	loaded, err := store.Load(ctx, record.RunID)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.Version != head.Version+1 || loaded.ClaimSequence != head.ClaimSequence+1 {
+		t.Fatalf("Load() = version %d claim sequence %d, want %d and %d", loaded.Version, loaded.ClaimSequence, head.Version+1, head.ClaimSequence+1)
+	}
+}
 
 func TestMemoryCheckpointerRenewLease(t *testing.T) {
 	now := time.Now().UTC()

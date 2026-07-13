@@ -283,11 +283,13 @@ type CheckpointLease struct {
 }
 
 // Checkpointer persists workflow checkpoint records.
+// Claim must atomically replace only an expired running or interrupted head.
 // RenewLease must atomically extend only the current running claim when both
 // OwnerID and ClaimSequence still match, and return ErrCheckpointLeaseLost otherwise.
 type Checkpointer interface {
 	Create(ctx context.Context, rec CheckpointRecord) error
 	Load(ctx context.Context, runID string) (CheckpointRecord, error)
+	Claim(ctx context.Context, candidate CheckpointRecord, version int64) error
 	Save(ctx context.Context, rec CheckpointRecord, version int64) error
 	Finish(ctx context.Context, rec CheckpointRecord, version int64) error
 	RenewLease(ctx context.Context, lease CheckpointLease) error
@@ -2241,7 +2243,7 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 	next.LeaseExpiresAt = payload.LeaseExpiresAt
 	next.ClaimSequence = payload.ClaimSequence
 	next.UpdatedAt = now
-	if err := c.checkpointer.Save(ctx, next, rec.Version); err != nil {
+	if err := c.checkpointer.Claim(ctx, next, rec.Version); err != nil {
 		return CheckpointRecord{}, err
 	}
 	next.Version++
