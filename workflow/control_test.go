@@ -175,6 +175,39 @@ func TestWorkflowTerminalResumeRejectsMalformedPendingEventWithoutWrites(t *test
 	}
 }
 
+func TestWorkflowTerminalResumeIgnoresInvalidPayloadAndLineageWithoutWrites(t *testing.T) {
+	statuses := []CheckpointStatus{CheckpointCompleted, CheckpointFailed, CheckpointTerminated, CheckpointCanceled}
+	corruptions := []struct {
+		name   string
+		mutate func(*CheckpointRecord)
+	}{
+		{name: "corrupt payload", mutate: func(record *CheckpointRecord) { record.Payload = []byte("{") }},
+		{name: "source mismatch", mutate: func(record *CheckpointRecord) {
+			record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID = "other-run", 7, "other-revision"
+		}},
+	}
+	for _, status := range statuses {
+		for _, corruption := range corruptions {
+			t.Run(string(status)+"/"+corruption.name, func(t *testing.T) {
+				wf, store, _ := createTerminalRun(t, status)
+				record, err := store.Load(t.Context(), "source-run")
+				if err != nil {
+					t.Fatal(err)
+				}
+				corruption.mutate(&record)
+				store.MemoryCheckpointer.restore(record)
+				before := loadRunFacts(t, store, "source-run")
+
+				_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "source-run"}))
+				if !errors.Is(err, ErrCheckpointConflict) {
+					t.Fatalf("terminal Resume() error = %v, want ErrCheckpointConflict", err)
+				}
+				assertRunFactsUnchanged(t, store, "source-run", before)
+			})
+		}
+	}
+}
+
 func injectTerminalPendingEvent(t *testing.T, store *MemoryStore, status CheckpointStatus) {
 	t.Helper()
 	record, err := store.Load(t.Context(), "source-run")

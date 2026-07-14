@@ -2666,13 +2666,6 @@ func (c *compiled[I, O]) prepareResumeCheckpoint(ctx context.Context, req checkp
 	if err := c.validateCheckpointRecordIdentity(record); err != nil {
 		return CheckpointRecord{}, err
 	}
-	meta, err := decodeCheckpointPayloadMeta[O](record.Payload)
-	if err != nil {
-		return CheckpointRecord{}, err
-	}
-	if err := validateCheckpointSourceIdentity(record, meta); err != nil {
-		return CheckpointRecord{}, err
-	}
 	if req.SessionID != "" && record.SessionID != req.SessionID {
 		return CheckpointRecord{}, fmt.Errorf(
 			"%w: checkpoint session %q does not match %q",
@@ -2683,12 +2676,23 @@ func (c *compiled[I, O]) prepareResumeCheckpoint(ctx context.Context, req checkp
 	}
 	switch record.Status {
 	case CheckpointRunning, CheckpointInterrupted:
-		return c.claimCheckpoint(ctx, record, req.OwnerID, req.Resume)
+		return c.activeResumeCheckpoint(ctx, record, req)
 	case CheckpointCompleted, CheckpointFailed, CheckpointCanceled, CheckpointTerminated:
 		return c.terminalResumeCheckpoint(record)
 	default:
 		return CheckpointRecord{}, fmt.Errorf("workflow: checkpoint status %q cannot resume", record.Status)
 	}
+}
+
+func (c *compiled[I, O]) activeResumeCheckpoint(ctx context.Context, record CheckpointRecord, req checkpointPrepareRequest[O]) (CheckpointRecord, error) {
+	meta, err := decodeCheckpointPayloadMeta[O](record.Payload)
+	if err != nil {
+		return CheckpointRecord{}, err
+	}
+	if err := validateCheckpointSourceIdentity(record, meta); err != nil {
+		return CheckpointRecord{}, err
+	}
+	return c.claimCheckpoint(ctx, record, req.OwnerID, req.Resume)
 }
 
 func validateCheckpointSourceIdentity(record CheckpointRecord, meta checkpointPayloadMeta) error {

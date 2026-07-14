@@ -130,6 +130,66 @@ func TestWorkflowResumeRejectsCheckpointSourceLineageMismatchBeforeMutation(t *t
 	}
 }
 
+func TestWorkflowActiveResumeStillValidatesPayloadAndSourceLineage(t *testing.T) {
+	statuses := []CheckpointStatus{CheckpointRunning, CheckpointInterrupted}
+	for _, status := range statuses {
+		t.Run(string(status)+"/corrupt payload", func(t *testing.T) {
+			wf, store := interruptedSessionWorkflow(t, "active-corrupt-"+string(status))
+			interruptSessionWorkflow(t, wf, "run-1", "session-1")
+			record, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.Status = status
+			record.Payload = []byte("{")
+			store.restore(record)
+			before, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
+			if err == nil || errors.Is(err, ErrCheckpointConflict) || !strings.Contains(err.Error(), "decode checkpoint payload") {
+				t.Fatalf("active Resume() error = %v, want payload decode error", err)
+			}
+			after, loadErr := store.Load(t.Context(), "run-1")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("checkpoint mutated after decode error\nbefore: %+v\nafter: %+v", before, after)
+			}
+		})
+		t.Run(string(status)+"/source mismatch", func(t *testing.T) {
+			wf, store := interruptedSessionWorkflow(t, "active-lineage-"+string(status))
+			interruptSessionWorkflow(t, wf, "run-1", "session-1")
+			record, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.Status = status
+			record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID = "other-run", 7, "other-revision"
+			store.restore(record)
+			before, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
+			if !errors.Is(err, ErrCheckpointMismatch) {
+				t.Fatalf("active Resume() error = %v, want ErrCheckpointMismatch", err)
+			}
+			after, loadErr := store.Load(t.Context(), "run-1")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("checkpoint mutated after lineage mismatch\nbefore: %+v\nafter: %+v", before, after)
+			}
+		})
+	}
+}
+
 func TestWorkflowResumeRejectsSchemaV1Checkpoint(t *testing.T) {
 	wf, store := interruptedSessionWorkflow(t, "schema-v1")
 	interruptSessionWorkflow(t, wf, "run-1", "session-1")
