@@ -115,7 +115,7 @@ func (a *ModelAccumulator) Response() (gopact.ModelResponse, error) {
 		intent = gopact.ToolCallIntent{Calls: normalizeToolCalls(a.toolCalls)}
 	}
 	return gopact.ModelResponse{
-		Message: gopact.Message{Role: "assistant", Parts: append([]gopact.MessagePart(nil), a.parts...)},
+		Message: gopact.Message{Role: gopact.MessageRoleAssistant, Parts: append([]gopact.MessagePart(nil), a.parts...)},
 		Intent:  intent,
 	}, nil
 }
@@ -176,7 +176,7 @@ func (p *ProtocolPipeline) Write(frame gopact.OutputFrame) error {
 			text = string(frame.Bytes)
 		}
 		if text != "" {
-			p.acc.parts = append(p.acc.parts, gopact.MessagePart{Type: "text", Text: text})
+			p.acc.parts = append(p.acc.parts, gopact.MessagePart{Type: gopact.MessagePartTypeText, Text: text})
 		}
 	}
 	return nil

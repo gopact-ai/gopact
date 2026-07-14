@@ -99,7 +99,7 @@ func (n *Node[I, O]) EachIter[TI, TO any](target *Node[TI, TO], iterFn func(cont
 	var cfg iterConfig[TI]
 	for _, opt := range opts {
 		if opt != nil {
-			opt(&cfg)
+			opt.applyIterOption(&cfg)
 		}
 	}
 	d.deliveries = append(d.deliveries, delivery{

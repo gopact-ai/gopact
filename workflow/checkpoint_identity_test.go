@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gopact-ai/gopact"
-	"github.com/gopact-ai/gopact/runlog"
 )
 
 func TestWorkflowResumeRestoresCheckpointSessionID(t *testing.T) {
@@ -81,6 +80,116 @@ func TestWorkflowResumeAcceptsMatchingExplicitSessionID(t *testing.T) {
 	}
 }
 
+func TestWorkflowResumeRejectsCheckpointSourceLineageMismatchBeforeMutation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*CheckpointRecord)
+	}{
+		{name: "source run", mutate: func(record *CheckpointRecord) { record.SourceRunID = "other" }},
+		{name: "source event", mutate: func(record *CheckpointRecord) { record.SourceEventSeq = 1 }},
+		{name: "source revision", mutate: func(record *CheckpointRecord) { record.SourceRevisionID = "other" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wf, store := interruptedSessionWorkflow(t, "source-lineage-"+strings.ReplaceAll(test.name, " ", "-"))
+			interruptSessionWorkflow(t, wf, "run-1", "session-1")
+			record, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload, err := decodeCheckpointPayload[RunInfo](record.Payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			meta := payload.meta()
+			meta.SourceRunID, meta.SourceEventSeq, meta.SourceRevisionID = "source-run", 7, "source-revision"
+			record.Payload, err = encodeCheckpointPayloadWithMeta(payload.state(), payload.Outputs, payload.NextStep, meta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID = "source-run", 7, "source-revision"
+			test.mutate(&record)
+			store.restore(record)
+			before, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
+			if !errors.Is(err, ErrCheckpointMismatch) {
+				t.Fatalf("Resume() error = %v, want ErrCheckpointMismatch", err)
+			}
+			after, loadErr := store.Load(t.Context(), "run-1")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("checkpoint mutated after lineage mismatch\nbefore: %+v\nafter: %+v", before, after)
+			}
+		})
+	}
+}
+
+func TestWorkflowActiveResumeStillValidatesPayloadAndSourceLineage(t *testing.T) {
+	statuses := []CheckpointStatus{CheckpointRunning, CheckpointInterrupted}
+	for _, status := range statuses {
+		t.Run(string(status)+"/corrupt payload", func(t *testing.T) {
+			wf, store := interruptedSessionWorkflow(t, "active-corrupt-"+string(status))
+			interruptSessionWorkflow(t, wf, "run-1", "session-1")
+			record, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.Status = status
+			record.Payload = []byte("{")
+			store.restore(record)
+			before, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
+			if err == nil || errors.Is(err, ErrCheckpointConflict) || !strings.Contains(err.Error(), "decode checkpoint payload") {
+				t.Fatalf("active Resume() error = %v, want payload decode error", err)
+			}
+			after, loadErr := store.Load(t.Context(), "run-1")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("checkpoint mutated after decode error\nbefore: %+v\nafter: %+v", before, after)
+			}
+		})
+		t.Run(string(status)+"/source mismatch", func(t *testing.T) {
+			wf, store := interruptedSessionWorkflow(t, "active-lineage-"+string(status))
+			interruptSessionWorkflow(t, wf, "run-1", "session-1")
+			record, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.Status = status
+			record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID = "other-run", 7, "other-revision"
+			store.restore(record)
+			before, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
+			if !errors.Is(err, ErrCheckpointMismatch) {
+				t.Fatalf("active Resume() error = %v, want ErrCheckpointMismatch", err)
+			}
+			after, loadErr := store.Load(t.Context(), "run-1")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("checkpoint mutated after lineage mismatch\nbefore: %+v\nafter: %+v", before, after)
+			}
+		})
+	}
+}
+
 func TestWorkflowResumeRejectsSchemaV1Checkpoint(t *testing.T) {
 	wf, store := interruptedSessionWorkflow(t, "schema-v1")
 	interruptSessionWorkflow(t, wf, "run-1", "session-1")
@@ -124,7 +233,7 @@ func TestWorkflowResumeRejectsCheckpointWithoutSessionID(t *testing.T) {
 func TestWorkflowCheckpointedAgentContextSurvivesInterrupt(t *testing.T) {
 	store := NewMemoryCheckpointer()
 	buildCalls := 0
-	wf := New[string, string]("checkpointed-agent-context", WithCheckpointer(store))
+	wf := New[string, string]("checkpointed-agent-context", WithStore(storeWithCheckpointer(store)))
 	build := wf.Node("build", func(_ context.Context, input string) (gopact.ModelRequest, error) {
 		buildCalls++
 		return gopact.ModelRequest{Messages: []gopact.Message{gopact.UserMessage(input)}}, nil
@@ -162,76 +271,6 @@ func TestWorkflowCheckpointedAgentContextSurvivesInterrupt(t *testing.T) {
 	}
 }
 
-func TestWorkflowRetryAndJumpCheckpointHistoryRetainSessionID(t *testing.T) {
-	tests := []struct {
-		name    string
-		control func(context.Context, *Workflow[string, string], *Node[string, string], runlog.Record) error
-	}{
-		{
-			name: "retry",
-			control: func(ctx context.Context, wf *Workflow[string, string], _ *Node[string, string], source runlog.Record) error {
-				_, err := wf.Retry(ctx, RetryRequest{
-					RunID: "run-1", NodeID: source.NodeID, NodeExecutionVersion: source.NodeExecutionVersion,
-				})
-				return err
-			},
-		},
-		{
-			name: "jump",
-			control: func(ctx context.Context, wf *Workflow[string, string], node *Node[string, string], source runlog.Record) error {
-				_, err := wf.JumpTo(ctx, node, JumpRequest{RunID: "run-1", FromRevisionID: source.RevisionID}, "jumped")
-				return err
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store := NewMemoryStore()
-			wf := New[string, string](
-				"control-session",
-				WithStrictCheckpointer(store),
-				WithStrictJournal(store),
-			)
-			node := wf.Node("node", func(_ context.Context, input string) (string, error) { return input, nil })
-			wf.Entry(node)
-			wf.Exit(node)
-			if _, err := wf.Invoke(context.Background(), "input",
-				gopact.WithRunID("run-1"), gopact.WithSessionID("session-1")); err != nil {
-				t.Fatalf("Invoke() error = %v", err)
-			}
-			records, err := store.List(context.Background(), runlog.Query{RunID: "run-1"})
-			if err != nil {
-				t.Fatalf("List() error = %v", err)
-			}
-			var source runlog.Record
-			for _, record := range records {
-				if record.EventType == EventNodeStarted {
-					source = record
-					break
-				}
-			}
-			if source.RevisionID == "" {
-				t.Fatal("node started source record not found")
-			}
-			if err := tt.control(context.Background(), wf, node, source); err != nil {
-				t.Fatalf("control error = %v", err)
-			}
-			history, err := store.ListCheckpoints(
-				context.Background(), CheckpointHistoryRequest{RunID: "run-1"},
-			)
-			if err != nil {
-				t.Fatalf("ListCheckpoints() error = %v", err)
-			}
-			for _, checkpoint := range history {
-				if checkpoint.SessionID != "session-1" || checkpoint.RunID != "run-1" {
-					t.Fatalf("checkpoint identity = %q/%q, want session-1/run-1", checkpoint.SessionID, checkpoint.RunID)
-				}
-			}
-		})
-	}
-}
-
 func interruptedSessionWorkflow(t *testing.T, name string) (*Workflow[string, RunInfo], *MemoryCheckpointer) {
 	t.Helper()
 	store := NewMemoryCheckpointer()
@@ -239,7 +278,7 @@ func interruptedSessionWorkflow(t *testing.T, name string) (*Workflow[string, Ru
 }
 
 func newInterruptedSessionWorkflow(name string, store Checkpointer) *Workflow[string, RunInfo] {
-	wf := New[string, RunInfo](name, WithCheckpointer(store))
+	wf := New[string, RunInfo](name, WithStore(storeWithCheckpointer(store)))
 	node := wf.Node("node", func(ctx context.Context, _ string) (RunInfo, error) {
 		return RunInfoFromContext(ctx), nil
 	})
@@ -267,7 +306,7 @@ func TestWorkflowResumeRejectsTopologyVersionMismatchBeforeExecution(t *testing.
 	createPendingIdentityCheckpoint(t, store, pendingCheckpointRequest{workflow: "topology", node: "first", runID: "topology-run"})
 	expireRecordingLease(t, store, "topology-run")
 	bodyRuns := 0
-	second := New[int, int]("topology", WithCheckpointer(store))
+	second := New[int, int]("topology", WithStore(storeWithCheckpointer(store)))
 	secondNode := second.Node("second", func(_ context.Context, input int) (int, error) {
 		bodyRuns++
 		return input, nil
@@ -310,7 +349,7 @@ func TestWorkflowResumeRejectsCheckpointSchemaMismatchBeforeExecution(t *testing
 		t.Fatalf("encodeCheckpointPayloadWithMeta() error = %v", err)
 	}
 	store.records["schema-run"] = record
-	wf := New[int, int]("schema", WithCheckpointer(store))
+	wf := New[int, int]("schema", WithStore(storeWithCheckpointer(store)))
 	node := wf.Node("node", func(_ context.Context, input int) (int, error) {
 		bodyRuns++
 		return input, nil
@@ -337,7 +376,7 @@ func TestWorkflowResumeRejectsExplicitTopologyVersionMismatch(t *testing.T) {
 	})
 	expireRecordingLease(t, store, "versioned-run")
 	bodyRuns := 0
-	wf := New[int, int]("versioned", WithCheckpointer(store), WithTopologyVersion("v2"))
+	wf := New[int, int]("versioned", WithStore(storeWithCheckpointer(store)), WithTopologyVersion("v2"))
 	node := wf.Node("node", func(_ context.Context, input int) (int, error) {
 		bodyRuns++
 		return input, nil
@@ -378,7 +417,7 @@ type pendingCheckpointRequest struct {
 
 func createPendingIdentityCheckpoint(t *testing.T, store *recordingCheckpointer, req pendingCheckpointRequest) *compiled[int, int] {
 	t.Helper()
-	options := append([]BuildOption{WithCheckpointer(store)}, req.options...)
+	options := append([]BuildOption{WithStore(storeWithCheckpointer(store))}, req.options...)
 	wf := New[int, int](req.workflow, options...)
 	run := req.run
 	if run == nil {

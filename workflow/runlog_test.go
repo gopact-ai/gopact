@@ -2,13 +2,190 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gopact-ai/gopact/runlog"
 )
+
+func TestRunLogSnapshotStoreRejectsNilStore(t *testing.T) {
+	for _, store := range []Store{nil, (*MemoryStore)(nil)} {
+		_, err := NewRunLogSnapshotStore(store).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
+		if err == nil || !strings.Contains(err.Error(), "store is nil") {
+			t.Fatalf("Load() error = %v, want nil store error", err)
+		}
+	}
+}
+
+func TestListSessionRunsHistoryLimit(t *testing.T) {
+	log := &pagingRunLog{}
+	for sequence := int64(1); sequence <= 3; sequence++ {
+		log.records = append(log.records, sessionRunRecord(
+			"run-a",
+			sequence,
+			EventWorkflowStarted,
+			time.Date(2026, time.July, 13, 12, 0, int(sequence), 0, time.UTC),
+		))
+	}
+	_, err := ListSessionRuns(context.Background(), log, SessionRunsRequest{SessionID: "session-1", MaxRecords: 2})
+	if !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("ListSessionRuns() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	if len(log.queries) != 1 || log.queries[0].Limit != 3 {
+		t.Fatalf("queries = %+v, want limit+1 query", log.queries)
+	}
+}
+
+func TestSnapshotDefaultHistoryLimit(t *testing.T) {
+	log := &pagingRunLog{}
+	for sequence := int64(1); sequence <= 10_001; sequence++ {
+		log.records = append(log.records, sessionRunRecord(
+			"run-1",
+			sequence,
+			"audit.custom",
+			time.Date(2026, time.July, 13, 12, 0, 0, int(sequence), time.UTC),
+		))
+	}
+	_, err := newTestRunLogSnapshotStore(log, staticCheckpointHistory{}).Load(
+		context.Background(),
+		SnapshotRequest{RunID: "run-1"},
+	)
+	if !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("Load() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	if len(log.queries) != 1 || log.queries[0].Limit != 10_001 {
+		t.Fatalf("queries = %+v, want default limit+1 query", log.queries)
+	}
+}
+
+func TestSnapshotPagesCheckpointHistory(t *testing.T) {
+	timeline := sessionRunRecord("run-1", 1, "audit.custom", time.Now().UTC())
+	history := &pagingCheckpointHistory{}
+	for version := int64(1); version <= 257; version++ {
+		confirmedSequence := version
+		if version == 257 {
+			confirmedSequence = 1
+		}
+		history.records = append(history.records, CheckpointRecord{
+			ID: fmt.Sprintf("checkpoint:run-1:%d", version), SessionID: "session-1", RunID: "run-1",
+			WorkflowName: "example", TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion,
+			Version: version, Status: CheckpointRunning, ConfirmedSequence: confirmedSequence,
+		})
+	}
+	snapshot, err := newTestRunLogSnapshotStore(
+		&pagingRunLog{records: []runlog.Record{timeline}},
+		history,
+	).Load(context.Background(), SnapshotRequest{RunID: "run-1", Limit: 1})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(history.requests) != 2 || history.requests[0].AfterVersion != 0 || history.requests[0].Limit != 256 ||
+		history.requests[1].AfterVersion != 256 || history.requests[1].Limit != 256 {
+		t.Fatalf("history requests = %+v, want pages after 0 and 256", history.requests)
+	}
+	if len(snapshot.Checkpoints) != 1 || snapshot.Checkpoints[0].Version != 257 || !snapshot.Checkpoints[0].Root {
+		t.Fatalf("snapshot checkpoints = %+v, want latest root checkpoint version 257", snapshot.Checkpoints)
+	}
+}
+
+func TestSnapshotDoesNotExposeCheckpointPayload(t *testing.T) {
+	const secret = "opaque-checkpoint-secret"
+	timeline := sessionRunRecord("run-1", 1, EventWorkflowStarted, time.Now().UTC())
+	checkpoint := CheckpointRecord{
+		ID: "checkpoint:run-1:1", SessionID: "session-1", RunID: "run-1",
+		WorkflowName: "example", TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion,
+		Version: 1, Status: CheckpointRunning, ConfirmedSequence: 1, Payload: []byte(secret),
+	}
+	snapshot, err := newTestRunLogSnapshotStore(
+		staticRunLog{records: []runlog.Record{timeline}},
+		staticCheckpointHistory{checkpoint},
+	).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if strings.Contains(string(encoded), secret) {
+		t.Fatalf("snapshot exposes checkpoint payload: %s", encoded)
+	}
+}
+
+func TestControlPagesHistory(t *testing.T) {
+	log := &pagingRunLog{}
+	for sequence := int64(1); sequence <= 257; sequence++ {
+		record := sessionRunRecord("run-1", sequence, "audit.custom", time.Now().UTC())
+		record.RevisionID = fmt.Sprintf("revision-%d", sequence)
+		log.records = append(log.records, record)
+	}
+	compiled := &compiled[string, string]{store: storeWithCheckpointerAndLog(NewMemoryCheckpointer(), log)}
+	record, err := compiled.controlSource(context.Background(), "run-1", "revision-257")
+	if err != nil {
+		t.Fatalf("controlSource() error = %v", err)
+	}
+	if record.Sequence != 257 {
+		t.Fatalf("controlSource() sequence = %d, want 257", record.Sequence)
+	}
+	if len(log.queries) != 2 || log.queries[0].After != 0 || log.queries[0].Limit != 256 ||
+		log.queries[1].After != 256 || log.queries[1].Limit != 256 {
+		t.Fatalf("queries = %+v, want pages after 0 and 256", log.queries)
+	}
+
+	history := &pagingCheckpointHistory{}
+	for version := int64(1); version <= 257; version++ {
+		confirmedSequence := version
+		if version == 257 {
+			confirmedSequence = 1
+		}
+		history.records = append(history.records, CheckpointRecord{
+			ID: fmt.Sprintf("checkpoint:run-1:%d", version), RunID: "run-1", Version: version,
+			ConfirmedSequence: confirmedSequence,
+		})
+	}
+	checkpoint, found, err := checkpointAtSequence(context.Background(), history, "run-1", 1)
+	if err != nil {
+		t.Fatalf("checkpointAtSequence() error = %v", err)
+	}
+	if !found || checkpoint.Version != 257 {
+		t.Fatalf("checkpointAtSequence() = %+v, %v, want latest version 257", checkpoint, found)
+	}
+	if len(history.requests) != 2 || history.requests[0].Limit != 256 || history.requests[1].AfterVersion != 256 {
+		t.Fatalf("checkpoint requests = %+v, want two pages", history.requests)
+	}
+}
+
+func TestControlAndCheckpointHistoryLimits(t *testing.T) {
+	log := &pagingRunLog{}
+	history := &pagingCheckpointHistory{}
+	for ordinal := int64(1); ordinal <= 10_001; ordinal++ {
+		record := sessionRunRecord("run-1", ordinal, "audit.custom", time.Now().UTC())
+		record.RevisionID = fmt.Sprintf("revision-%d", ordinal)
+		log.records = append(log.records, record)
+		history.records = append(history.records, CheckpointRecord{
+			ID: fmt.Sprintf("checkpoint:run-1:%d", ordinal), SessionID: "session-1", RunID: "run-1",
+			WorkflowName: "example", TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion,
+			Version: ordinal, Status: CheckpointRunning, ConfirmedSequence: ordinal,
+		})
+	}
+	compiled := &compiled[string, string]{store: storeWithCheckpointerAndLog(NewMemoryCheckpointer(), log)}
+	if _, err := compiled.controlSource(context.Background(), "run-1", "missing"); !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("controlSource() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	if _, _, err := checkpointAtSequence(context.Background(), history, "run-1", -1); !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("checkpointAtSequence() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+	history.requests = nil
+	snapshot := Snapshot{RunMeta: RunMeta{RunID: "run-1"}}
+	if err := snapshot.projectCheckpointHistory(context.Background(), history); !errors.Is(err, ErrHistoryLimitExceeded) {
+		t.Fatalf("projectCheckpointHistory() error = %v, want ErrHistoryLimitExceeded", err)
+	}
+}
 
 func TestListSessionRunsProjectsRunsInFirstEncounterOrder(t *testing.T) {
 	log := runlog.NewMemoryLog()
@@ -69,35 +246,77 @@ func TestListSessionRunsProjectsRunsInFirstEncounterOrder(t *testing.T) {
 	}
 }
 
-func TestListSessionRunsReopensTerminalStatus(t *testing.T) {
+func TestListSessionRunsTreatsRetryAndJumpAsNewRunStarts(t *testing.T) {
 	log := runlog.NewMemoryLog()
 	t0 := time.Date(2026, 7, 12, 1, 0, 0, 0, time.UTC)
-	for sequence, eventType := range []string{EventWorkflowStarted, EventWorkflowFailed, EventWorkflowRetryStarted} {
-		record := sessionRunRecord("run-a", int64(sequence+1), eventType, t0.Add(time.Duration(sequence)*time.Hour))
+	retry := sessionRunRecord("run-retry", 1, EventWorkflowRetryStarted, t0)
+	retry.SourceRunID, retry.SourceEventSeq, retry.SourceRevisionID = "run-source", 3, "revision-source"
+	jump := sessionRunRecord("run-jump", 1, EventWorkflowJumpStarted, t0.Add(time.Hour))
+	jump.SourceRunID, jump.SourceEventSeq, jump.SourceRevisionID = "run-source", 4, "revision-source"
+	for _, record := range []runlog.Record{retry, jump} {
 		if err := log.Append(context.Background(), record); err != nil {
-			t.Fatalf("Append() error = %v", err)
+			t.Fatal(err)
 		}
 	}
 	summaries, err := ListSessionRuns(context.Background(), log, SessionRunsRequest{SessionID: "session-1"})
 	if err != nil {
 		t.Fatalf("ListSessionRuns() error = %v", err)
 	}
-	if len(summaries) != 1 || summaries[0].Status != CheckpointRunning || !summaries[0].EndedAt.IsZero() {
-		t.Fatalf("retry summary = %+v, want reopened running status", summaries)
+	if len(summaries) != 2 || summaries[0].Status != CheckpointRunning || summaries[1].Status != CheckpointRunning {
+		t.Fatalf("summaries = %+v, want two independently running control runs", summaries)
 	}
+}
 
-	for sequence, eventType := range []string{EventWorkflowCompleted, EventWorkflowJumpStarted} {
-		record := sessionRunRecord("run-a", int64(sequence+4), eventType, t0.Add(time.Duration(sequence+3)*time.Hour))
-		if err := log.Append(context.Background(), record); err != nil {
-			t.Fatalf("Append() error = %v", err)
-		}
+func TestListSessionRunsRejectsLifecycleEventsAfterTerminal(t *testing.T) {
+	terminalEvents := []string{
+		EventWorkflowStarted, EventWorkflowResumed, EventWorkflowRetryStarted, EventWorkflowJumpStarted,
+		EventWorkflowInterrupted, EventWorkflowCompleted, EventWorkflowFailed, EventWorkflowTerminated, EventWorkflowCanceled,
 	}
-	summaries, err = ListSessionRuns(context.Background(), log, SessionRunsRequest{SessionID: "session-1"})
-	if err != nil {
-		t.Fatalf("second ListSessionRuns() error = %v", err)
+	for _, eventType := range terminalEvents {
+		t.Run(eventType, func(t *testing.T) {
+			t0 := time.Now().UTC()
+			started := sessionRunRecord("run-a", 1, EventWorkflowStarted, t0)
+			completed := sessionRunRecord("run-a", 2, EventWorkflowCompleted, t0.Add(time.Second))
+			postTerminal := sessionRunRecord("run-a", 3, eventType, t0.Add(2*time.Second))
+			_, err := ListSessionRuns(context.Background(), staticRunLog{records: []runlog.Record{started, completed, postTerminal}}, SessionRunsRequest{SessionID: "session-1"})
+			if err == nil {
+				t.Fatal("ListSessionRuns() error = nil, want inconsistent lifecycle error")
+			}
+		})
 	}
-	if summaries[0].Status != CheckpointRunning || !summaries[0].EndedAt.IsZero() {
-		t.Fatalf("jump summary = %+v, want reopened running status", summaries[0])
+}
+
+func TestListSessionRunsRejectsFactsAfterTerminal(t *testing.T) {
+	for _, eventType := range []string{EventNodeStarted, EventCheckpointLoaded, "audit.custom", "unknown.fact"} {
+		t.Run(eventType, func(t *testing.T) {
+			t0 := time.Now().UTC()
+			records := []runlog.Record{
+				sessionRunRecord("run-a", 1, EventWorkflowStarted, t0),
+				sessionRunRecord("run-a", 2, EventWorkflowCompleted, t0.Add(time.Second)),
+				sessionRunRecord("run-a", 3, eventType, t0.Add(2*time.Second)),
+			}
+			_, err := ListSessionRuns(t.Context(), staticRunLog{records: records}, SessionRunsRequest{SessionID: "session-1"})
+			if !errors.Is(err, errInconsistentRunLifecycle) {
+				t.Fatalf("ListSessionRuns() error = %v, want inconsistent lifecycle", err)
+			}
+
+			summary := RunSummary{Status: CheckpointCompleted, UpdatedAt: records[1].Timestamp, EndedAt: records[1].Timestamp}
+			before := summary
+			if err := summary.applyLifecycle(records[2]); !errors.Is(err, errInconsistentRunLifecycle) {
+				t.Fatalf("applyLifecycle() error = %v, want inconsistent lifecycle", err)
+			}
+			if summary != before {
+				t.Fatalf("terminal summary mutated: before=%+v after=%+v", before, summary)
+			}
+		})
+	}
+}
+
+func TestListSessionRunsRejectsFactsBeforeStart(t *testing.T) {
+	record := sessionRunRecord("run-a", 1, EventNodeStarted, time.Now().UTC())
+	_, err := ListSessionRuns(t.Context(), staticRunLog{records: []runlog.Record{record}}, SessionRunsRequest{SessionID: "session-1"})
+	if !errors.Is(err, errInconsistentRunLifecycle) {
+		t.Fatalf("ListSessionRuns() error = %v, want inconsistent lifecycle", err)
 	}
 }
 
@@ -137,11 +356,9 @@ func TestListSessionRunsTreatsInterruptedAsRecoverable(t *testing.T) {
 	}
 
 	appendEvent(4, EventWorkflowCompleted)
-	appendEvent(5, EventWorkflowRetryStarted)
-	appendEvent(6, EventWorkflowInterrupted)
-	reinterrupted := load()
-	if reinterrupted.Status != CheckpointInterrupted || !reinterrupted.EndedAt.IsZero() {
-		t.Fatalf("reinterrupted summary = %+v, want stale terminal end time cleared", reinterrupted)
+	completed := load()
+	if completed.Status != CheckpointCompleted || completed.EndedAt.IsZero() {
+		t.Fatalf("completed summary = %+v, want immutable terminal state", completed)
 	}
 }
 
@@ -186,6 +403,7 @@ func TestListSessionRunsRejectsInconsistentIdentity(t *testing.T) {
 func TestRunLogSnapshotStoreValidatesCheckpointSessionIdentity(t *testing.T) {
 	timeline := sessionRunRecord("run-1", 1, EventWorkflowStarted, time.Now().UTC())
 	timeline.SessionID = "session-a"
+	timeline.SourceRunID, timeline.SourceEventSeq, timeline.SourceRevisionID = "source-run", 7, "source-revision"
 	baseCheckpoint := CheckpointRecord{
 		ID:                "checkpoint:run-1",
 		SessionID:         "session-a",
@@ -196,6 +414,7 @@ func TestRunLogSnapshotStoreValidatesCheckpointSessionIdentity(t *testing.T) {
 		Version:           1,
 		Status:            CheckpointRunning,
 		ConfirmedSequence: 1,
+		SourceRunID:       "source-run", SourceEventSeq: 7, SourceRevisionID: "source-revision",
 	}
 	tests := []struct {
 		name    string
@@ -203,6 +422,33 @@ func TestRunLogSnapshotStoreValidatesCheckpointSessionIdentity(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "matching", history: []CheckpointRecord{baseCheckpoint}},
+		{
+			name: "different source run",
+			history: func() []CheckpointRecord {
+				record := baseCheckpoint
+				record.SourceRunID = "other"
+				return []CheckpointRecord{record}
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "different source event",
+			history: func() []CheckpointRecord {
+				record := baseCheckpoint
+				record.SourceEventSeq++
+				return []CheckpointRecord{record}
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "different source revision",
+			history: func() []CheckpointRecord {
+				record := baseCheckpoint
+				record.SourceRevisionID = "other"
+				return []CheckpointRecord{record}
+			}(),
+			wantErr: true,
+		},
 		{
 			name: "different run",
 			history: func() []CheckpointRecord {
@@ -244,7 +490,7 @@ func TestRunLogSnapshotStoreValidatesCheckpointSessionIdentity(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			snapshot, err := NewRunLogSnapshotStore(
+			snapshot, err := newTestRunLogSnapshotStore(
 				staticRunLog{records: []runlog.Record{timeline}},
 				staticCheckpointHistory(test.history),
 			).Load(context.Background(), SnapshotRequest{RunID: "run-1"})
@@ -264,6 +510,86 @@ func TestRunLogSnapshotStoreValidatesCheckpointSessionIdentity(t *testing.T) {
 	}
 }
 
+func TestRunLogSnapshotStoreRejectsInconsistentTimelineSourceLineage(t *testing.T) {
+	base := sessionRunRecord("run-1", 1, EventWorkflowStarted, time.Now().UTC())
+	base.SourceRunID, base.SourceEventSeq, base.SourceRevisionID = "source-run", 7, "source-revision"
+	tests := []struct {
+		name   string
+		mutate func(*runlog.Record)
+	}{
+		{name: "source run", mutate: func(record *runlog.Record) { record.SourceRunID = "other" }},
+		{name: "source event", mutate: func(record *runlog.Record) { record.SourceEventSeq++ }},
+		{name: "source revision", mutate: func(record *runlog.Record) { record.SourceRevisionID = "other" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			changed := base
+			changed.Sequence = 2
+			test.mutate(&changed)
+			_, err := newTestRunLogSnapshotStore(
+				staticRunLog{records: []runlog.Record{base, changed}}, staticCheckpointHistory{},
+			).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
+			if err == nil {
+				t.Fatal("Load() error = nil, want inconsistent lineage")
+			}
+		})
+	}
+}
+
+func TestRunLogSnapshotStoreRejectsConsistentlyInvalidTimelineSourceLineage(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*runlog.Record)
+	}{
+		{name: "run only", mutate: func(record *runlog.Record) { record.SourceRunID = "source-run" }},
+		{name: "event only", mutate: func(record *runlog.Record) { record.SourceEventSeq = 7 }},
+		{name: "revision only", mutate: func(record *runlog.Record) { record.SourceRevisionID = "source-revision" }},
+		{name: "negative event", mutate: func(record *runlog.Record) { record.SourceRunID, record.SourceEventSeq = "source-run", -1 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record := sessionRunRecord("run-1", 1, EventWorkflowStarted, time.Now().UTC())
+			test.mutate(&record)
+			_, err := newTestRunLogSnapshotStore(
+				staticRunLog{records: []runlog.Record{record}}, staticCheckpointHistory{},
+			).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
+			if !errors.Is(err, ErrCheckpointMismatch) {
+				t.Fatalf("Load() error = %v, want ErrCheckpointMismatch", err)
+			}
+		})
+	}
+}
+
+func TestRunLogSnapshotStoreRejectsConsistentlyInvalidCheckpointSourceLineage(t *testing.T) {
+	now := time.Now().UTC()
+	base := CheckpointRecord{
+		ID: "checkpoint:run-1", SessionID: "session-a", RunID: "run-1", WorkflowName: "example",
+		TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+		Status: CheckpointRunning, ConfirmedSequence: 1, CreatedAt: now, UpdatedAt: now,
+	}
+	tests := []struct {
+		name   string
+		mutate func(*CheckpointRecord)
+	}{
+		{name: "run only", mutate: func(record *CheckpointRecord) { record.SourceRunID = "source-run" }},
+		{name: "event only", mutate: func(record *CheckpointRecord) { record.SourceEventSeq = 7 }},
+		{name: "revision only", mutate: func(record *CheckpointRecord) { record.SourceRevisionID = "source-revision" }},
+		{name: "negative event", mutate: func(record *CheckpointRecord) { record.SourceRunID, record.SourceEventSeq = "source-run", -1 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record := base
+			test.mutate(&record)
+			_, err := newTestRunLogSnapshotStore(
+				staticRunLog{}, staticCheckpointHistory{record},
+			).Load(t.Context(), SnapshotRequest{RunID: "run-1", After: 1})
+			if !errors.Is(err, ErrCheckpointMismatch) {
+				t.Fatalf("Load() error = %v, want ErrCheckpointMismatch", err)
+			}
+		})
+	}
+}
+
 func TestRunLogSnapshotStoreRetainsCheckpointSessionWhenTimelinePageIsEmpty(t *testing.T) {
 	log := runlog.NewMemoryLog()
 	record := sessionRunRecord("run-1", 1, EventWorkflowStarted, time.Now().UTC())
@@ -277,7 +603,7 @@ func TestRunLogSnapshotStoreRetainsCheckpointSessionWhenTimelinePageIsEmpty(t *t
 		Status: CheckpointRunning, ConfirmedSequence: 1,
 	}}
 
-	snapshot, err := NewRunLogSnapshotStore(log, history).Load(
+	snapshot, err := newTestRunLogSnapshotStore(log, history).Load(
 		context.Background(), SnapshotRequest{RunID: "run-1", After: 1},
 	)
 	if err != nil {
@@ -292,7 +618,55 @@ type staticRunLog struct {
 	records []runlog.Record
 }
 
+type pagingRunLog struct {
+	records []runlog.Record
+	queries []runlog.Query
+}
+
+func (log *pagingRunLog) Append(context.Context, runlog.Record) error { return nil }
+
+func (log *pagingRunLog) List(_ context.Context, query runlog.Query) ([]runlog.Record, error) {
+	log.queries = append(log.queries, query)
+	records := make([]runlog.Record, 0, query.Limit)
+	for _, record := range log.records {
+		if query.SessionID != "" && record.SessionID != query.SessionID {
+			continue
+		}
+		if query.RunID != "" && record.RunID != query.RunID {
+			continue
+		}
+		if record.Sequence <= query.After {
+			continue
+		}
+		records = append(records, record)
+		if query.Limit > 0 && len(records) == query.Limit {
+			break
+		}
+	}
+	return records, nil
+}
+
 type staticCheckpointHistory []CheckpointRecord
+
+type pagingCheckpointHistory struct {
+	records  []CheckpointRecord
+	requests []CheckpointHistoryRequest
+}
+
+func (history *pagingCheckpointHistory) ListCheckpoints(_ context.Context, request CheckpointHistoryRequest) ([]CheckpointRecord, error) {
+	history.requests = append(history.requests, request)
+	records := make([]CheckpointRecord, 0, request.Limit)
+	for _, record := range history.records {
+		if record.RunID != request.RunID || record.Version <= request.AfterVersion {
+			continue
+		}
+		records = append(records, record)
+		if request.Limit > 0 && len(records) == request.Limit {
+			break
+		}
+	}
+	return records, nil
+}
 
 func (history staticCheckpointHistory) ListCheckpoints(context.Context, CheckpointHistoryRequest) ([]CheckpointRecord, error) {
 	return append([]CheckpointRecord(nil), history...), nil

@@ -20,6 +20,8 @@ var (
 	ErrInvalidRecord = errors.New("runlog: invalid record")
 	// ErrInvalidQuery reports invalid query bounds.
 	ErrInvalidQuery = errors.New("runlog: invalid query")
+	// ErrHistoryCompacted reports a query whose requested history is no longer retained.
+	ErrHistoryCompacted = errors.New("runlog: history compacted")
 	// ErrConflict reports different content for an existing run sequence.
 	ErrConflict = errors.New("runlog: record conflict")
 )
@@ -28,6 +30,22 @@ var (
 type Log interface {
 	Append(context.Context, Record) error
 	List(context.Context, Query) ([]Record, error)
+}
+
+// Fence identifies the workflow ownership claim authorizing one append.
+type Fence struct {
+	OwnerID       string
+	ClaimSequence int64
+}
+
+// FencedLog atomically validates workflow ownership and appends one record.
+// A combined workflow Store must serialize AppendFenced with Claim, RenewLease,
+// Save, Finish, and ownership release so none can change the checked claim
+// between validation and append. A rejected or expired fence must return the
+// workflow lease-lost sentinel expected by the caller.
+type FencedLog interface {
+	Log
+	AppendFenced(context.Context, Record, Fence) error
 }
 
 // Association identifies the historical point that created an independent fork.
@@ -102,7 +120,15 @@ func (s Sink) Emit(ctx context.Context, event gopact.Event) error {
 	if s.log == nil {
 		return ErrNilLog
 	}
-	return s.log.Append(ctx, Record{
+	record := RecordFromEvent(event)
+	record.SourceRunID = s.association.SourceRunID
+	record.SourceEventSeq = s.association.SourceEventSeq
+	return s.log.Append(ctx, record)
+}
+
+// RecordFromEvent projects an event into its durable RunLog representation.
+func RecordFromEvent(event gopact.Event) Record {
+	return Record{
 		DefinitionID:         event.DefinitionID,
 		DefinitionVersion:    event.DefinitionVersion,
 		SessionID:            event.SessionID,
@@ -112,8 +138,6 @@ func (s Sink) Emit(ctx context.Context, event gopact.Event) error {
 		AttemptID:            event.AttemptID,
 		RevisionID:           event.RevisionID,
 		ParentRunID:          event.ParentRunID,
-		SourceRunID:          s.association.SourceRunID,
-		SourceEventSeq:       s.association.SourceEventSeq,
 		Sequence:             event.Sequence,
 		NodeExecutionVersion: event.NodeExecutionVersion,
 		ExecutionEpoch:       event.ExecutionEpoch,
@@ -125,7 +149,7 @@ func (s Sink) Emit(ctx context.Context, event gopact.Event) error {
 		Payload:              append(json.RawMessage(nil), event.Payload...),
 		PayloadRef:           event.PayloadRef,
 		Timestamp:            event.Timestamp,
-	})
+	}
 }
 
 // MemoryLog is an in-memory Log for tests and local execution views.
@@ -228,6 +252,8 @@ func validateRecord(record Record) error {
 		return fmt.Errorf("%w: fork source run and event sequence must be set together", ErrInvalidRecord)
 	case record.SourceEventSeq < 0:
 		return fmt.Errorf("%w: source event sequence must not be negative", ErrInvalidRecord)
+	case record.SourceRunID == "" && record.SourceRevisionID != "":
+		return fmt.Errorf("%w: source revision requires a source run", ErrInvalidRecord)
 	default:
 		return nil
 	}

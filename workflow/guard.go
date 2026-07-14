@@ -101,7 +101,8 @@ func (f GuardFunc[I, O]) EvaluateGuard(ctx context.Context, guardCtx GuardContex
 	return f(ctx, guardCtx)
 }
 
-// GuardDecision is a workflow-owned guard decision.
+// GuardDecision is the closed set of workflow-owned guard decisions understood
+// by the scheduler and checkpoint replay.
 type GuardDecision[I, O any] interface {
 	isGuardDecision()
 }

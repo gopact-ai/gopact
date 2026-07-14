@@ -142,7 +142,7 @@ func TestWorkflowSettleQuorumRejectsUnreachableThreshold(t *testing.T) {
 func TestWorkflowResumeRestoresPendingSourceSet(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	runs := &branchRunCounts{values: map[int]int{}}
-	wf := New[[]int, int]("settle-resume", WithMaxParallelism(2), WithCheckpointer(store))
+	wf := New[[]int, int]("settle-resume", WithMaxParallelism(2), WithStore(storeWithCheckpointer(store)))
 	plan := wf.Node("plan", func(_ context.Context, input []int) ([]int, error) { return input, nil })
 	branch := wf.Node("branch", func(_ context.Context, input int) (int, error) {
 		runs.add(input)
@@ -201,7 +201,7 @@ func TestWorkflowResumeRestoresPendingSourceSet(t *testing.T) {
 func TestWorkflowResumeSettlesSatisfiedAnyBeforeRunningQueuedBranch(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	runs := &branchRunCounts{values: map[int]int{}}
-	wf := New[[]int, int]("settle-any-resume", WithMaxParallelism(1), WithCheckpointer(store))
+	wf := New[[]int, int]("settle-any-resume", WithMaxParallelism(1), WithStore(storeWithCheckpointer(store)))
 	plan := wf.Node("plan", func(_ context.Context, input []int) ([]int, error) { return input, nil })
 	branch := wf.Node("branch", func(_ context.Context, input int) (int, error) {
 		runs.add(input)
@@ -243,7 +243,7 @@ func TestWorkflowResumeSettlesSatisfiedAnyBeforeRunningQueuedBranch(t *testing.T
 func TestWorkflowResumeContinuesInterruptedSourceSetRelease(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	runs := &branchRunCounts{values: map[int]int{}}
-	wf := New[[]int, int]("settle-release-resume", WithMaxParallelism(1), WithCheckpointer(store))
+	wf := New[[]int, int]("settle-release-resume", WithMaxParallelism(1), WithStore(storeWithCheckpointer(store)))
 	plan := wf.Node("plan", func(_ context.Context, input []int) ([]int, error) { return input, nil })
 	branch := wf.Node("branch", func(_ context.Context, input int) (int, error) {
 		runs.add(input)

@@ -10,7 +10,15 @@ import (
 	"github.com/gopact-ai/gopact/runlog"
 )
 
-// SnapshotStore loads a read model for a run.
+const (
+	defaultHistoryRecordLimit = 10_000
+	historyPageSize           = 256
+)
+
+var errInconsistentRunLifecycle = errors.New("workflow: inconsistent run lifecycle")
+
+// SnapshotStore loads a read model for a run. Run identifiers select data; they
+// do not authorize access, so callers must enforce authorization before Load.
 type SnapshotStore interface {
 	Load(context.Context, SnapshotRequest) (Snapshot, error)
 }
@@ -23,8 +31,11 @@ type SnapshotRequest struct {
 }
 
 // SessionRunsRequest identifies the session whose runs should be listed.
+// SessionID is correlation metadata, not an authorization credential.
 type SessionRunsRequest struct {
 	SessionID string
+	// MaxRecords defaults to 10,000 and may only lower that safety bound.
+	MaxRecords int
 }
 
 // RunSummary is a session-scoped presentation view of one run.
@@ -41,16 +52,28 @@ type RunSummary struct {
 }
 
 // ListSessionRuns groups a session's append-ordered records into run summaries.
+// Applications must authorize the query and isolate Store data before calling it.
 func ListSessionRuns(ctx context.Context, log runlog.Log, request SessionRunsRequest) ([]RunSummary, error) {
 	if request.SessionID == "" {
 		return nil, fmt.Errorf("%w: session id is required", runlog.ErrInvalidQuery)
 	}
+	if request.MaxRecords < 0 || request.MaxRecords > defaultHistoryRecordLimit {
+		return nil, fmt.Errorf("%w: max records must be between 0 and %d", runlog.ErrInvalidQuery, defaultHistoryRecordLimit)
+	}
 	if log == nil {
 		return nil, fmt.Errorf("workflow: list session runs: %w", runlog.ErrNilLog)
 	}
-	records, err := log.List(ctx, runlog.Query{SessionID: request.SessionID})
+	limit := request.MaxRecords
+	if limit == 0 {
+		limit = defaultHistoryRecordLimit
+	}
+	queryLimit := limit + 1
+	records, err := log.List(ctx, runlog.Query{SessionID: request.SessionID, Limit: queryLimit})
 	if err != nil {
 		return nil, fmt.Errorf("workflow: list session runs: %w", err)
+	}
+	if len(records) > limit {
+		return nil, fmt.Errorf("%w: session %q exceeds %d records", ErrHistoryLimitExceeded, request.SessionID, limit)
 	}
 	summaries := make([]RunSummary, 0)
 	byRunID := make(map[string]int)
@@ -74,50 +97,91 @@ func ListSessionRuns(ctx context.Context, log runlog.Log, request SessionRunsReq
 			record.ParentRunID != summary.ParentRunID {
 			return nil, fmt.Errorf("workflow: run %q contains inconsistent session, definition, or parent identity", record.RunID)
 		}
+		if err := summary.applyLifecycle(record); err != nil {
+			return nil, fmt.Errorf("%w: run %q event %q after status %q", err, record.RunID, record.EventType, summary.Status)
+		}
 		summary.UpdatedAt = record.Timestamp
-		summary.applyLifecycle(record)
 	}
 	return summaries, nil
 }
 
-func (summary *RunSummary) applyLifecycle(record runlog.Record) {
+func (summary *RunSummary) applyLifecycle(record runlog.Record) error {
+	if summary.terminal() {
+		return errInconsistentRunLifecycle
+	}
 	switch record.EventType {
-	case EventWorkflowStarted, EventWorkflowResumed, EventWorkflowRetryStarted, EventWorkflowJumpStarted:
-		summary.reopen()
+	case EventWorkflowStarted, EventWorkflowRetryStarted, EventWorkflowJumpStarted:
+		return summary.start()
+	case EventWorkflowResumed:
+		return summary.resume()
 	case EventWorkflowInterrupted:
-		summary.interrupt()
+		return summary.interrupt()
 	case EventWorkflowCompleted:
-		summary.end(CheckpointCompleted, record.Timestamp)
+		return summary.end(CheckpointCompleted, record.Timestamp)
 	case EventWorkflowFailed:
-		summary.end(CheckpointFailed, record.Timestamp)
+		return summary.end(CheckpointFailed, record.Timestamp)
 	case EventWorkflowCanceled:
-		summary.end(CheckpointCanceled, record.Timestamp)
+		return summary.end(CheckpointCanceled, record.Timestamp)
 	case EventWorkflowTerminated:
-		summary.end(CheckpointTerminated, record.Timestamp)
+		return summary.end(CheckpointTerminated, record.Timestamp)
+	}
+	if summary.Status == "" {
+		return errInconsistentRunLifecycle
+	}
+	return nil
+}
+
+func (summary RunSummary) terminal() bool {
+	switch summary.Status {
+	case CheckpointCompleted, CheckpointFailed, CheckpointCanceled, CheckpointTerminated:
+		return true
+	default:
+		return false
 	}
 }
 
-func (summary *RunSummary) reopen() {
+func (summary *RunSummary) start() error {
+	if summary.Status != "" {
+		return errInconsistentRunLifecycle
+	}
 	summary.Status = CheckpointRunning
-	summary.EndedAt = time.Time{}
+	return nil
 }
 
-func (summary *RunSummary) interrupt() {
+func (summary *RunSummary) resume() error {
+	if summary.Status != CheckpointRunning && summary.Status != CheckpointInterrupted {
+		return errInconsistentRunLifecycle
+	}
+	summary.Status = CheckpointRunning
+	return nil
+}
+
+func (summary *RunSummary) interrupt() error {
+	if summary.Status != CheckpointRunning {
+		return errInconsistentRunLifecycle
+	}
 	summary.Status = CheckpointInterrupted
 	summary.EndedAt = time.Time{}
+	return nil
 }
 
-func (summary *RunSummary) end(status CheckpointStatus, timestamp time.Time) {
+func (summary *RunSummary) end(status CheckpointStatus, timestamp time.Time) error {
+	if summary.Status != CheckpointRunning && summary.Status != CheckpointInterrupted {
+		return errInconsistentRunLifecycle
+	}
 	summary.Status = status
 	summary.EndedAt = timestamp
+	return nil
 }
 
 // RunMeta is the snapshot run identity view.
 type RunMeta struct {
-	SessionID   string
-	RunID       string
-	ParentRunID string
-	SourceRunID string
+	SessionID        string
+	RunID            string
+	ParentRunID      string
+	SourceRunID      string
+	SourceEventSeq   int64
+	SourceRevisionID string
 }
 
 // Snapshot is a read model built from runlog/checkpoint/artifact refs.
@@ -153,48 +217,49 @@ func (wf *Workflow[I, O]) Snapshot(ctx context.Context, request SnapshotRequest)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	history, ok := compiled.checkpointer.(CheckpointHistory)
-	if !ok {
-		return Snapshot{}, errors.New("workflow: checkpointer does not provide checkpoint history")
-	}
-	return NewRunLogSnapshotStore(compiled.journal, history).Load(ctx, request)
+	return NewRunLogSnapshotStore(compiled.store).Load(ctx, request)
 }
 
 // RunLogSnapshotStore builds snapshots from a RunLog.
 type RunLogSnapshotStore struct {
-	log         runlog.Log
-	checkpoints CheckpointHistory
+	store Store
 }
 
-// NewRunLogSnapshotStore creates a snapshot store over log and checkpoint history.
-func NewRunLogSnapshotStore(log runlog.Log, checkpoints CheckpointHistory) RunLogSnapshotStore {
-	return RunLogSnapshotStore{log: log, checkpoints: checkpoints}
+// NewRunLogSnapshotStore creates a snapshot store over one authoritative Store.
+func NewRunLogSnapshotStore(store Store) RunLogSnapshotStore {
+	return RunLogSnapshotStore{store: store}
 }
 
 // Load implements SnapshotStore.
 func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Snapshot, error) {
-	if s.log == nil {
-		return Snapshot{}, errors.New("workflow: runlog is nil")
-	}
-	if s.checkpoints == nil {
-		return Snapshot{}, errors.New("workflow: checkpoint history is nil")
+	if isNilStore(s.store) {
+		return Snapshot{}, errors.New("workflow: snapshot store is nil")
 	}
 	if req.RunID == "" {
 		return Snapshot{}, errors.New("workflow: snapshot run id is required")
 	}
-	records, err := s.log.List(ctx, runlog.Query{RunID: req.RunID, After: req.After, Limit: req.Limit})
+	queryLimit := req.Limit
+	boundedDefault := queryLimit == 0
+	if boundedDefault {
+		queryLimit = defaultHistoryRecordLimit + 1
+	}
+	records, err := s.store.List(ctx, runlog.Query{RunID: req.RunID, After: req.After, Limit: queryLimit})
 	if err != nil {
 		return Snapshot{}, err
 	}
-	history, err := s.checkpoints.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: req.RunID})
-	if err != nil {
-		return Snapshot{}, err
+	if boundedDefault && len(records) > defaultHistoryRecordLimit {
+		return Snapshot{}, fmt.Errorf(
+			"%w: run %q exceeds %d timeline records",
+			ErrHistoryLimitExceeded,
+			req.RunID,
+			defaultHistoryRecordLimit,
+		)
 	}
 	snapshot := Snapshot{RunMeta: RunMeta{RunID: req.RunID}, Timeline: cloneRunLogRecords(records)}
 	if err := snapshot.projectTimeline(records); err != nil {
 		return Snapshot{}, err
 	}
-	if err := snapshot.projectCheckpoints(history); err != nil {
+	if err := snapshot.projectCheckpointHistory(ctx, s.store); err != nil {
 		return Snapshot{}, err
 	}
 	return snapshot, nil
@@ -202,6 +267,9 @@ func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Sna
 
 func (snapshot *Snapshot) projectTimeline(records []runlog.Record) error {
 	for index, record := range records {
+		if !validSourceLineage(record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID) {
+			return fmt.Errorf("%w: runlog record has invalid source lineage", ErrCheckpointMismatch)
+		}
 		if record.RunID != snapshot.RunMeta.RunID {
 			return fmt.Errorf("workflow: runlog returned record for run %q, want %q", record.RunID, snapshot.RunMeta.RunID)
 		}
@@ -209,6 +277,8 @@ func (snapshot *Snapshot) projectTimeline(records []runlog.Record) error {
 			snapshot.RunMeta.SessionID = record.SessionID
 			snapshot.RunMeta.ParentRunID = record.ParentRunID
 			snapshot.RunMeta.SourceRunID = record.SourceRunID
+			snapshot.RunMeta.SourceEventSeq = record.SourceEventSeq
+			snapshot.RunMeta.SourceRevisionID = record.SourceRevisionID
 		} else if !snapshot.sameLineage(record) {
 			return errors.New("workflow: runlog contains inconsistent run lineage")
 		}
@@ -220,43 +290,97 @@ func (snapshot *Snapshot) projectTimeline(records []runlog.Record) error {
 }
 
 func (snapshot Snapshot) sameLineage(record runlog.Record) bool {
-	return record.SessionID == snapshot.RunMeta.SessionID && record.ParentRunID == snapshot.RunMeta.ParentRunID && record.SourceRunID == snapshot.RunMeta.SourceRunID
+	return record.SessionID == snapshot.RunMeta.SessionID && record.ParentRunID == snapshot.RunMeta.ParentRunID &&
+		record.SourceRunID == snapshot.RunMeta.SourceRunID && record.SourceEventSeq == snapshot.RunMeta.SourceEventSeq &&
+		record.SourceRevisionID == snapshot.RunMeta.SourceRevisionID
 }
 
-func (snapshot *Snapshot) projectCheckpoints(history []CheckpointRecord) error {
-	latest, root, err := snapshot.stableCheckpoints(history)
-	if err != nil {
-		return err
+type checkpointProjection struct {
+	snapshot     *Snapshot
+	wanted       map[int64]struct{}
+	latest       map[int64]CheckpointView
+	afterVersion int64
+	root         int64
+	total        int
+}
+
+func (snapshot *Snapshot) projectCheckpointHistory(ctx context.Context, history CheckpointHistory) error {
+	wanted := make(map[int64]struct{}, len(snapshot.Timeline))
+	for _, record := range snapshot.Timeline {
+		wanted[record.Sequence] = struct{}{}
+	}
+	projection := checkpointProjection{
+		snapshot: snapshot,
+		wanted:   wanted,
+		latest:   make(map[int64]CheckpointView, len(wanted)),
+	}
+	for {
+		limit := min(historyPageSize, defaultHistoryRecordLimit-projection.total+1)
+		records, err := history.ListCheckpoints(ctx, CheckpointHistoryRequest{
+			RunID: snapshot.RunMeta.RunID, AfterVersion: projection.afterVersion, Limit: limit,
+		})
+		if err != nil {
+			return err
+		}
+		if len(records) > limit {
+			return fmt.Errorf("workflow: checkpoint history returned %d records for limit %d", len(records), limit)
+		}
+		if len(records) == 0 {
+			break
+		}
+		if err := projection.accept(records); err != nil {
+			return err
+		}
+		if len(records) < limit {
+			break
+		}
 	}
 	for _, record := range snapshot.Timeline {
-		checkpoint, ok := latest[record.Sequence]
+		checkpoint, ok := projection.latest[record.Sequence]
 		if !ok {
 			continue
 		}
-		snapshot.Checkpoints = append(snapshot.Checkpoints, workflowCheckpointView(checkpoint, record.Sequence == root))
+		checkpoint.Root = record.Sequence == projection.root
+		snapshot.Checkpoints = append(snapshot.Checkpoints, checkpoint)
 	}
 	return nil
 }
 
-func (snapshot *Snapshot) stableCheckpoints(history []CheckpointRecord) (map[int64]CheckpointRecord, int64, error) {
-	latest := make(map[int64]CheckpointRecord)
-	var root int64
-	for _, record := range history {
-		if err := snapshot.acceptCheckpointIdentity(record); err != nil {
-			return nil, 0, err
+func (projection *checkpointProjection) accept(records []CheckpointRecord) error {
+	for _, record := range records {
+		projection.total++
+		if projection.total > defaultHistoryRecordLimit {
+			return fmt.Errorf(
+				"%w: run %q exceeds %d checkpoints",
+				ErrHistoryLimitExceeded,
+				projection.snapshot.RunMeta.RunID,
+				defaultHistoryRecordLimit,
+			)
+		}
+		if record.Version <= projection.afterVersion {
+			return fmt.Errorf("%w: checkpoint history is not ordered after version %d", ErrCheckpointMismatch, projection.afterVersion)
+		}
+		projection.afterVersion = record.Version
+		if err := projection.snapshot.acceptCheckpointIdentity(record); err != nil {
+			return err
 		}
 		if record.ConfirmedSequence <= 0 || record.PendingSequence != 0 {
 			continue
 		}
-		latest[record.ConfirmedSequence] = cloneCheckpointRecord(record)
-		if root == 0 || record.ConfirmedSequence < root {
-			root = record.ConfirmedSequence
+		if projection.root == 0 || record.ConfirmedSequence < projection.root {
+			projection.root = record.ConfirmedSequence
+		}
+		if _, ok := projection.wanted[record.ConfirmedSequence]; ok {
+			projection.latest[record.ConfirmedSequence] = workflowCheckpointView(record, false)
 		}
 	}
-	return latest, root, nil
+	return nil
 }
 
 func (snapshot *Snapshot) acceptCheckpointIdentity(record CheckpointRecord) error {
+	if !validSourceLineage(record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID) {
+		return fmt.Errorf("%w: snapshot checkpoint source lineage is invalid", ErrCheckpointMismatch)
+	}
 	if record.RunID != snapshot.RunMeta.RunID {
 		return fmt.Errorf("%w: snapshot checkpoint run %q does not match %q", ErrCheckpointMismatch, record.RunID, snapshot.RunMeta.RunID)
 	}
@@ -265,8 +389,15 @@ func (snapshot *Snapshot) acceptCheckpointIdentity(record CheckpointRecord) erro
 	}
 	if snapshot.RunMeta.SessionID == "" {
 		snapshot.RunMeta.SessionID = record.SessionID
+		snapshot.RunMeta.SourceRunID = record.SourceRunID
+		snapshot.RunMeta.SourceEventSeq = record.SourceEventSeq
+		snapshot.RunMeta.SourceRevisionID = record.SourceRevisionID
 	} else if record.SessionID != snapshot.RunMeta.SessionID {
 		return fmt.Errorf("%w: snapshot checkpoint session %q does not match %q", ErrCheckpointMismatch, record.SessionID, snapshot.RunMeta.SessionID)
+	}
+	if record.SourceRunID != snapshot.RunMeta.SourceRunID || record.SourceEventSeq != snapshot.RunMeta.SourceEventSeq ||
+		record.SourceRevisionID != snapshot.RunMeta.SourceRevisionID {
+		return fmt.Errorf("%w: snapshot checkpoint source lineage is inconsistent", ErrCheckpointMismatch)
 	}
 	if record.SchemaVersion != checkpointSchemaVersion {
 		return fmt.Errorf("%w: snapshot checkpoint schema is incompatible", ErrCheckpointMismatch)
@@ -359,7 +490,7 @@ func (s Snapshot) Fork[I, O any](ctx context.Context, target *Workflow[I, O], re
 	}
 	association := forkAssociationOption{association: runlog.Association{SourceRunID: req.SourceRunID, SourceEventSeq: req.FromEventSeq}}
 	forkOptions := append([]gopact.RunOption(nil), opts...)
-	forkOptions = append(forkOptions, association)
+	forkOptions = append(forkOptions, gopact.WithSessionID(s.RunMeta.SessionID), association)
 	return compiled.Invoke(ctx, input, forkOptions...)
 }
 
@@ -377,11 +508,10 @@ type forkAssociationOption struct {
 }
 
 func (option forkAssociationOption) ApplyRunOption(config *gopact.RunConfig) {
-	for index, sink := range config.EventSinks {
-		if associating, ok := sink.(runlog.AssociatingSink); ok {
-			config.EventSinks[index] = associating.Associate(option.association)
-		}
+	if config.Extensions == nil {
+		config.Extensions = make(map[string]any)
 	}
+	config.Extensions[sourceAssociationExtensionKey] = option.association
 }
 
 func cloneRunLogRecords(records []runlog.Record) []runlog.Record {

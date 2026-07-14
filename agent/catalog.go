@@ -110,6 +110,9 @@ func foreignRunOptions(options []gopact.RunOption) ([]gopact.RunOption, error) {
 	if config.Lineage != (gopact.RunLineage{}) {
 		filtered = append(filtered, gopact.WithRunLineage(config.Lineage))
 	}
+	for kind, generator := range config.IDGenerators() {
+		filtered = append(filtered, gopact.WithIDGenerator(kind, generator))
+	}
 	for _, sink := range config.EventSinks {
 		filtered = append(filtered, gopact.WithEventSink(sink))
 	}

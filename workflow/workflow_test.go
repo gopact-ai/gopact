@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/runlog"
@@ -30,6 +31,62 @@ func TestWorkflowInvokeDirectly(t *testing.T) {
 	}
 	if got != 6 {
 		t.Fatalf("Invoke() = %d, want 6", got)
+	}
+}
+
+func TestInterruptBatchResumesAfterStrictObserverFailureWithoutRerunningGuard(t *testing.T) {
+	store := NewMemoryStore()
+	guardRuns := 0
+	build := func() *Workflow[string, string] {
+		wf := New[string, string]("durable-interrupt-batch", WithStore(store))
+		wait := testNode(wf, "wait", func(_ context.Context, input string) (string, error) { return input, nil })
+		wait.Guard(BeforeRun("approval", GuardFunc[string, string](func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+			guardRuns++
+			return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval-1", Subject: "approve"}}, nil
+		})))
+		wf.Entry(wait)
+		wf.Exit(wait)
+		return wf
+	}
+
+	observerFailed := false
+	_, err := build().Invoke(context.Background(), "input", gopact.WithRunID("durable-interrupt-run"),
+		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+			if event.Type == EventGuardInterrupted && !observerFailed {
+				observerFailed = true
+				return errors.New("observer unavailable")
+			}
+			return nil
+		}))
+	if err == nil || !strings.Contains(err.Error(), "observer unavailable") {
+		t.Fatalf("first Invoke() error = %v, want observer failure", err)
+	}
+
+	_, err = build().Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "durable-interrupt-run"}))
+	var interrupted InterruptError
+	if !errors.As(err, &interrupted) {
+		t.Fatalf("resume Invoke() error = %v, want InterruptError", err)
+	}
+	if guardRuns != 1 {
+		t.Fatalf("guard runs = %d, want 1", guardRuns)
+	}
+	records, err := store.List(context.Background(), runlog.Query{RunID: "durable-interrupt-run"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	counts := map[string]int{}
+	for _, record := range records {
+		counts[record.EventType]++
+	}
+	if counts[EventGuardInterrupted] != 1 || counts[EventWorkflowInterrupted] != 1 {
+		t.Fatalf("interrupt event counts = %v, want exactly one of each", counts)
+	}
+	checkpoint, err := store.Load(context.Background(), "durable-interrupt-run")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if checkpoint.Status != CheckpointInterrupted || checkpoint.OwnerID != "" {
+		t.Fatalf("checkpoint = status %q owner %q, want interrupted and unowned", checkpoint.Status, checkpoint.OwnerID)
 	}
 }
 
@@ -80,6 +137,18 @@ func TestWorkflowRunInfoCarriesSessionID(t *testing.T) {
 	if generated.SessionID == "" || generated.RunID == "" {
 		t.Fatalf("generated RunInfo = %+v, want session and run IDs", generated)
 	}
+	for prefix, id := range map[string]string{
+		"session-":  generated.SessionID,
+		"workflow-": generated.RunID,
+	} {
+		value, ok := strings.CutPrefix(id, prefix)
+		if !ok {
+			t.Fatalf("generated ID %q does not have prefix %q", id, prefix)
+		}
+		if _, err := uuid.Parse(value); err != nil {
+			t.Fatalf("generated ID %q does not contain a UUID: %v", id, err)
+		}
+	}
 
 	explicit, err := wf.Invoke(context.Background(), "input", gopact.WithSessionID("session-explicit"))
 	if err != nil {
@@ -87,6 +156,147 @@ func TestWorkflowRunInfoCarriesSessionID(t *testing.T) {
 	}
 	if explicit.SessionID != "session-explicit" {
 		t.Fatalf("explicit SessionID = %q, want session-explicit", explicit.SessionID)
+	}
+}
+
+func TestWorkflowUsesCustomIDGenerator(t *testing.T) {
+	generated := map[gopact.IDKind]string{
+		IDKindSession: "custom-session",
+		IDKindRun:     "custom-run",
+		IDKindOwner:   "custom-owner",
+	}
+	calls := map[gopact.IDKind]int{}
+	generator := func(kind gopact.IDKind) gopact.IDGenerator {
+		return func() (string, error) {
+			calls[kind]++
+			return generated[kind], nil
+		}
+	}
+	wf := New[string, RunInfo]("custom-ids",
+		WithIDGenerator(IDKindSession, generator(IDKindSession)),
+		WithIDGenerator(IDKindRun, generator(IDKindRun)),
+		WithIDGenerator(IDKindOwner, generator(IDKindOwner)),
+	)
+	info := testNode(wf, "info", func(ctx context.Context, _ string) (RunInfo, error) {
+		return RunInfoFromContext(ctx), nil
+	})
+	wf.Entry(info)
+	wf.Exit(info)
+
+	got, err := wf.Invoke(context.Background(), "input")
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if got.SessionID != generated[IDKindSession] || got.RunID != generated[IDKindRun] {
+		t.Fatalf("RunInfo = %+v, want generated session and run IDs", got)
+	}
+	for _, kind := range []gopact.IDKind{IDKindSession, IDKindRun, IDKindOwner} {
+		if calls[kind] != 1 {
+			t.Fatalf("generator calls for %q = %d, want 1", kind, calls[kind])
+		}
+	}
+
+	_, err = wf.Invoke(
+		context.Background(),
+		"input",
+		gopact.WithSessionID("explicit-session"),
+		gopact.WithRunID("explicit-run"),
+	)
+	if err != nil {
+		t.Fatalf("explicit Invoke() error = %v", err)
+	}
+	if calls[IDKindSession] != 1 || calls[IDKindRun] != 1 || calls[IDKindOwner] != 2 {
+		t.Fatalf("generator calls after explicit IDs = %+v, want only owner called again", calls)
+	}
+}
+
+func TestWorkflowRunIDGeneratorOverridesOneWorkflowGenerator(t *testing.T) {
+	workflowRunCalls := 0
+	runOptionCalls := 0
+	wf := New[string, RunInfo]("run-id-override",
+		WithIDGenerator(IDKindSession, func() (string, error) { return "session-global", nil }),
+		WithIDGenerator(IDKindRun, func() (string, error) {
+			workflowRunCalls++
+			return "run-global", nil
+		}),
+	)
+	info := testNode(wf, "info", func(ctx context.Context, _ string) (RunInfo, error) {
+		return RunInfoFromContext(ctx), nil
+	})
+	wf.Entry(info)
+	wf.Exit(info)
+
+	got, err := wf.Invoke(context.Background(), "input", gopact.WithIDGenerator(IDKindRun, func() (string, error) {
+		runOptionCalls++
+		return "run-local", nil
+	}))
+	if err != nil {
+		t.Fatalf("Invoke() error = %v", err)
+	}
+	if got.SessionID != "session-global" || got.RunID != "run-local" {
+		t.Fatalf("RunInfo = %+v, want workflow session and per-run run ID", got)
+	}
+	if workflowRunCalls != 0 || runOptionCalls != 1 {
+		t.Fatalf("generator calls = workflow:%d run-option:%d, want 0/1", workflowRunCalls, runOptionCalls)
+	}
+}
+
+func TestWorkflowIDGeneratorRejectsInvalidID(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{name: "empty", id: ""},
+		{name: "too long", id: strings.Repeat("x", 192)},
+		{name: "invalid utf8", id: string([]byte{0xff})},
+		{name: "nul", id: "invalid\x00id"},
+		{name: "trailing space", id: "invalid "},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wf := New[string, string]("invalid-id", WithIDGenerator(IDKindSession, func() (string, error) {
+				return test.id, nil
+			}))
+			node := testNode(wf, "node", func(_ context.Context, input string) (string, error) {
+				return input, nil
+			})
+			wf.Entry(node)
+			wf.Exit(node)
+
+			if _, err := wf.Invoke(context.Background(), "input"); err == nil ||
+				!strings.Contains(err.Error(), "generate session id") {
+				t.Fatalf("Invoke() error = %v, want invalid generated session ID", err)
+			}
+		})
+	}
+}
+
+func TestWorkflowIDGeneratorReturnsError(t *testing.T) {
+	generatorErr := errors.New("id source unavailable")
+	wf := New[string, string]("generator-error", WithIDGenerator(IDKindSession, func() (string, error) {
+		return "", generatorErr
+	}))
+	node := testNode(wf, "node", func(_ context.Context, input string) (string, error) {
+		return input, nil
+	})
+	wf.Entry(node)
+	wf.Exit(node)
+
+	if _, err := wf.Invoke(context.Background(), "input"); !errors.Is(err, generatorErr) {
+		t.Fatalf("Invoke() error = %v, want %v", err, generatorErr)
+	}
+}
+
+func TestWorkflowCompileRejectsNilIDGenerator(t *testing.T) {
+	wf := New[string, string]("nil-generator", WithIDGenerator(IDKindRun, nil))
+	node := testNode(wf, "node", func(_ context.Context, input string) (string, error) {
+		return input, nil
+	})
+	wf.Entry(node)
+	wf.Exit(node)
+
+	if err := wf.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want nil ID generator error")
 	}
 }
 
@@ -338,7 +548,7 @@ func TestWorkflowDefaultMemoryStoreProvidesSnapshot(t *testing.T) {
 
 func TestWorkflowAcceptsSharedMemoryStoreDirectly(t *testing.T) {
 	store := NewMemoryStore()
-	wf := New[string, string]("shared-memory", WithCheckpointer(store), WithJournal(store))
+	wf := New[string, string]("shared-memory", WithStore(storeWithCheckpointer(store)))
 	echo := testNode(wf, "echo", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -353,26 +563,30 @@ func TestWorkflowAcceptsSharedMemoryStoreDirectly(t *testing.T) {
 	}
 }
 
-func TestWorkflowExternalStoreFailuresAreBestEffortByDefault(t *testing.T) {
+func TestWorkflowExternalStoreFailureStopsRun(t *testing.T) {
 	storeErr := errors.New("store unavailable")
 	store := failingWorkflowStore{err: storeErr}
-	wf := New[string, string]("best-effort-store", WithCheckpointer(store), WithJournal(store))
-	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
-		return input + "!", nil
-	})
-	wf.Entry(plan)
-	wf.Exit(plan)
+	tests := []struct {
+		name   string
+		option BuildOption
+	}{
+		{name: "checkpointer", option: WithStore(storeWithCheckpointer(store))},
+		{name: "journal", option: WithStore(storeWithCheckpointer(store))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wf := New[string, string]("authoritative-"+test.name, test.option)
+			node := testNode(wf, "node", func(_ context.Context, input string) (string, error) {
+				return input, nil
+			})
+			wf.Entry(node)
+			wf.Exit(node)
 
-	output, err := wf.Invoke(context.Background(), "ok", gopact.WithRunID("best-effort-store-run"))
-	if err != nil || output != "ok!" {
-		t.Fatalf("Invoke() = %q, %v, want ok! despite external store failure", output, err)
-	}
-	snapshot, err := wf.Snapshot(context.Background(), SnapshotRequest{RunID: "best-effort-store-run"})
-	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
-	}
-	if len(snapshot.Timeline) == 0 || len(snapshot.Checkpoints) == 0 {
-		t.Fatalf("Snapshot() = %+v, want authoritative in-process facts", snapshot)
+			_, err := wf.Invoke(context.Background(), "input")
+			if !errors.Is(err, storeErr) {
+				t.Fatalf("Invoke() error = %v, want %v", err, storeErr)
+			}
+		})
 	}
 }
 
@@ -383,8 +597,8 @@ func TestWorkflowStrictExternalStoreFailureStopsRun(t *testing.T) {
 		name   string
 		option BuildOption
 	}{
-		{name: "checkpointer", option: WithStrictCheckpointer(store)},
-		{name: "journal", option: WithStrictJournal(store)},
+		{name: "checkpointer", option: WithStore(storeWithCheckpointer(store))},
+		{name: "journal", option: WithStore(storeWithCheckpointer(store))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -501,6 +715,7 @@ func TestWorkflowNodeExecutionVersionsFollowRunTimeline(t *testing.T) {
 
 func TestWorkflowChildRunIsolation(t *testing.T) {
 	var childConfig gopact.RunConfig
+	ownerGenerator := func() (string, error) { return "owner-local", nil }
 	wf := New[string, string]("parent")
 	child := wf.AddInvokable("child", gopact.InvokableFunc[string, string](func(_ context.Context, input string, options ...gopact.RunOption) (string, error) {
 		childConfig = gopact.ResolveRunOptions(options...)
@@ -515,6 +730,7 @@ func TestWorkflowChildRunIsolation(t *testing.T) {
 	output, err := compiled.Invoke(context.Background(), "input",
 		gopact.WithSessionID("session-parent"),
 		gopact.WithRunID("parent-run"),
+		gopact.WithIDGenerator(gopact.IDKindOwner, ownerGenerator),
 		gopact.WithStrictEventHandler(func(context.Context, gopact.Event) error { return nil }),
 	)
 	if err != nil {
@@ -528,6 +744,50 @@ func TestWorkflowChildRunIsolation(t *testing.T) {
 		childConfig.Lineage.ParentRunID != "parent-run" || childConfig.Lineage.Depth != 2 ||
 		len(childConfig.EventSinks) != 1 || len(childConfig.Extensions) != 0 {
 		t.Fatalf("child config = %+v, want isolated child identity and inherited sink", childConfig)
+	}
+	if _, ok := childConfig.IDGenerator(gopact.IDKindOwner); !ok {
+		t.Fatal("child config did not inherit the per-run owner generator")
+	}
+}
+
+func TestWorkflowChildRunInheritsContextCancellationAndDeadline(t *testing.T) {
+	started := make(chan struct{})
+	childDeadline := make(chan time.Time, 1)
+	wf := New[string, string]("parent")
+	child := wf.AddInvokable("child", gopact.InvokableFunc[string, string](func(ctx context.Context, input string, _ ...gopact.RunOption) (string, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return "", errors.New("child context has no deadline")
+		}
+		childDeadline <- deadline
+		close(started)
+		watchdog := time.NewTimer(2 * time.Second)
+		defer watchdog.Stop()
+		select {
+		case <-ctx.Done():
+			return input, ctx.Err()
+		case <-watchdog.C:
+			err := errors.New("child context cancellation was not propagated")
+			return "", err
+		}
+	}))
+	wf.Entry(child)
+	wf.Exit(child)
+
+	deadline := time.Now().Add(time.Hour)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	_, err := wf.Invoke(ctx, "input", gopact.WithSessionID("session-parent"), gopact.WithRunID("parent-run"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Invoke() error = %v, want context.Canceled", err)
+	}
+	if got := <-childDeadline; !got.Equal(deadline) {
+		t.Fatalf("child deadline = %v, want %v", got, deadline)
 	}
 }
 
@@ -970,7 +1230,7 @@ func TestWorkflowJoinMaterializesAfterOptionalEdgeClosesAtZero(t *testing.T) {
 
 func TestWorkflowResumeRestoresOptionalJoinExpectation(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	compiled := compileOptionalJoin(t, WithCheckpointer(store))
+	compiled := compileOptionalJoin(t, WithStore(storeWithCheckpointer(store)))
 	sinkErr := errors.New("sink failed")
 	_, err := compiled.Invoke(context.Background(), 7, gopact.WithRunID("optional-join-resume"), gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
 		if event.Type == EventNodeOutputCommitted && event.Summary == "right" {
@@ -1290,8 +1550,15 @@ func TestWorkflowNodeRunInfoCarriesExecutionLineage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if received.SessionID != "session-1" || received.RunID != "run-1" || received.ParentRunID != "parent-1" || received.Depth != 2 {
+	if received.SessionID != "session-1" || received.RunID != "run-1" || received.ParentRunID != "parent-1" || received.Depth != 2 ||
+		received.NodeID != "work" || received.ActivationID == "" || received.Attempt != 1 {
 		t.Fatalf("RunInfoFromContext() = %+v, want run lineage", received)
+	}
+}
+
+func TestRunInfoFromContextAcceptsNil(t *testing.T) {
+	if got := RunInfoFromContext(nil); got != (RunInfo{}) {
+		t.Fatalf("RunInfoFromContext(nil) = %+v, want zero value", got)
 	}
 }
 
@@ -1343,6 +1610,7 @@ func TestWorkflowGuardRetryCreatesNewAttempts(t *testing.T) {
 
 	var starts []gopact.Event
 	var retries []gopact.Event
+	var terminals []gopact.Event
 	output, err := wf.Invoke(context.Background(), "in",
 		gopact.WithRunID("guard-retry-run"),
 		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
@@ -1351,6 +1619,9 @@ func TestWorkflowGuardRetryCreatesNewAttempts(t *testing.T) {
 				starts = append(starts, event)
 			case EventNodeRetrying:
 				retries = append(retries, event)
+				terminals = append(terminals, event)
+			case EventNodeCompleted, EventNodeFailed, EventNodeCanceled, EventNodeSkipped:
+				terminals = append(terminals, event)
 			}
 			return nil
 		}),
@@ -1369,9 +1640,13 @@ func TestWorkflowGuardRetryCreatesNewAttempts(t *testing.T) {
 	if retries[0].AttemptID != starts[0].AttemptID || retries[0].NodeExecutionVersion != 1 {
 		t.Fatalf("retry event = %+v, want first attempt terminal", retries[0])
 	}
+	if len(terminals) != 2 || terminals[0].AttemptID != starts[0].AttemptID ||
+		terminals[1].AttemptID != starts[1].AttemptID {
+		t.Fatalf("terminal events = %+v, want exactly one per attempt", terminals)
+	}
 }
 
-func TestWorkflowNodeAttemptEventsCaptureInputOutputAndContext(t *testing.T) {
+func TestWorkflowNodeAttemptEventsCaptureMetadata(t *testing.T) {
 	type request struct {
 		Text string `json:"text"`
 	}
@@ -1404,11 +1679,11 @@ func TestWorkflowNodeAttemptEventsCaptureInputOutputAndContext(t *testing.T) {
 	}
 	started := events[EventNodeStarted]
 	completed := events[EventNodeCompleted]
-	if string(started.Input.JSON) != `{"text":"hello"}` || string(started.WorkflowContext.JSON) != `{"text":"hello"}` {
-		t.Fatalf("started facts = %+v, want full input and workflow context", started)
+	if started.Status != "running" || started.ActivationPhase != ActivationRunning || started.ContextRevision != 1 {
+		t.Fatalf("started facts = %+v, want running metadata", started)
 	}
-	if completed.Output == nil || string(completed.Output.JSON) != `{"text":"hello!"}` {
-		t.Fatalf("completed facts = %+v, want full output", completed)
+	if completed.Status != "completed" || completed.ActivationPhase != ActivationCompleted || completed.Error != "" {
+		t.Fatalf("completed facts = %+v, want completed metadata", completed)
 	}
 }
 
@@ -1431,8 +1706,8 @@ func TestWorkflowNodeFailedEventCapturesErrorFact(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Invoke() error = %v, want %v", err, wantErr)
 	}
-	if failed.Error != wantErr.Error() {
-		t.Fatalf("failed fact error = %q, want %q", failed.Error, wantErr)
+	if failed.Error != "failed" || failed.Status != "failed" {
+		t.Fatalf("failed fact = %+v, want classified failure", failed)
 	}
 }
 
@@ -1473,8 +1748,7 @@ func TestWorkflowTypedContextCommitsBetweenNodes(t *testing.T) {
 	if err != nil || output != 1 {
 		t.Fatalf("Invoke() = %d, %v, want 1", output, err)
 	}
-	if len(starts) != 2 || starts[0].ContextRevision != 1 || starts[1].ContextRevision != 2 ||
-		string(starts[0].WorkflowContext.JSON) != `{"count":0}` || string(starts[1].WorkflowContext.JSON) != `{"count":1}` {
+	if len(starts) != 2 || starts[0].ContextRevision != 1 || starts[1].ContextRevision != 2 {
 		t.Fatalf("started contexts = %+v, want revisions 1 then 2", starts)
 	}
 }
@@ -1487,7 +1761,7 @@ func TestWorkflowTypedContextRestoresFromCheckpoint(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	firstRuns := 0
 	build := func() *Workflow[string, int] {
-		wf := New[string, int]("typed-context-resume", WithCheckpointer(store))
+		wf := New[string, int]("typed-context-resume", WithStore(storeWithCheckpointer(store)))
 		shared := wf.Context(func(string) typedContextState { return typedContextState{} })
 		first := wf.Node("first", func(ctx context.Context, input string) (string, error) {
 			firstRuns++
@@ -1766,7 +2040,7 @@ func TestRunLogSnapshotStoreHonorsAfterAndLimit(t *testing.T) {
 			t.Fatalf("Append() error = %v", err)
 		}
 	}
-	snapshot, err := NewRunLogSnapshotStore(log, emptyCheckpointHistory{}).Load(context.Background(), SnapshotRequest{RunID: "run-1", After: 1, Limit: 1})
+	snapshot, err := newTestRunLogSnapshotStore(log, emptyCheckpointHistory{}).Load(context.Background(), SnapshotRequest{RunID: "run-1", After: 1, Limit: 1})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -2103,7 +2377,7 @@ func TestPluginDuplicateEventTypeIsBuildError(t *testing.T) {
 
 func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	store := NewMemoryCheckpointer()
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input + "!", nil
 	})
@@ -2116,11 +2390,12 @@ func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	log := runlog.NewMemoryLog()
 	if _, err := compiled.Invoke(context.Background(), "old",
 		gopact.WithRunID("source-run"),
+		gopact.WithSessionID("source-session"),
 		gopact.WithEventSink(runlog.NewSink(log)),
 	); err != nil {
 		t.Fatalf("source Invoke() error = %v", err)
 	}
-	snapshot, err := NewRunLogSnapshotStore(log, store).Load(context.Background(), SnapshotRequest{RunID: "source-run"})
+	snapshot, err := newTestRunLogSnapshotStore(log, store).Load(context.Background(), SnapshotRequest{RunID: "source-run"})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -2142,8 +2417,36 @@ func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) == 0 || records[0].SourceRunID != "source-run" || records[0].SourceEventSeq != 1 || records[0].ParentRunID != "" {
+	if len(records) == 0 || records[0].SessionID != "source-session" || records[0].SourceRunID != "source-run" || records[0].SourceEventSeq != 1 || records[0].ParentRunID != "" {
 		t.Fatalf("fork records = %+v, want independent source association", records)
+	}
+	forkCheckpoint, err := store.Load(context.Background(), "fork-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forkCheckpoint.SessionID != "source-session" || forkCheckpoint.SourceRunID != "source-run" || forkCheckpoint.SourceEventSeq != 1 || forkCheckpoint.SourceRevisionID != "" {
+		t.Fatalf("fork checkpoint lineage = %q/%d/%q, want source-run/1 with no revision", forkCheckpoint.SourceRunID, forkCheckpoint.SourceEventSeq, forkCheckpoint.SourceRevisionID)
+	}
+	matching, err := snapshot.Fork(context.Background(), wf, ForkRequest{
+		SourceRunID: "source-run", FromEventSeq: 1,
+		Patch: ForkPatch{WorkflowInput: &InputPatch{Value: "matching"}},
+	}, gopact.WithRunID("fork-matching"), gopact.WithSessionID("source-session"), gopact.WithEventSink(runlog.NewSink(log)))
+	if err != nil || matching != "matching!" {
+		t.Fatalf("matching-session Fork() = %q, %v", matching, err)
+	}
+	_, err = snapshot.Fork(context.Background(), wf, ForkRequest{
+		SourceRunID: "source-run", FromEventSeq: 1,
+		Patch: ForkPatch{WorkflowInput: &InputPatch{Value: "conflict"}},
+	}, gopact.WithRunID("fork-conflict"), gopact.WithSessionID("other-session"), gopact.WithEventSink(runlog.NewSink(log)))
+	if !errors.Is(err, gopact.ErrRunConfig) {
+		t.Fatalf("conflicting-session Fork() error = %v, want ErrRunConfig", err)
+	}
+	conflictRecords, listErr := log.List(t.Context(), runlog.Query{RunID: "fork-conflict"})
+	if listErr != nil || len(conflictRecords) != 0 {
+		t.Fatalf("conflicting fork records = %+v, %v, want none", conflictRecords, listErr)
+	}
+	if _, loadErr := store.Load(t.Context(), "fork-conflict"); !errors.Is(loadErr, ErrCheckpointNotFound) {
+		t.Fatalf("conflicting fork checkpoint error = %v, want ErrCheckpointNotFound", loadErr)
 	}
 }
 
@@ -2250,7 +2553,7 @@ func TestWorkflowGuardRejectsFailClosed(t *testing.T) {
 func TestWorkflowGuardRejectedEventFailureFinishesFailedRun(t *testing.T) {
 	store := &recordingCheckpointer{}
 	sinkErr := errors.New("guard rejected sink")
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -2292,7 +2595,7 @@ func TestWorkflowGuardBeforeRunInterruptResumes(t *testing.T) {
 	store := &recordingCheckpointer{}
 	guardCalls := 0
 	bodyRuns := 0
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		bodyRuns++
 		return input + "!", nil
@@ -2642,7 +2945,7 @@ func TestWorkflowGuardBeforeCommitInterruptResumesWithoutRerunningBody(t *testin
 	store := &recordingCheckpointer{}
 	guardCalls := 0
 	bodyRuns := 0
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		bodyRuns++
 		return input + "!", nil
@@ -2698,7 +3001,7 @@ func TestWorkflowGuardBeforeCommitInterruptResumesWithoutRerunningBody(t *testin
 }
 
 func TestWorkflowGuardInterruptRequiresID(t *testing.T) {
-	wf := New[string, string]("example", WithCheckpointer(&recordingCheckpointer{}))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(&recordingCheckpointer{})))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -2744,8 +3047,13 @@ func TestWorkflowCompileRejectsDuplicateGuardNameInPhase(t *testing.T) {
 }
 
 func TestWorkflowCheckpointerFinishesCompletedRun(t *testing.T) {
+	const leaseDuration = 37 * time.Second
 	store := &recordingCheckpointer{}
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int](
+		"example",
+		WithStore(storeWithCheckpointer(store)),
+		WithCheckpointLease(leaseDuration, 10*time.Second),
+	)
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		return len(input), nil
 	})
@@ -2763,15 +3071,26 @@ func TestWorkflowCheckpointerFinishesCompletedRun(t *testing.T) {
 	if len(store.created) != 1 || store.created[0].RunID != "run-1" || store.created[0].Status != CheckpointRunning {
 		t.Fatalf("created checkpoint = %+v", store.created)
 	}
+	if store.created[0].LeaseDuration != leaseDuration {
+		t.Fatalf("created lease duration = %v, want %v", store.created[0].LeaseDuration, leaseDuration)
+	}
+	for _, saved := range store.saved {
+		if saved.OwnerID != "" && saved.LeaseDuration != leaseDuration {
+			t.Fatalf("saved lease duration = %v, want %v", saved.LeaseDuration, leaseDuration)
+		}
+	}
 	if len(store.finished) == 0 || store.finished[len(store.finished)-1].Status != CheckpointCompleted {
 		t.Fatalf("finished checkpoint = %+v, want completed", store.finished)
+	}
+	if store.finished[len(store.finished)-1].LeaseDuration != 0 {
+		t.Fatalf("finished lease duration = %v, want cleared", store.finished[len(store.finished)-1].LeaseDuration)
 	}
 }
 
 func TestWorkflowCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
 	bodyRuns := 0
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		bodyRuns++
 		return len(input), nil
@@ -2830,7 +3149,7 @@ func TestWorkflowCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 
 func TestWorkflowStartedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		return len(input), nil
 	})
@@ -2875,7 +3194,7 @@ func TestWorkflowStartedEventFailureLeavesPendingEvent(t *testing.T) {
 func TestWorkflowCheckpointerFinishesFailedRun(t *testing.T) {
 	store := &recordingCheckpointer{}
 	wantErr := errors.New("boom")
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, _ string) (int, error) {
 		return 0, wantErr
 	})
@@ -2899,7 +3218,7 @@ func TestWorkflowFailedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
 	wantErr := errors.New("boom")
 	bodyRuns := 0
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, _ string) (int, error) {
 		bodyRuns++
 		return 0, wantErr
@@ -2987,7 +3306,7 @@ func TestWorkflowNodeFailedEventFailureFinishesFailedRun(t *testing.T) {
 	store := &recordingCheckpointer{}
 	wantErr := errors.New("boom")
 	sinkErr := errors.New("node failed sink")
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, _ string) (int, error) {
 		return 0, wantErr
 	})
@@ -3020,7 +3339,7 @@ func TestWorkflowNodeFailedEventFailureFinishesFailedRun(t *testing.T) {
 
 func TestWorkflowNodeCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		return len(input), nil
 	})
@@ -3058,17 +3377,18 @@ func TestWorkflowNodeCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 	}
 }
 
-func TestWorkflowCompileRejectsNilCheckpointer(t *testing.T) {
-	wf := New[string, int]("example", WithCheckpointer(nil))
-	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
-		return len(input), nil
-	})
-	wf.Entry(plan)
-	wf.Exit(plan)
+func TestWorkflowCompileRejectsNilStore(t *testing.T) {
+	for _, store := range []Store{nil, (*MemoryStore)(nil)} {
+		wf := New[string, int]("example", WithStore(store))
+		plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
+			return len(input), nil
+		})
+		wf.Entry(plan)
+		wf.Exit(plan)
 
-	_, err := wf.compile()
-	if err == nil {
-		t.Fatal("Compile() error = nil, want nil checkpointer error")
+		if _, err := wf.compile(); err == nil {
+			t.Fatal("Compile() error = nil, want nil store error")
+		}
 	}
 }
 
@@ -3086,8 +3406,13 @@ func TestWorkflowCompileAcceptsParallelism(t *testing.T) {
 }
 
 func TestWorkflowResumeLoadsCheckpointPayload(t *testing.T) {
+	const leaseDuration = 37 * time.Second
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string](
+		"example",
+		WithStore(storeWithCheckpointer(store)),
+		WithCheckpointLease(leaseDuration, 10*time.Second),
+	)
 	planRuns := 0
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		planRuns++
@@ -3130,6 +3455,9 @@ func TestWorkflowResumeLoadsCheckpointPayload(t *testing.T) {
 	if len(store.saved) == 0 {
 		t.Fatal("saved checkpoints = 0, want resume claim before node execution")
 	}
+	if store.saved[0].LeaseDuration != leaseDuration {
+		t.Fatalf("claim lease duration = %v, want %v", store.saved[0].LeaseDuration, leaseDuration)
+	}
 	claim, err := decodeCheckpointPayload[string](store.saved[0].Payload)
 	if err != nil {
 		t.Fatalf("decode claim payload: %v", err)
@@ -3147,7 +3475,7 @@ func TestWorkflowResumeLoadsCheckpointPayload(t *testing.T) {
 
 func TestWorkflowResumeRejectsUnexpiredOwnerLease(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	planRuns := 0
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		planRuns++
@@ -3159,19 +3487,23 @@ func TestWorkflowResumeRejectsUnexpiredOwnerLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}
+	leaseExpiresAt := time.Now().Add(time.Hour)
 	payload, err := encodeCheckpointPayloadWithMeta[string](runState{
 		queue:     []activation{{node: "plan", input: "saved"}},
 		scheduled: map[string]int{"plan": 1},
 		completed: map[string]int{},
 		buckets:   map[joinBucketKey]*joinBucket{},
 	}, nil, 1, compiled.checkpointMeta(checkpointPayloadMeta{
-		OwnerID:        "active-owner",
-		LeaseExpiresAt: time.Now().Add(time.Hour),
+		OwnerID: "active-owner", LeaseExpiresAt: leaseExpiresAt, ClaimSequence: 1,
 	}))
 	if err != nil {
 		t.Fatalf("encodeCheckpointPayloadWithMeta() error = %v", err)
 	}
-	store.records["run-1"] = workflowCheckpointRecord(compiled, "run-1", 3, CheckpointRunning, payload)
+	record := workflowCheckpointRecord(compiled, "run-1", 3, CheckpointRunning, payload)
+	record.OwnerID = "active-owner"
+	record.LeaseExpiresAt = leaseExpiresAt
+	record.ClaimSequence = 1
+	store.records["run-1"] = record
 
 	_, err = compiled.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
 	if !errors.Is(err, ErrCheckpointConflict) {
@@ -3187,7 +3519,7 @@ func TestWorkflowResumeRejectsUnexpiredOwnerLease(t *testing.T) {
 
 func TestWorkflowResumeContinuesEventSequenceFromCheckpointCursor(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -3228,7 +3560,7 @@ func TestWorkflowResumeContinuesEventSequenceFromCheckpointCursor(t *testing.T) 
 
 func TestWorkflowResumeReplaysPendingEventBeforeNewEvents(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -3290,7 +3622,7 @@ func TestWorkflowResumeReplaysPendingEventBeforeNewEvents(t *testing.T) {
 
 func TestWorkflowResumeReplaysPendingEventBeforeCompletingTerminalCheckpoint(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		return len(input), nil
 	})
@@ -3505,10 +3837,12 @@ func workflowCheckpointRecord[I, O any](compiled *compiled[I, O], runID string, 
 }
 
 type recordingCheckpointer struct {
+	mu       sync.Mutex
 	records  map[string]CheckpointRecord
 	created  []CheckpointRecord
 	saved    []CheckpointRecord
 	finished []CheckpointRecord
+	renewed  []CheckpointLease
 }
 
 type failingWorkflowStore struct {
@@ -3523,11 +3857,19 @@ func (store failingWorkflowStore) Load(context.Context, string) (CheckpointRecor
 	return CheckpointRecord{}, store.err
 }
 
+func (store failingWorkflowStore) Claim(context.Context, CheckpointRecord, int64) error {
+	return store.err
+}
+
 func (store failingWorkflowStore) Save(context.Context, CheckpointRecord, int64) error {
 	return store.err
 }
 
 func (store failingWorkflowStore) Finish(context.Context, CheckpointRecord, int64) error {
+	return store.err
+}
+
+func (store failingWorkflowStore) RenewLease(context.Context, CheckpointLease) error {
 	return store.err
 }
 
@@ -3537,6 +3879,14 @@ func (store failingWorkflowStore) Append(context.Context, runlog.Record) error {
 
 func (store failingWorkflowStore) List(context.Context, runlog.Query) ([]runlog.Record, error) {
 	return nil, store.err
+}
+
+func (store failingWorkflowStore) ListCheckpoints(context.Context, CheckpointHistoryRequest) ([]CheckpointRecord, error) {
+	return nil, store.err
+}
+
+func (store failingWorkflowStore) AppendFenced(context.Context, runlog.Record, runlog.Fence) error {
+	return store.err
 }
 
 type countingPlugin struct {
@@ -3573,6 +3923,8 @@ func (f testRunOptionFunc) ApplyRunOption(cfg *gopact.RunConfig) {
 }
 
 func (r *recordingCheckpointer) Create(_ context.Context, rec CheckpointRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.records == nil {
 		r.records = map[string]CheckpointRecord{}
 	}
@@ -3582,6 +3934,8 @@ func (r *recordingCheckpointer) Create(_ context.Context, rec CheckpointRecord) 
 }
 
 func (r *recordingCheckpointer) Load(_ context.Context, runID string) (CheckpointRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	rec, ok := r.records[runID]
 	if !ok {
 		return CheckpointRecord{}, ErrCheckpointNotFound
@@ -3589,7 +3943,40 @@ func (r *recordingCheckpointer) Load(_ context.Context, runID string) (Checkpoin
 	return rec, nil
 }
 
+func (r *recordingCheckpointer) Claim(_ context.Context, candidate CheckpointRecord, version int64) error {
+	if version <= 0 || candidate.Version != version || candidate.Status != CheckpointRunning ||
+		candidate.OwnerID == "" || candidate.ClaimSequence <= 0 || candidate.LeaseExpiresAt.IsZero() {
+		return ErrInvalidCheckpoint
+	}
+	if err := validateCheckpointRecord(candidate); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	if !candidate.LeaseExpiresAt.After(now) {
+		return ErrInvalidCheckpoint
+	}
+	current, ok := r.records[candidate.RunID]
+	if !ok {
+		return ErrCheckpointNotFound
+	}
+	if current.Version != version || (current.Status != CheckpointRunning && current.Status != CheckpointInterrupted) ||
+		current.LeaseExpiresAt.After(now) || candidate.ClaimSequence != current.ClaimSequence+1 {
+		return ErrCheckpointConflict
+	}
+	if !sameCheckpointIdentity(current, candidate) {
+		return ErrCheckpointMismatch
+	}
+	candidate.Version = version + 1
+	r.saved = append(r.saved, candidate)
+	r.records[candidate.RunID] = candidate
+	return nil
+}
+
 func (r *recordingCheckpointer) Save(_ context.Context, rec CheckpointRecord, version int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.records == nil {
 		r.records = map[string]CheckpointRecord{}
 	}
@@ -3600,10 +3987,25 @@ func (r *recordingCheckpointer) Save(_ context.Context, rec CheckpointRecord, ve
 }
 
 func (r *recordingCheckpointer) Finish(_ context.Context, rec CheckpointRecord, _ int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.records == nil {
 		r.records = map[string]CheckpointRecord{}
 	}
 	r.finished = append(r.finished, rec)
 	r.records[rec.RunID] = rec
+	return nil
+}
+
+func (r *recordingCheckpointer) RenewLease(_ context.Context, lease CheckpointLease) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.renewed = append(r.renewed, lease)
+	rec, ok := r.records[lease.RunID]
+	if !ok || rec.Status != CheckpointRunning || rec.OwnerID != lease.OwnerID || rec.ClaimSequence != lease.ClaimSequence {
+		return ErrCheckpointLeaseLost
+	}
+	rec.LeaseExpiresAt = lease.ExpiresAt
+	r.records[lease.RunID] = rec
 	return nil
 }

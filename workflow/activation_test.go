@@ -11,9 +11,11 @@ import (
 func TestWorkflowResumeRetriesRunningActivationWithNextAttempt(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	bodyRuns := 0
-	wf := New[int, int]("activation-resume", WithCheckpointer(store))
-	wait := wf.Node("wait", func(_ context.Context, input int) (int, error) {
+	var resumed RunInfo
+	wf := New[int, int]("activation-resume", WithStore(storeWithCheckpointer(store)))
+	wait := wf.Node("wait", func(ctx context.Context, input int) (int, error) {
 		bodyRuns++
+		resumed = RunInfoFromContext(ctx)
 		return input, nil
 	})
 	wf.Entry(wait)
@@ -51,6 +53,9 @@ func TestWorkflowResumeRetriesRunningActivationWithNextAttempt(t *testing.T) {
 	if bodyRuns != 1 {
 		t.Fatalf("body runs after resume = %d, want 1", bodyRuns)
 	}
+	if resumed.ActivationID != "act-1" || resumed.Attempt != 2 {
+		t.Fatalf("resumed RunInfo = %+v, want stable activation act-1 at attempt 2", resumed)
+	}
 	finalPayload, err := decodeCheckpointPayload[int](store.records["activation-resume"].Payload)
 	if err != nil {
 		t.Fatalf("decode final checkpoint payload error = %v", err)
@@ -63,7 +68,7 @@ func TestWorkflowResumeRetriesRunningActivationWithNextAttempt(t *testing.T) {
 
 func TestWorkflowInterruptPersistsActivationPhaseAndWorkflowEvent(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("activation-interrupt", WithCheckpointer(store))
+	wf := New[string, string]("activation-interrupt", WithStore(storeWithCheckpointer(store)))
 	wait := wf.Node("wait", func(_ context.Context, input string) (string, error) { return input, nil })
 	wait.Guard(BeforeRun("approval", GuardFunc[string, string](func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
 		return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval-1", Subject: "approval"}}, nil

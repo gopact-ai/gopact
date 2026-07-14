@@ -101,12 +101,14 @@ func TestCatalogAdapterForwardsSessionIDAndFiltersExtensions(t *testing.T) {
 	}
 	sink := gopact.EventSinkFunc(func(context.Context, gopact.Event) error { return nil })
 	lineage := gopact.RunLineage{ParentRunID: "parent-run", Depth: 2}
+	customIDKind := gopact.IDKind("catalog-custom")
 	_, err = reviewer.Invoke(
 		context.Background(),
 		Request{},
 		gopact.WithSessionID("session-explicit"),
 		gopact.WithRunID("child-run"),
 		gopact.WithRunLineage(lineage),
+		gopact.WithIDGenerator(customIDKind, func() (string, error) { return "custom-id", nil }),
 		gopact.WithEventSink(sink),
 		catalogRunOptionFunc(func(cfg *gopact.RunConfig) {
 			cfg.Extensions = map[string]any{"private": true}
@@ -118,6 +120,9 @@ func TestCatalogAdapterForwardsSessionIDAndFiltersExtensions(t *testing.T) {
 	if received.SessionID != "session-explicit" || received.RunID != "child-run" ||
 		received.Lineage != lineage || len(received.EventSinks) != 1 || len(received.Extensions) != 0 {
 		t.Fatalf("forwarded config = %+v", received)
+	}
+	if _, ok := received.IDGenerator(customIDKind); !ok {
+		t.Fatal("typed adapter did not forward the custom ID generator")
 	}
 }
 

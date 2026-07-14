@@ -63,7 +63,7 @@ func TestWorkflowInvokeStreamYieldsCommittedOutputBeforeWorkflowCompletes(t *tes
 func TestWorkflowInvokeStreamConsumerStopCancelsPendingWorkflow(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	secondRuns := 0
-	wf := New[int, int]("stopped-stream", WithCheckpointer(store))
+	wf := New[int, int]("stopped-stream", WithStore(storeWithCheckpointer(store)))
 	first := wf.Node("first", func(_ context.Context, input int) (int, error) { return input, nil })
 	second := wf.Node("second", func(_ context.Context, input int) (int, error) {
 		secondRuns++
