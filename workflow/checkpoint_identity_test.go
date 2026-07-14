@@ -233,7 +233,7 @@ func TestWorkflowResumeRejectsCheckpointWithoutSessionID(t *testing.T) {
 func TestWorkflowCheckpointedAgentContextSurvivesInterrupt(t *testing.T) {
 	store := NewMemoryCheckpointer()
 	buildCalls := 0
-	wf := New[string, string]("checkpointed-agent-context", WithCheckpointer(store))
+	wf := New[string, string]("checkpointed-agent-context", WithStore(storeWithCheckpointer(store)))
 	build := wf.Node("build", func(_ context.Context, input string) (gopact.ModelRequest, error) {
 		buildCalls++
 		return gopact.ModelRequest{Messages: []gopact.Message{gopact.UserMessage(input)}}, nil
@@ -278,7 +278,7 @@ func interruptedSessionWorkflow(t *testing.T, name string) (*Workflow[string, Ru
 }
 
 func newInterruptedSessionWorkflow(name string, store Checkpointer) *Workflow[string, RunInfo] {
-	wf := New[string, RunInfo](name, WithCheckpointer(store))
+	wf := New[string, RunInfo](name, WithStore(storeWithCheckpointer(store)))
 	node := wf.Node("node", func(ctx context.Context, _ string) (RunInfo, error) {
 		return RunInfoFromContext(ctx), nil
 	})
@@ -306,7 +306,7 @@ func TestWorkflowResumeRejectsTopologyVersionMismatchBeforeExecution(t *testing.
 	createPendingIdentityCheckpoint(t, store, pendingCheckpointRequest{workflow: "topology", node: "first", runID: "topology-run"})
 	expireRecordingLease(t, store, "topology-run")
 	bodyRuns := 0
-	second := New[int, int]("topology", WithCheckpointer(store))
+	second := New[int, int]("topology", WithStore(storeWithCheckpointer(store)))
 	secondNode := second.Node("second", func(_ context.Context, input int) (int, error) {
 		bodyRuns++
 		return input, nil
@@ -349,7 +349,7 @@ func TestWorkflowResumeRejectsCheckpointSchemaMismatchBeforeExecution(t *testing
 		t.Fatalf("encodeCheckpointPayloadWithMeta() error = %v", err)
 	}
 	store.records["schema-run"] = record
-	wf := New[int, int]("schema", WithCheckpointer(store))
+	wf := New[int, int]("schema", WithStore(storeWithCheckpointer(store)))
 	node := wf.Node("node", func(_ context.Context, input int) (int, error) {
 		bodyRuns++
 		return input, nil
@@ -376,7 +376,7 @@ func TestWorkflowResumeRejectsExplicitTopologyVersionMismatch(t *testing.T) {
 	})
 	expireRecordingLease(t, store, "versioned-run")
 	bodyRuns := 0
-	wf := New[int, int]("versioned", WithCheckpointer(store), WithTopologyVersion("v2"))
+	wf := New[int, int]("versioned", WithStore(storeWithCheckpointer(store)), WithTopologyVersion("v2"))
 	node := wf.Node("node", func(_ context.Context, input int) (int, error) {
 		bodyRuns++
 		return input, nil
@@ -417,7 +417,7 @@ type pendingCheckpointRequest struct {
 
 func createPendingIdentityCheckpoint(t *testing.T, store *recordingCheckpointer, req pendingCheckpointRequest) *compiled[int, int] {
 	t.Helper()
-	options := append([]BuildOption{WithCheckpointer(store)}, req.options...)
+	options := append([]BuildOption{WithStore(storeWithCheckpointer(store))}, req.options...)
 	wf := New[int, int](req.workflow, options...)
 	run := req.run
 	if run == nil {

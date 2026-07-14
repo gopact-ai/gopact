@@ -22,10 +22,7 @@ func NewMemoryStore() *MemoryStore {
 }
 
 var (
-	_ Checkpointer      = (*MemoryStore)(nil)
-	_ CheckpointHistory = (*MemoryStore)(nil)
-	_ runlog.Log        = (*MemoryStore)(nil)
-	_ runlog.FencedLog  = (*MemoryStore)(nil)
+	_ Store = (*MemoryStore)(nil)
 )
 
 // AppendFenced validates the current workflow claim and appends one RunLog

@@ -40,7 +40,7 @@ func TestSnapshotDefaultHistoryLimit(t *testing.T) {
 			time.Date(2026, time.July, 13, 12, 0, 0, int(sequence), time.UTC),
 		))
 	}
-	_, err := NewRunLogSnapshotStore(log, staticCheckpointHistory{}).Load(
+	_, err := newTestRunLogSnapshotStore(log, staticCheckpointHistory{}).Load(
 		context.Background(),
 		SnapshotRequest{RunID: "run-1"},
 	)
@@ -66,7 +66,7 @@ func TestSnapshotPagesCheckpointHistory(t *testing.T) {
 			Version: version, Status: CheckpointRunning, ConfirmedSequence: confirmedSequence,
 		})
 	}
-	snapshot, err := NewRunLogSnapshotStore(
+	snapshot, err := newTestRunLogSnapshotStore(
 		&pagingRunLog{records: []runlog.Record{timeline}},
 		history,
 	).Load(context.Background(), SnapshotRequest{RunID: "run-1", Limit: 1})
@@ -89,7 +89,7 @@ func TestControlPagesHistory(t *testing.T) {
 		record.RevisionID = fmt.Sprintf("revision-%d", sequence)
 		log.records = append(log.records, record)
 	}
-	compiled := &compiled[string, string]{journal: log}
+	compiled := &compiled[string, string]{store: storeWithCheckpointerAndLog(NewMemoryCheckpointer(), log)}
 	record, err := compiled.controlSource(context.Background(), "run-1", "revision-257")
 	if err != nil {
 		t.Fatalf("controlSource() error = %v", err)
@@ -138,7 +138,7 @@ func TestControlAndCheckpointHistoryLimits(t *testing.T) {
 			Version: ordinal, Status: CheckpointRunning, ConfirmedSequence: ordinal,
 		})
 	}
-	compiled := &compiled[string, string]{journal: log}
+	compiled := &compiled[string, string]{store: storeWithCheckpointerAndLog(NewMemoryCheckpointer(), log)}
 	if _, err := compiled.controlSource(context.Background(), "run-1", "missing"); !errors.Is(err, ErrHistoryLimitExceeded) {
 		t.Fatalf("controlSource() error = %v, want ErrHistoryLimitExceeded", err)
 	}
@@ -455,7 +455,7 @@ func TestRunLogSnapshotStoreValidatesCheckpointSessionIdentity(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			snapshot, err := NewRunLogSnapshotStore(
+			snapshot, err := newTestRunLogSnapshotStore(
 				staticRunLog{records: []runlog.Record{timeline}},
 				staticCheckpointHistory(test.history),
 			).Load(context.Background(), SnapshotRequest{RunID: "run-1"})
@@ -491,7 +491,7 @@ func TestRunLogSnapshotStoreRejectsInconsistentTimelineSourceLineage(t *testing.
 			changed := base
 			changed.Sequence = 2
 			test.mutate(&changed)
-			_, err := NewRunLogSnapshotStore(
+			_, err := newTestRunLogSnapshotStore(
 				staticRunLog{records: []runlog.Record{base, changed}}, staticCheckpointHistory{},
 			).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
 			if err == nil {
@@ -515,7 +515,7 @@ func TestRunLogSnapshotStoreRejectsConsistentlyInvalidTimelineSourceLineage(t *t
 		t.Run(test.name, func(t *testing.T) {
 			record := sessionRunRecord("run-1", 1, EventWorkflowStarted, time.Now().UTC())
 			test.mutate(&record)
-			_, err := NewRunLogSnapshotStore(
+			_, err := newTestRunLogSnapshotStore(
 				staticRunLog{records: []runlog.Record{record}}, staticCheckpointHistory{},
 			).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
 			if !errors.Is(err, ErrCheckpointMismatch) {
@@ -545,7 +545,7 @@ func TestRunLogSnapshotStoreRejectsConsistentlyInvalidCheckpointSourceLineage(t 
 		t.Run(test.name, func(t *testing.T) {
 			record := base
 			test.mutate(&record)
-			_, err := NewRunLogSnapshotStore(
+			_, err := newTestRunLogSnapshotStore(
 				staticRunLog{}, staticCheckpointHistory{record},
 			).Load(t.Context(), SnapshotRequest{RunID: "run-1", After: 1})
 			if !errors.Is(err, ErrCheckpointMismatch) {
@@ -568,7 +568,7 @@ func TestRunLogSnapshotStoreRetainsCheckpointSessionWhenTimelinePageIsEmpty(t *t
 		Status: CheckpointRunning, ConfirmedSequence: 1,
 	}}
 
-	snapshot, err := NewRunLogSnapshotStore(log, history).Load(
+	snapshot, err := newTestRunLogSnapshotStore(log, history).Load(
 		context.Background(), SnapshotRequest{RunID: "run-1", After: 1},
 	)
 	if err != nil {

@@ -214,11 +214,7 @@ func (wf *Workflow[I, O]) Snapshot(ctx context.Context, request SnapshotRequest)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	history, ok := compiled.checkpointer.(CheckpointHistory)
-	if !ok {
-		return Snapshot{}, errors.New("workflow: checkpointer does not provide checkpoint history")
-	}
-	return NewRunLogSnapshotStore(compiled.journal, history).Load(ctx, request)
+	return NewRunLogSnapshotStore(compiled.store).Load(ctx, request)
 }
 
 // RunLogSnapshotStore builds snapshots from a RunLog.
@@ -227,9 +223,9 @@ type RunLogSnapshotStore struct {
 	checkpoints CheckpointHistory
 }
 
-// NewRunLogSnapshotStore creates a snapshot store over log and checkpoint history.
-func NewRunLogSnapshotStore(log runlog.Log, checkpoints CheckpointHistory) RunLogSnapshotStore {
-	return RunLogSnapshotStore{log: log, checkpoints: checkpoints}
+// NewRunLogSnapshotStore creates a snapshot store over one authoritative Store.
+func NewRunLogSnapshotStore(store Store) RunLogSnapshotStore {
+	return RunLogSnapshotStore{log: store, checkpoints: store}
 }
 
 // Load implements SnapshotStore.

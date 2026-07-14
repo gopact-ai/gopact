@@ -13,7 +13,7 @@ import (
 func TestWorkflowRetryCreatesNewRunFromFailedSource(t *testing.T) {
 	store := NewMemoryStore()
 	calls := 0
-	wf := New[string, string]("retry-new-run", WithStrictCheckpointer(store), WithStrictJournal(store))
+	wf := New[string, string]("retry-new-run", WithStore(store))
 	node := wf.Node("node", func(_ context.Context, input string) (string, error) {
 		calls++
 		if calls == 1 {
@@ -60,7 +60,7 @@ func TestWorkflowRetryCreatesNewRunFromFailedSource(t *testing.T) {
 
 func TestWorkflowJumpToCreatesNewRunFromFailedSource(t *testing.T) {
 	store := NewMemoryStore()
-	wf := New[string, string]("jump-new-run", WithStrictCheckpointer(store), WithStrictJournal(store))
+	wf := New[string, string]("jump-new-run", WithStore(store))
 	node := wf.Node("node", func(_ context.Context, input string) (string, error) {
 		if input == "fail" {
 			return "", errors.New("failed")
@@ -93,7 +93,7 @@ func TestWorkflowJumpToCreatesNewRunFromFailedSource(t *testing.T) {
 func TestWorkflowRetryGeneratesNewRunIDByDefault(t *testing.T) {
 	store := NewMemoryStore()
 	calls := 0
-	wf := New[string, string]("retry-generated-run", WithStrictCheckpointer(store), WithStrictJournal(store))
+	wf := New[string, string]("retry-generated-run", WithStore(store))
 	node := wf.Node("node", func(_ context.Context, input string) (string, error) {
 		calls++
 		if calls == 1 {
@@ -118,7 +118,7 @@ func TestWorkflowRetryGeneratesNewRunIDByDefault(t *testing.T) {
 
 func TestWorkflowControlRejectsSourceRunIDReuse(t *testing.T) {
 	store := NewMemoryStore()
-	wf := New[string, string]("control-same-run", WithStrictCheckpointer(store), WithStrictJournal(store))
+	wf := New[string, string]("control-same-run", WithStore(store))
 	node := wf.Node("node", func(context.Context, string) (string, error) {
 		return "", errors.New("failed")
 	})
@@ -257,7 +257,7 @@ func createTerminalRun(t *testing.T, status CheckpointStatus) (*Workflow[string,
 	t.Helper()
 	store := NewMemoryStore()
 	started := make(chan struct{})
-	wf := New[string, string]("terminal-"+string(status), WithStrictCheckpointer(store), WithStrictJournal(store))
+	wf := New[string, string]("terminal-"+string(status), WithStore(store))
 	node := wf.Node("node", func(ctx context.Context, input string) (string, error) {
 		switch status {
 		case CheckpointFailed:

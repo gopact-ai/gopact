@@ -51,8 +51,7 @@ go vet ./...
 ```go
 wf := workflow.New[Input, Output](
     "agent",
-    workflow.WithCheckpointer(store),
-    workflow.WithJournal(store),
+    workflow.WithStore(store),
     workflow.WithCheckpointLease(3*time.Minute, time.Minute),
 )
 ```

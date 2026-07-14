@@ -128,7 +128,7 @@ func TestWorkflowJournalAheadRejectsSourceLineageMismatchBeforeWrites(t *testing
 			if err := journal.Append(t.Context(), record); err != nil {
 				t.Fatal(err)
 			}
-			compiled.checkpointer, compiled.journal = store, journal
+			compiled.store = storeWithCheckpointerAndLog(store, journal)
 			delivered := 0
 			execution := workflowExecution[string, string]{
 				compiled: compiled, ctx: t.Context(), sessionID: "session", runID: "run", checkpoint: checkpoint,
@@ -199,8 +199,7 @@ func TestWorkflowFencedJournalCannotSynchronouslyReenterEmitter(t *testing.T) {
 	store := &reentrantFencedStore{MemoryStore: NewMemoryStore()}
 	wf := New[string, string](
 		"fenced-journal-reentry",
-		WithCheckpointer(store),
-		WithJournal(store),
+		WithStore(store),
 	)
 	node := testNode(wf, "work", func(ctx context.Context, input string) (string, error) {
 		return input, Emit(ctx, gopact.Event{Type: "audit.custom"})
@@ -258,8 +257,7 @@ func TestWorkflowJournalReconciliationConfirmsEachPage(t *testing.T) {
 			t.Fatalf("Append(%d) error = %v", sequence, err)
 		}
 	}
-	compiled.checkpointer = store
-	compiled.journal = journal
+	compiled.store = storeWithCheckpointerAndLog(store, journal)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	var replayed []int64
@@ -293,93 +291,6 @@ func TestWorkflowJournalReconciliationConfirmsEachPage(t *testing.T) {
 	for index, sequence := range replayed {
 		if sequence != int64(index+1) {
 			t.Fatalf("replayed[%d] = %d, want %d", index, sequence, index+1)
-		}
-	}
-}
-
-func TestWorkflowCommittedAndCustomEventsReserveSequenceSerially(t *testing.T) {
-	wf := New[string, string]("sequence-serialization")
-	node := testNode(wf, "work", func(_ context.Context, input string) (string, error) { return input, nil })
-	wf.Entry(node)
-	wf.Exit(node)
-	compiled, err := wf.compile()
-	if err != nil {
-		t.Fatalf("Compile() error = %v", err)
-	}
-	store := &blockingSaveCheckpointer{
-		MemoryCheckpointer: NewMemoryCheckpointer(),
-		blocked:            make(chan struct{}),
-		release:            make(chan struct{}),
-	}
-	compiled.checkpointer = store
-	state := journalReconcileTestState()
-	payload, err := encodeCheckpointPayloadWithMeta[string](
-		state,
-		nil,
-		1,
-		compiled.checkpointMeta(checkpointPayloadMeta{}),
-	)
-	if err != nil {
-		t.Fatalf("encodeCheckpointPayloadWithMeta() error = %v", err)
-	}
-	checkpoint := workflowCheckpointRecord(compiled, "run-1", 1, CheckpointRunning, payload)
-	if err := store.Create(context.Background(), checkpoint); err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-	journal := runlog.NewMemoryLog()
-	ctx, cancel := context.WithCancelCause(context.Background())
-	defer cancel(nil)
-	execution := workflowExecution[string, string]{
-		compiled:   compiled,
-		ctx:        ctx,
-		sessionID:  checkpoint.SessionID,
-		runID:      checkpoint.RunID,
-		ownerID:    "owner",
-		state:      state,
-		step:       1,
-		checkpoint: checkpoint,
-		cancel:     cancel,
-		eventSinks: []gopact.EventSink{
-			strictWorkflowEventSink{EventSink: runlog.NewSink(journal)},
-		},
-		executionEpoch: 1,
-		controlOrigin:  "natural",
-	}
-	commitDone := make(chan error, 1)
-	go func() {
-		commitDone <- execution.commitRunningEvent(gopact.Event{Type: EventWorkflowStarted}, 1)
-	}()
-	<-store.blocked
-	if execution.eventMu.TryLock() {
-		execution.eventMu.Unlock()
-		close(store.release)
-		<-commitDone
-		t.Fatal("event sequence lock was not held across pending checkpoint persistence")
-	}
-	customDone := make(chan error, 1)
-	go func() {
-		customDone <- execution.emitEvent(gopact.Event{Type: "audit.custom"})
-	}()
-	close(store.release)
-	if err := <-commitDone; err != nil {
-		t.Fatalf("commitRunningEvent() error = %v", err)
-	}
-	if err := <-customDone; err != nil {
-		t.Fatalf("emitEvent() error = %v", err)
-	}
-	records, err := journal.List(context.Background(), runlog.Query{RunID: "run-1"})
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
-	}
-	if len(records) != 2 {
-		t.Fatalf("records = %+v, want two events", records)
-	}
-	wantRevisions := []string{"run-1/revision-1", "run-1/revision-2"}
-	for index, record := range records {
-		wantSequence := int64(index + 1)
-		wantRevision := wantRevisions[index]
-		if record.Sequence != wantSequence || record.RevisionID != wantRevision {
-			t.Fatalf("record %d = sequence %d revision %q, want %d and %q", index, record.Sequence, record.RevisionID, wantSequence, wantRevision)
 		}
 	}
 }
@@ -432,13 +343,13 @@ func TestWorkflowStaleOwnerCannotAppendRawEventAfterClaim(t *testing.T) {
 				t.Fatalf("Claim() error = %v", err)
 			}
 			journal := runlog.NewMemoryLog()
-			compiled.checkpointer = store
+			compiled.store = storeWithCheckpointerAndLog(store, journal)
 			ctx, cancel := context.WithCancelCause(t.Context())
 			defer cancel(nil)
 			execution := workflowExecution[string, string]{
 				compiled: compiled, ctx: ctx, sessionID: checkpoint.SessionID, runID: checkpoint.RunID,
 				ownerID: "owner-old", state: state, step: 1, checkpoint: checkpoint, cancel: cancel,
-				eventSinks: []gopact.EventSink{
+				replaySinks: []gopact.EventSink{
 					strictWorkflowEventSink{EventSink: runlog.NewSink(journal)},
 				},
 				executionEpoch: 1, controlOrigin: "natural",
@@ -490,14 +401,13 @@ func TestWorkflowObservedEventUsesFencedJournalWithoutCheckpointHistory(t *testi
 	if err := store.Create(t.Context(), checkpoint); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	compiled.checkpointer = store
-	compiled.journal = store
+	compiled.store = store
 	ctx, cancel := context.WithCancelCause(t.Context())
 	defer cancel(nil)
 	execution := workflowExecution[string, string]{
 		compiled: compiled, ctx: ctx, sessionID: checkpoint.SessionID, runID: checkpoint.RunID,
 		ownerID: checkpoint.OwnerID, state: state, step: 1, checkpoint: checkpoint, cancel: cancel,
-		eventSinks: []gopact.EventSink{
+		replaySinks: []gopact.EventSink{
 			strictWorkflowEventSink{EventSink: runlog.NewSink(store)},
 		},
 		executionEpoch: 1, controlOrigin: "natural",
@@ -525,42 +435,6 @@ func TestWorkflowObservedEventUsesFencedJournalWithoutCheckpointHistory(t *testi
 	}
 }
 
-func TestWorkflowSeparateFencedStoresUseCheckpointReservation(t *testing.T) {
-	checkpointStore := NewMemoryStore()
-	journalStore := NewMemoryStore()
-	wf := New[string, string](
-		"separate-fenced-stores",
-		WithCheckpointer(checkpointStore),
-		WithJournal(journalStore),
-	)
-	node := testNode(wf, "work", func(ctx context.Context, input string) (string, error) {
-		return input, Emit(ctx, gopact.Event{Type: "audit.custom"})
-	})
-	wf.Entry(node)
-	wf.Exit(node)
-	if _, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("run-separate-stores")); err != nil {
-		t.Fatalf("Invoke() error = %v", err)
-	}
-	records, err := journalStore.List(t.Context(), runlog.Query{RunID: "run-separate-stores"})
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
-	}
-	found := false
-	for _, record := range records {
-		found = found || record.EventType == "audit.custom"
-	}
-	if !found {
-		t.Fatalf("records = %+v, want custom event through separate journal", records)
-	}
-	history, err := checkpointStore.ListCheckpoints(t.Context(), CheckpointHistoryRequest{RunID: "run-separate-stores"})
-	if err != nil {
-		t.Fatalf("ListCheckpoints() error = %v", err)
-	}
-	if len(history) < 2 {
-		t.Fatalf("checkpoint history = %d, want fallback reservation versions", len(history))
-	}
-}
-
 func journalReconcileTestState() runState {
 	return runState{
 		queue:        []activation{{id: "act-1", node: "work", input: "input"}},
@@ -580,8 +454,7 @@ func TestWorkflowResumeReconcilesJournalAheadOfCheckpoint(t *testing.T) {
 	store := NewMemoryStore()
 	wf := New[string, string](
 		"journal-reconcile",
-		WithStrictCheckpointer(store),
-		WithStrictJournal(store),
+		WithStore(store),
 	)
 	bodyRuns := 0
 	node := testNode(wf, "work", func(ctx context.Context, input string) (string, error) {
@@ -697,8 +570,7 @@ func TestWorkflowResumeReplaysNodeFailedBeforeRetryingActivation(t *testing.T) {
 	bodyRuns := 0
 	wf := New[string, string](
 		"node-failed-reconcile",
-		WithStrictCheckpointer(store),
-		WithStrictJournal(store),
+		WithStore(store),
 	)
 	node := testNode(wf, "work", func(_ context.Context, _ string) (string, error) {
 		bodyRuns++
@@ -779,8 +651,7 @@ func TestWorkflowResumeReplaysGuardRejectedBeforeRetryingActivation(t *testing.T
 	bodyRuns := 0
 	wf := New[string, string](
 		"guard-rejected-reconcile",
-		WithStrictCheckpointer(store),
-		WithStrictJournal(store),
+		WithStore(store),
 	)
 	node := testNode(wf, "work", func(_ context.Context, input string) (string, error) {
 		bodyRuns++

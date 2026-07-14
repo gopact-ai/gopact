@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var _ Store = (*MemoryStore)(nil)
+
 func TestCheckpointRecordLeaseDurationIsNotPersisted(t *testing.T) {
 	record := CheckpointRecord{LeaseDuration: time.Minute}
 	encoded, err := json.Marshal(record)

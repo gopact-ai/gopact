@@ -51,8 +51,7 @@ Without persistence options, a Workflow keeps checkpoints and RunLog events in m
 ```go
 wf := workflow.New[Input, Output](
     "agent",
-    workflow.WithCheckpointer(store),
-    workflow.WithJournal(store),
+    workflow.WithStore(store),
     workflow.WithCheckpointLease(3*time.Minute, time.Minute),
 )
 ```

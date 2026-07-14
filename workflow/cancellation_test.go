@@ -12,7 +12,7 @@ import (
 func TestWorkflowCallerCancellationCommitsCanceledTerminal(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	started := make(chan struct{})
-	wf := New[int, int]("caller-cancel", WithCheckpointer(&contextCheckpointer{recordingCheckpointer: store}))
+	wf := New[int, int]("caller-cancel", WithStore(storeWithCheckpointer(&contextCheckpointer{recordingCheckpointer: store})))
 	wait := wf.Node("wait", func(ctx context.Context, input int) (int, error) {
 		close(started)
 		<-ctx.Done()
@@ -55,8 +55,7 @@ func TestWorkflowCallerLeaseSentinelCauseCommitsCanceledTerminal(t *testing.T) {
 	started := make(chan struct{})
 	wf := New[int, int](
 		"caller-lease-sentinel",
-		WithCheckpointer(store),
-		WithJournal(store),
+		WithStore(store),
 	)
 	wait := wf.Node("wait", func(ctx context.Context, input int) (int, error) {
 		close(started)

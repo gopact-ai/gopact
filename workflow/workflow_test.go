@@ -492,7 +492,7 @@ func TestWorkflowDefaultMemoryStoreProvidesSnapshot(t *testing.T) {
 
 func TestWorkflowAcceptsSharedMemoryStoreDirectly(t *testing.T) {
 	store := NewMemoryStore()
-	wf := New[string, string]("shared-memory", WithCheckpointer(store), WithJournal(store))
+	wf := New[string, string]("shared-memory", WithStore(storeWithCheckpointer(store)))
 	echo := testNode(wf, "echo", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -514,8 +514,8 @@ func TestWorkflowExternalStoreFailureStopsRun(t *testing.T) {
 		name   string
 		option BuildOption
 	}{
-		{name: "checkpointer", option: WithCheckpointer(store)},
-		{name: "journal", option: WithJournal(store)},
+		{name: "checkpointer", option: WithStore(storeWithCheckpointer(store))},
+		{name: "journal", option: WithStore(storeWithCheckpointer(store))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -541,8 +541,8 @@ func TestWorkflowStrictExternalStoreFailureStopsRun(t *testing.T) {
 		name   string
 		option BuildOption
 	}{
-		{name: "checkpointer", option: WithStrictCheckpointer(store)},
-		{name: "journal", option: WithStrictJournal(store)},
+		{name: "checkpointer", option: WithStore(storeWithCheckpointer(store))},
+		{name: "journal", option: WithStore(storeWithCheckpointer(store))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1133,7 +1133,7 @@ func TestWorkflowJoinMaterializesAfterOptionalEdgeClosesAtZero(t *testing.T) {
 
 func TestWorkflowResumeRestoresOptionalJoinExpectation(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	compiled := compileOptionalJoin(t, WithCheckpointer(store))
+	compiled := compileOptionalJoin(t, WithStore(storeWithCheckpointer(store)))
 	sinkErr := errors.New("sink failed")
 	_, err := compiled.Invoke(context.Background(), 7, gopact.WithRunID("optional-join-resume"), gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
 		if event.Type == EventNodeOutputCommitted && event.Summary == "right" {
@@ -1657,7 +1657,7 @@ func TestWorkflowTypedContextRestoresFromCheckpoint(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	firstRuns := 0
 	build := func() *Workflow[string, int] {
-		wf := New[string, int]("typed-context-resume", WithCheckpointer(store))
+		wf := New[string, int]("typed-context-resume", WithStore(storeWithCheckpointer(store)))
 		shared := wf.Context(func(string) typedContextState { return typedContextState{} })
 		first := wf.Node("first", func(ctx context.Context, input string) (string, error) {
 			firstRuns++
@@ -1936,7 +1936,7 @@ func TestRunLogSnapshotStoreHonorsAfterAndLimit(t *testing.T) {
 			t.Fatalf("Append() error = %v", err)
 		}
 	}
-	snapshot, err := NewRunLogSnapshotStore(log, emptyCheckpointHistory{}).Load(context.Background(), SnapshotRequest{RunID: "run-1", After: 1, Limit: 1})
+	snapshot, err := newTestRunLogSnapshotStore(log, emptyCheckpointHistory{}).Load(context.Background(), SnapshotRequest{RunID: "run-1", After: 1, Limit: 1})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -2273,7 +2273,7 @@ func TestPluginDuplicateEventTypeIsBuildError(t *testing.T) {
 
 func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	store := NewMemoryCheckpointer()
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input + "!", nil
 	})
@@ -2291,7 +2291,7 @@ func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	); err != nil {
 		t.Fatalf("source Invoke() error = %v", err)
 	}
-	snapshot, err := NewRunLogSnapshotStore(log, store).Load(context.Background(), SnapshotRequest{RunID: "source-run"})
+	snapshot, err := newTestRunLogSnapshotStore(log, store).Load(context.Background(), SnapshotRequest{RunID: "source-run"})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -2449,7 +2449,7 @@ func TestWorkflowGuardRejectsFailClosed(t *testing.T) {
 func TestWorkflowGuardRejectedEventFailureFinishesFailedRun(t *testing.T) {
 	store := &recordingCheckpointer{}
 	sinkErr := errors.New("guard rejected sink")
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -2491,7 +2491,7 @@ func TestWorkflowGuardBeforeRunInterruptResumes(t *testing.T) {
 	store := &recordingCheckpointer{}
 	guardCalls := 0
 	bodyRuns := 0
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		bodyRuns++
 		return input + "!", nil
@@ -2841,7 +2841,7 @@ func TestWorkflowGuardBeforeCommitInterruptResumesWithoutRerunningBody(t *testin
 	store := &recordingCheckpointer{}
 	guardCalls := 0
 	bodyRuns := 0
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		bodyRuns++
 		return input + "!", nil
@@ -2897,7 +2897,7 @@ func TestWorkflowGuardBeforeCommitInterruptResumesWithoutRerunningBody(t *testin
 }
 
 func TestWorkflowGuardInterruptRequiresID(t *testing.T) {
-	wf := New[string, string]("example", WithCheckpointer(&recordingCheckpointer{}))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(&recordingCheckpointer{})))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -2947,7 +2947,7 @@ func TestWorkflowCheckpointerFinishesCompletedRun(t *testing.T) {
 	store := &recordingCheckpointer{}
 	wf := New[string, int](
 		"example",
-		WithCheckpointer(store),
+		WithStore(storeWithCheckpointer(store)),
 		WithCheckpointLease(leaseDuration, 10*time.Second),
 	)
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
@@ -2986,7 +2986,7 @@ func TestWorkflowCheckpointerFinishesCompletedRun(t *testing.T) {
 func TestWorkflowCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
 	bodyRuns := 0
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		bodyRuns++
 		return len(input), nil
@@ -3045,7 +3045,7 @@ func TestWorkflowCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 
 func TestWorkflowStartedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		return len(input), nil
 	})
@@ -3090,7 +3090,7 @@ func TestWorkflowStartedEventFailureLeavesPendingEvent(t *testing.T) {
 func TestWorkflowCheckpointerFinishesFailedRun(t *testing.T) {
 	store := &recordingCheckpointer{}
 	wantErr := errors.New("boom")
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, _ string) (int, error) {
 		return 0, wantErr
 	})
@@ -3114,7 +3114,7 @@ func TestWorkflowFailedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
 	wantErr := errors.New("boom")
 	bodyRuns := 0
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, _ string) (int, error) {
 		bodyRuns++
 		return 0, wantErr
@@ -3202,7 +3202,7 @@ func TestWorkflowNodeFailedEventFailureFinishesFailedRun(t *testing.T) {
 	store := &recordingCheckpointer{}
 	wantErr := errors.New("boom")
 	sinkErr := errors.New("node failed sink")
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, _ string) (int, error) {
 		return 0, wantErr
 	})
@@ -3235,7 +3235,7 @@ func TestWorkflowNodeFailedEventFailureFinishesFailedRun(t *testing.T) {
 
 func TestWorkflowNodeCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 	store := &recordingCheckpointer{}
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		return len(input), nil
 	})
@@ -3273,17 +3273,18 @@ func TestWorkflowNodeCompletedEventFailureLeavesPendingEvent(t *testing.T) {
 	}
 }
 
-func TestWorkflowCompileRejectsNilCheckpointer(t *testing.T) {
-	wf := New[string, int]("example", WithCheckpointer(nil))
-	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
-		return len(input), nil
-	})
-	wf.Entry(plan)
-	wf.Exit(plan)
+func TestWorkflowCompileRejectsNilStore(t *testing.T) {
+	for _, store := range []Store{nil, (*MemoryStore)(nil)} {
+		wf := New[string, int]("example", WithStore(store))
+		plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
+			return len(input), nil
+		})
+		wf.Entry(plan)
+		wf.Exit(plan)
 
-	_, err := wf.compile()
-	if err == nil {
-		t.Fatal("Compile() error = nil, want nil checkpointer error")
+		if _, err := wf.compile(); err == nil {
+			t.Fatal("Compile() error = nil, want nil store error")
+		}
 	}
 }
 
@@ -3305,7 +3306,7 @@ func TestWorkflowResumeLoadsCheckpointPayload(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	wf := New[string, string](
 		"example",
-		WithCheckpointer(store),
+		WithStore(storeWithCheckpointer(store)),
 		WithCheckpointLease(leaseDuration, 10*time.Second),
 	)
 	planRuns := 0
@@ -3370,7 +3371,7 @@ func TestWorkflowResumeLoadsCheckpointPayload(t *testing.T) {
 
 func TestWorkflowResumeRejectsUnexpiredOwnerLease(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	planRuns := 0
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		planRuns++
@@ -3414,7 +3415,7 @@ func TestWorkflowResumeRejectsUnexpiredOwnerLease(t *testing.T) {
 
 func TestWorkflowResumeContinuesEventSequenceFromCheckpointCursor(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -3455,7 +3456,7 @@ func TestWorkflowResumeContinuesEventSequenceFromCheckpointCursor(t *testing.T) 
 
 func TestWorkflowResumeReplaysPendingEventBeforeNewEvents(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("example", WithCheckpointer(store))
+	wf := New[string, string]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
 		return input, nil
 	})
@@ -3517,7 +3518,7 @@ func TestWorkflowResumeReplaysPendingEventBeforeNewEvents(t *testing.T) {
 
 func TestWorkflowResumeReplaysPendingEventBeforeCompletingTerminalCheckpoint(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, int]("example", WithCheckpointer(store))
+	wf := New[string, int]("example", WithStore(storeWithCheckpointer(store)))
 	plan := testNode(wf, "plan", func(_ context.Context, input string) (int, error) {
 		return len(input), nil
 	})
@@ -3774,6 +3775,14 @@ func (store failingWorkflowStore) Append(context.Context, runlog.Record) error {
 
 func (store failingWorkflowStore) List(context.Context, runlog.Query) ([]runlog.Record, error) {
 	return nil, store.err
+}
+
+func (store failingWorkflowStore) ListCheckpoints(context.Context, CheckpointHistoryRequest) ([]CheckpointRecord, error) {
+	return nil, store.err
+}
+
+func (store failingWorkflowStore) AppendFenced(context.Context, runlog.Record, runlog.Fence) error {
+	return store.err
 }
 
 type countingPlugin struct {

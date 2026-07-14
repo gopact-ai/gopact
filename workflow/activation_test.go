@@ -12,7 +12,7 @@ func TestWorkflowResumeRetriesRunningActivationWithNextAttempt(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	bodyRuns := 0
 	var resumed RunInfo
-	wf := New[int, int]("activation-resume", WithCheckpointer(store))
+	wf := New[int, int]("activation-resume", WithStore(storeWithCheckpointer(store)))
 	wait := wf.Node("wait", func(ctx context.Context, input int) (int, error) {
 		bodyRuns++
 		resumed = RunInfoFromContext(ctx)
@@ -68,7 +68,7 @@ func TestWorkflowResumeRetriesRunningActivationWithNextAttempt(t *testing.T) {
 
 func TestWorkflowInterruptPersistsActivationPhaseAndWorkflowEvent(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
-	wf := New[string, string]("activation-interrupt", WithCheckpointer(store))
+	wf := New[string, string]("activation-interrupt", WithStore(storeWithCheckpointer(store)))
 	wait := wf.Node("wait", func(_ context.Context, input string) (string, error) { return input, nil })
 	wait.Guard(BeforeRun("approval", GuardFunc[string, string](func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
 		return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval-1", Subject: "approval"}}, nil

@@ -34,11 +34,11 @@ func TestSnapshotForkAssociatesParentSinkOnceWithoutPropagatingToChild(t *testin
 	sink := countingAssociatingSink{log: log, count: &associations}
 
 	childStore := NewMemoryStore()
-	child := New[string, string]("child", WithStrictCheckpointer(childStore), WithStrictJournal(childStore))
+	child := New[string, string]("child", WithStore(childStore))
 	childNode := child.Node("work", func(_ context.Context, input string) (string, error) { return input + "!", nil })
 	child.Entry(childNode)
 	child.Exit(childNode)
-	parent := New[string, string]("parent", WithCheckpointer(checkpoints))
+	parent := New[string, string]("parent", WithStore(storeWithCheckpointer(checkpoints)))
 	invokable := parent.AddInvokable("child", child)
 	parent.Entry(invokable)
 	parent.Exit(invokable)
@@ -46,7 +46,7 @@ func TestSnapshotForkAssociatesParentSinkOnceWithoutPropagatingToChild(t *testin
 	if _, err := parent.Invoke(t.Context(), "source", gopact.WithRunID("source-run"), gopact.WithEventSink(sink)); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := NewRunLogSnapshotStore(log, checkpoints).Load(t.Context(), SnapshotRequest{RunID: "source-run"})
+	snapshot, err := newTestRunLogSnapshotStore(log, checkpoints).Load(t.Context(), SnapshotRequest{RunID: "source-run"})
 	if err != nil {
 		t.Fatal(err)
 	}

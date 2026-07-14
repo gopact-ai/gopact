@@ -133,7 +133,7 @@ func TestWorkflowEachIterResumeRestoresTypedCursorWithoutRerun(t *testing.T) {
 			}
 		}
 	}
-	wf := New[string, int]("iter-resume", WithMaxParallelism(1), WithCheckpointer(store))
+	wf := New[string, int]("iter-resume", WithMaxParallelism(1), WithStore(storeWithCheckpointer(store)))
 	plan := wf.Node("plan", func(_ context.Context, input string) (string, error) { return input, nil })
 	branch := wf.Node("branch", func(_ context.Context, input int) (int, error) {
 		runs.add(input)
@@ -257,7 +257,7 @@ func TestWorkflowEachIterStopsGeneratorWhenRunExitsEarly(t *testing.T) {
 func TestWorkflowEachIterResumeSkipsPulledDeterministicItems(t *testing.T) {
 	store := &recordingCheckpointer{records: map[string]CheckpointRecord{}}
 	runs := &branchRunCounts{values: map[int]int{}}
-	wf := New[int, int]("iter-factory-resume", WithMaxParallelism(1), WithCheckpointer(store))
+	wf := New[int, int]("iter-factory-resume", WithMaxParallelism(1), WithStore(storeWithCheckpointer(store)))
 	plan := wf.Node("plan", func(_ context.Context, input int) (int, error) { return input, nil })
 	branch := wf.Node("branch", func(_ context.Context, input int) (int, error) {
 		runs.add(input)

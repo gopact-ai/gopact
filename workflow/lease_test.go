@@ -261,7 +261,7 @@ func TestWorkflowClaimDefersExpiryDecisionToStore(t *testing.T) {
 	store := &authoritativeClaimCheckpointer{}
 	compiled := &compiled[int, int]{
 		name: "example", topologyVersion: "topology-v1",
-		checkpointer: store, checkpointLeaseDuration: leaseDuration,
+		store: storeWithCheckpointer(store), checkpointLeaseDuration: leaseDuration,
 	}
 	payload, err := encodeCheckpointPayloadWithMeta[int](runState{}, nil, 1, compiled.checkpointMeta(checkpointPayloadMeta{
 		OwnerID: "owner-old", LeaseExpiresAt: futureOnWorkflowClock, ClaimSequence: 1,
@@ -301,7 +301,7 @@ func TestWorkflowRenewLeasePassesDuration(t *testing.T) {
 	defer cancel(nil)
 	execution := workflowExecution[int, int]{
 		compiled: &compiled[int, int]{
-			checkpointer: store, checkpointLeaseDuration: leaseDuration,
+			store: storeWithCheckpointer(store), checkpointLeaseDuration: leaseDuration,
 			checkpointLeaseRenewEvery: 10 * time.Second,
 		},
 		checkpoint: record,
@@ -646,7 +646,7 @@ func TestWorkflowHeartbeatKeepsLongNodeLeased(t *testing.T) {
 		release := make(chan struct{})
 		first := New[string, string](
 			"lease-heartbeat",
-			WithCheckpointer(store),
+			WithStore(store),
 			WithCheckpointLease(leaseDuration, renewEvery),
 		)
 		firstNode := first.Node("node", func(ctx context.Context, input string) (string, error) {
@@ -664,7 +664,7 @@ func TestWorkflowHeartbeatKeepsLongNodeLeased(t *testing.T) {
 		var secondRuns atomic.Int32
 		second := New[string, string](
 			"lease-heartbeat",
-			WithCheckpointer(store),
+			WithStore(store),
 			WithCheckpointLease(leaseDuration, renewEvery),
 		)
 		secondNode := second.Node("node", func(_ context.Context, input string) (string, error) {
@@ -717,8 +717,7 @@ func TestWorkflowLeaseLossCancelsNode(t *testing.T) {
 				release := make(chan struct{})
 				wf := New[int, int](
 					"lease-loss",
-					WithCheckpointer(store),
-					WithStrictJournal(journal),
+					WithStore(storeWithCheckpointerAndLog(store, journal)),
 					WithCheckpointLease(time.Minute, 20*time.Second),
 				)
 				node := wf.Node("node", func(ctx context.Context, _ int) (int, error) {
@@ -770,8 +769,7 @@ func TestWorkflowLeaseLossFencesCustomEventJournal(t *testing.T) {
 		emitResult := make(chan error, 1)
 		wf := New[int, int](
 			"lease-loss-custom-event",
-			WithCheckpointer(store),
-			WithStrictJournal(journal),
+			WithStore(storeWithCheckpointerAndLog(store, journal)),
 			WithCheckpointLease(time.Minute, 20*time.Second),
 		)
 		node := wf.Node("node", func(ctx context.Context, _ int) (int, error) {
@@ -819,8 +817,7 @@ func TestWorkflowNodeLeaseSentinelIsOrdinaryFailure(t *testing.T) {
 	store := NewMemoryStore()
 	wf := New[int, int](
 		"node-lease-sentinel",
-		WithCheckpointer(store),
-		WithJournal(store),
+		WithStore(store),
 	)
 	node := wf.Node("node", func(context.Context, int) (int, error) {
 		return 0, ErrCheckpointLeaseLost

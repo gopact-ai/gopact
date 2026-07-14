@@ -40,7 +40,7 @@ func TestSourceLineageSurvivesInterruptResume(t *testing.T) {
 			name: "fork",
 			start: func(t *testing.T, wf *Workflow[string, string], _ *Node[string, string], store *MemoryStore, _ runlog.Record) error {
 				t.Helper()
-				snapshot, err := NewRunLogSnapshotStore(store, store).Load(t.Context(), SnapshotRequest{RunID: "source-run"})
+				snapshot, err := newTestRunLogSnapshotStore(store, store).Load(t.Context(), SnapshotRequest{RunID: "source-run"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -66,7 +66,7 @@ func TestExternalAssociatingSinkRestoresSourceLineageOnResume(t *testing.T) {
 	associations := 0
 	sink := countingAssociatingSink{log: external, count: &associations}
 	interruptEnabled := false
-	wf := New[string, string]("external-lineage-resume", WithStrictCheckpointer(store), WithStrictJournal(store))
+	wf := New[string, string]("external-lineage-resume", WithStore(store))
 	node := wf.Node("node", func(_ context.Context, input string) (string, error) {
 		if !interruptEnabled {
 			return "", errors.New("source failed")
@@ -123,7 +123,7 @@ func TestExternalAssociatingSinkRestoresSourceLineageOnResume(t *testing.T) {
 			t.Fatalf("external record %d lineage = %q/%d/%q, want source-run/%d/%q", record.Sequence, record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID, source.Sequence, source.RevisionID)
 		}
 	}
-	if _, err := NewRunLogSnapshotStore(external, store).Load(t.Context(), SnapshotRequest{RunID: "target-run"}); err != nil {
+	if _, err := newTestRunLogSnapshotStore(external, store).Load(t.Context(), SnapshotRequest{RunID: "target-run"}); err != nil {
 		t.Fatalf("Snapshot Load() error = %v", err)
 	}
 }
@@ -132,7 +132,7 @@ func testSourceLineageSurvivesInterruptResume(t *testing.T, mode string, start c
 	t.Helper()
 	store := NewMemoryStore()
 	interruptEnabled := false
-	wf := New[string, string]("lineage-resume-"+mode, WithStrictCheckpointer(store), WithStrictJournal(store))
+	wf := New[string, string]("lineage-resume-"+mode, WithStore(store))
 	node := wf.Node("node", func(_ context.Context, input string) (string, error) {
 		if input == "fail" && !interruptEnabled {
 			return "", errors.New("source failed")

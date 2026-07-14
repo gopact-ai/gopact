@@ -158,10 +158,7 @@ func (c *compiled[I, O]) prepareRetry(ctx context.Context, request RetryRequest)
 	if request.RunID == "" || request.NodeID == "" || request.NodeExecutionVersion <= 0 {
 		return controlStart{}, errors.New("workflow: retry requires run id, node id, and positive node execution version")
 	}
-	history, ok := c.checkpointer.(CheckpointHistory)
-	if !ok {
-		return controlStart{}, errors.New("workflow: checkpointer does not provide checkpoint history")
-	}
+	history := c.store
 	source, err := c.retrySource(ctx, request)
 	if err != nil {
 		return controlStart{}, err
@@ -173,7 +170,7 @@ func (c *compiled[I, O]) prepareRetry(ctx context.Context, request RetryRequest)
 	if !ok {
 		return controlStart{}, fmt.Errorf("workflow: retry source revision %q has no stable checkpoint", source.RevisionID)
 	}
-	head, err := c.checkpointer.Load(ctx, request.RunID)
+	head, err := c.store.Load(ctx, request.RunID)
 	if err != nil {
 		return controlStart{}, err
 	}
@@ -194,10 +191,7 @@ func (c *compiled[I, O]) prepareJump(ctx context.Context, target string, input a
 	if request.RunID == "" || request.FromRevisionID == "" {
 		return controlStart{}, errors.New("workflow: jump requires run id and source revision id")
 	}
-	history, ok := c.checkpointer.(CheckpointHistory)
-	if !ok {
-		return controlStart{}, errors.New("workflow: checkpointer does not provide checkpoint history")
-	}
+	history := c.store
 	source, err := c.controlSource(ctx, request.RunID, request.FromRevisionID)
 	if err != nil {
 		return controlStart{}, err
@@ -209,7 +203,7 @@ func (c *compiled[I, O]) prepareJump(ctx context.Context, target string, input a
 	if !ok {
 		return controlStart{}, fmt.Errorf("workflow: jump source revision %q has no stable checkpoint", source.RevisionID)
 	}
-	head, err := c.checkpointer.Load(ctx, request.RunID)
+	head, err := c.store.Load(ctx, request.RunID)
 	if err != nil {
 		return controlStart{}, err
 	}
@@ -308,7 +302,7 @@ func (c *compiled[I, O]) patchJumpContext(state *runState, patch any) error {
 }
 
 func (c *compiled[I, O]) controlSource(ctx context.Context, runID, revisionID string) (runlog.Record, error) {
-	record, found, err := findRunLogRecord(ctx, c.journal, runID, func(record runlog.Record) bool {
+	record, found, err := findRunLogRecord(ctx, c.store, runID, func(record runlog.Record) bool {
 		return record.RevisionID == revisionID
 	})
 	if err != nil {
@@ -321,7 +315,7 @@ func (c *compiled[I, O]) controlSource(ctx context.Context, runID, revisionID st
 }
 
 func (c *compiled[I, O]) retrySource(ctx context.Context, request RetryRequest) (runlog.Record, error) {
-	record, found, err := findRunLogRecord(ctx, c.journal, request.RunID, func(record runlog.Record) bool {
+	record, found, err := findRunLogRecord(ctx, c.store, request.RunID, func(record runlog.Record) bool {
 		return record.EventType == EventNodeStarted && record.NodeID == request.NodeID &&
 			record.NodeExecutionVersion == request.NodeExecutionVersion
 	})

@@ -145,10 +145,7 @@ type Workflow[I, O any] struct {
 	entry                     string
 	exits                     map[string]struct{}
 	duplicateNodes            map[string]struct{}
-	checkpointer              Checkpointer
-	checkpointerSet           bool
-	journal                   runlog.Log
-	journalSet                bool
+	store                     Store
 	maxSteps                  int
 	maxParallelism            int
 	checkpointLeaseDuration   time.Duration
@@ -208,8 +205,7 @@ type compiled[I, O any] struct {
 	predecessors              map[string][]string
 	entry                     string
 	exits                     map[string]struct{}
-	checkpointer              Checkpointer
-	journal                   runlog.Log
+	store                     Store
 	maxSteps                  int
 	maxParallelism            int
 	checkpointLeaseDuration   time.Duration
@@ -348,6 +344,13 @@ type CheckpointHistory interface {
 	ListCheckpoints(context.Context, CheckpointHistoryRequest) ([]CheckpointRecord, error)
 }
 
+// Store is the authoritative durable workflow state and history boundary.
+type Store interface {
+	Checkpointer
+	CheckpointHistory
+	runlog.FencedLog
+}
+
 // ResumeRequest identifies a workflow run checkpoint to resume.
 type ResumeRequest struct {
 	RunID        string
@@ -442,10 +445,8 @@ func (f buildOptionFunc) applyBuildOption(cfg *buildConfig) {
 type buildConfig struct {
 	maxSteps                  int
 	maxParallelism            int
-	checkpointer              Checkpointer
-	checkpointerSet           bool
-	journal                   runlog.Log
-	journalSet                bool
+	store                     Store
+	storeSet                  bool
 	checkpointLeaseDuration   time.Duration
 	checkpointLeaseRenewEvery time.Duration
 	idGenerators              map[gopact.IDKind]gopact.IDGenerator
@@ -488,32 +489,12 @@ func WithCheckpointLease(duration, renewEvery time.Duration) BuildOption {
 	})
 }
 
-// WithCheckpointer configures durable workflow checkpoint persistence.
-func WithCheckpointer(store Checkpointer) BuildOption {
+// WithStore configures the authoritative durable workflow store.
+func WithStore(store Store) BuildOption {
 	return buildOptionFunc(func(cfg *buildConfig) {
-		cfg.checkpointer = store
-		cfg.checkpointerSet = true
+		cfg.store = store
+		cfg.storeSet = true
 	})
-}
-
-// WithStrictCheckpointer configures checkpoint persistence whose failure stops the run.
-// Deprecated: WithCheckpointer is fail-closed.
-func WithStrictCheckpointer(store Checkpointer) BuildOption {
-	return WithCheckpointer(store)
-}
-
-// WithJournal configures authoritative append-only workflow history persistence.
-func WithJournal(journal runlog.Log) BuildOption {
-	return buildOptionFunc(func(cfg *buildConfig) {
-		cfg.journal = journal
-		cfg.journalSet = true
-	})
-}
-
-// WithStrictJournal configures history persistence whose failure stops the run.
-// Deprecated: WithJournal is fail-closed.
-func WithStrictJournal(journal runlog.Log) BuildOption {
-	return WithJournal(journal)
 }
 
 // WithTopologyVersion identifies workflow behavior not visible in the graph shape.
@@ -644,12 +625,8 @@ func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
 			opt.applyBuildOption(&cfg)
 		}
 	}
-	store := NewMemoryStore()
-	if !cfg.checkpointerSet {
-		cfg.checkpointer = store
-	}
-	if !cfg.journalSet {
-		cfg.journal = store
+	if !cfg.storeSet {
+		cfg.store = NewMemoryStore()
 	}
 	return &Workflow[I, O]{
 		name:                      name,
@@ -658,10 +635,7 @@ func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
 		predecessors:              make(map[string][]string),
 		exits:                     make(map[string]struct{}),
 		duplicateNodes:            make(map[string]struct{}),
-		checkpointer:              cfg.checkpointer,
-		checkpointerSet:           cfg.checkpointerSet,
-		journal:                   cfg.journal,
-		journalSet:                cfg.journalSet,
+		store:                     cfg.store,
 		maxSteps:                  cfg.maxSteps,
 		maxParallelism:            cfg.maxParallelism,
 		checkpointLeaseDuration:   cfg.checkpointLeaseDuration,
@@ -840,11 +814,8 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 			return nil, fmt.Errorf("workflow: %s id generator is nil", kind)
 		}
 	}
-	if wf.checkpointerSet && wf.checkpointer == nil {
-		return nil, errors.New("workflow: checkpointer is nil")
-	}
-	if wf.journalSet && wf.journal == nil {
-		return nil, errors.New("workflow: journal is nil")
+	if isNilStore(wf.store) {
+		return nil, errors.New("workflow: store is nil")
 	}
 	if wf.topologySet && wf.topologyVersion == "" {
 		return nil, errors.New("workflow: topology version is empty")
@@ -913,8 +884,7 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 		predecessors:              copyEdges(wf.predecessors),
 		entry:                     wf.entry,
 		exits:                     copyExitSet(wf.exits),
-		checkpointer:              wf.checkpointer,
-		journal:                   wf.journal,
+		store:                     wf.store,
 		maxSteps:                  wf.maxSteps,
 		maxParallelism:            wf.maxParallelism,
 		checkpointLeaseDuration:   wf.checkpointLeaseDuration,
@@ -936,6 +906,19 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 	}
 	wf.compiled = compiled
 	return compiled, nil
+}
+
+func isNilStore(store Store) bool {
+	if store == nil {
+		return true
+	}
+	value := reflect.ValueOf(store)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // Validate checks and freezes the workflow definition without executing it.
@@ -1073,10 +1056,8 @@ type workflowExecution[I, O any] struct {
 	parentRunID    string
 	ownerID        string
 	depth          int
-	eventSinks     []gopact.EventSink
 	replaySinks    []gopact.EventSink
 	childSinks     []gopact.EventSink
-	journalSink    *gopact.EventSink
 	idGenerators   map[gopact.IDKind]gopact.IDGenerator
 	sequence       int64
 	eventCursor    int64
@@ -1118,7 +1099,7 @@ func (heartbeat *checkpointLeaseHeartbeat) stop() error {
 
 func (execution *workflowExecution[I, O]) startCheckpointLeaseHeartbeat() {
 	record := execution.checkpoint
-	if execution.compiled.checkpointer == nil || record.ID == "" || record.Status != CheckpointRunning ||
+	if execution.compiled.store == nil || record.ID == "" || record.Status != CheckpointRunning ||
 		record.OwnerID == "" || record.ClaimSequence <= 0 {
 		return
 	}
@@ -1159,7 +1140,7 @@ func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Conte
 	lease.Duration = execution.compiled.checkpointLeaseDuration
 	lease.ExpiresAt = time.Now().Add(execution.compiled.checkpointLeaseDuration)
 	renewCtx, cancel := context.WithTimeout(ctx, execution.compiled.checkpointLeaseRenewEvery)
-	err := execution.compiled.checkpointer.RenewLease(renewCtx, *lease)
+	err := execution.compiled.store.RenewLease(renewCtx, *lease)
 	cancel()
 	if err == nil || ctx.Err() != nil {
 		return nil
@@ -1300,29 +1281,13 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		configuredSinks = associateEventSinks(configuredSinks, association)
 	}
 	replaySinks := applyEventSinkWrappers(configuredSinks, c.eventSinkWrappers)
-	eventSinks := replaySinks
-	var journalSink gopact.EventSink
-	if c.journal != nil {
-		journalSink = runlog.NewSink(c.journal)
-		if associated {
-			journalSink = runlog.NewSink(c.journal).Associate(association)
-		}
-		eventSinks = append([]gopact.EventSink{
-			strictWorkflowEventSink{EventSink: gopact.EventSinkFunc(func(ctx context.Context, event gopact.Event) error {
-				return journalSink.Emit(context.WithoutCancel(ctx), event)
-			})},
-		}, eventSinks...)
-	}
 	execution := workflowExecution[I, O]{
 		compiled: c, ctx: runCtx, input: input,
 		sessionID: sessionID, runID: runID, parentRunID: parentRunID,
 		ownerID: ownerID, depth: depth,
-		eventSinks: eventSinks, replaySinks: replaySinks,
-		childSinks: append([]gopact.EventSink(nil), cfg.EventSinks...), idGenerators: cfg.IDGenerators(), step: 1, cancel: cancel,
+		replaySinks: replaySinks,
+		childSinks:  append([]gopact.EventSink(nil), cfg.EventSinks...), idGenerators: cfg.IDGenerators(), step: 1, cancel: cancel,
 		outputSink: sink, replayStatus: ReplayUnknown, executionEpoch: 1, controlOrigin: "natural",
-	}
-	if c.journal != nil {
-		execution.journalSink = &journalSink
 	}
 	defer execution.stopLiveIterators()
 	execution.ctx = context.WithValue(execution.ctx, eventEmitterContextKey{}, eventEmitter(execution.emitCustom))
@@ -1457,7 +1422,7 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 		return err
 	}
 	record := execution.checkpoint
-	if execution.compiled.checkpointer == nil || record.ID == "" || checkpointTerminal(record.Status) {
+	if execution.compiled.store == nil || record.ID == "" || checkpointTerminal(record.Status) {
 		return nil
 	}
 	payload, err := decodeCheckpointPayload[O](record.Payload)
@@ -1480,7 +1445,7 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 	record.LeaseExpiresAt = time.Time{}
 	record.LeaseDuration = 0
 	record.UpdatedAt = time.Now()
-	if err := execution.compiled.checkpointer.Save(context.WithoutCancel(execution.ctx), record, record.Version); err != nil {
+	if err := execution.compiled.store.Save(context.WithoutCancel(execution.ctx), record, record.Version); err != nil {
 		return err
 	}
 	record.Version++
@@ -1539,45 +1504,15 @@ func (execution *workflowExecution[I, O]) commitObservedEventLocked(ctx context.
 	if cause := context.Cause(execution.ctx); execution.matchesCheckpointLeaseError(cause) {
 		return cause
 	}
-	if journal, ok := execution.compiled.fencedJournal(); ok {
-		return execution.commitFencedObservedEvent(ctx, event, journal)
-	}
-	commitCtx := context.WithoutCancel(ctx)
-	pending := execution.runtimeEvent(event, execution.sequence+1)
-	replayStatus := replayStatusForEvent(event.Type)
-	request, err := execution.observedEventWriteRequest(&pending, replayStatus)
-	if err != nil {
-		return err
-	}
-	saved, err := execution.compiled.saveCheckpoint(commitCtx, request)
-	if err != nil {
-		return execution.cancelOnCheckpointLeaseError(err)
-	}
-	execution.checkpoint = saved
-	if err := execution.emitLocked(ctx, pending); err != nil {
-		return err
-	}
-	request, err = execution.observedEventWriteRequest(nil, replayStatus)
-	if err != nil {
-		return err
-	}
-	saved, err = execution.compiled.saveCheckpoint(commitCtx, request)
-	if err != nil {
-		return execution.cancelOnCheckpointLeaseError(err)
-	}
-	execution.checkpoint = saved
-	execution.replayStatus = replayStatus
-	return nil
+	return execution.emitLocked(ctx, event)
 }
 
-func (execution *workflowExecution[I, O]) commitFencedObservedEvent(ctx context.Context, event gopact.Event, journal runlog.FencedLog) error {
-	execution.sequence++
-	event = execution.runtimeEvent(event, execution.sequence)
+func (execution *workflowExecution[I, O]) appendFencedEvent(ctx context.Context, event gopact.Event) error {
 	appendCtx := eventSinkContext{Context: context.WithoutCancel(ctx)}
 	record := runlog.RecordFromEvent(event)
 	record.SourceRunID = execution.sourceRunID
 	record.SourceEventSeq = execution.sourceEventSeq
-	err := journal.AppendFenced(appendCtx, record, runlog.Fence{
+	err := execution.compiled.store.AppendFenced(appendCtx, record, runlog.Fence{
 		OwnerID: execution.checkpoint.OwnerID, ClaimSequence: execution.checkpoint.ClaimSequence,
 	})
 	if errors.Is(err, ErrCheckpointLeaseLost) {
@@ -1595,44 +1530,23 @@ func (execution *workflowExecution[I, O]) commitFencedObservedEvent(ctx context.
 	return nil
 }
 
-func (c *compiled[I, O]) fencedJournal() (runlog.FencedLog, bool) {
-	journal, ok := c.journal.(runlog.FencedLog)
-	if !ok || !sameStoreInstance(c.checkpointer, c.journal) {
-		return nil, false
-	}
-	return journal, true
-}
-
-func sameStoreInstance(left, right any) bool {
-	leftValue := reflect.ValueOf(left)
-	rightValue := reflect.ValueOf(right)
-	if !leftValue.IsValid() || !rightValue.IsValid() || leftValue.Type() != rightValue.Type() ||
-		leftValue.Kind() != reflect.Pointer {
-		return false
-	}
-	return !leftValue.IsNil() && leftValue.Pointer() == rightValue.Pointer()
-}
-
-func (execution *workflowExecution[I, O]) observedEventWriteRequest(pending *gopact.Event, replayStatus ReplayStatus) (checkpointWriteRequest[O], error) {
-	payload, err := decodeCheckpointPayload[O](execution.checkpoint.Payload)
-	if err != nil {
-		return checkpointWriteRequest[O]{}, err
-	}
-	return checkpointWriteRequest[O]{
-		Record: execution.checkpoint, State: payload.state(), Outputs: payload.Outputs,
-		NextStep: payload.NextStep, EventCursor: execution.eventCursor,
-		PendingEvent: pending, PendingTerm: payload.PendingTerm, ReplayStatus: replayStatus,
-	}, nil
-}
-
 func (execution *workflowExecution[I, O]) emitLocked(ctx context.Context, event gopact.Event) error {
 	if execution.sinkFailure != nil {
 		return execution.sinkFailure
 	}
 	execution.sequence++
 	event = execution.runtimeEvent(event, execution.sequence)
+	if execution.checkpoint.ID != "" {
+		return execution.appendFencedEvent(ctx, event)
+	}
+	record := runlog.RecordFromEvent(event)
+	record.SourceRunID = execution.sourceRunID
+	record.SourceEventSeq = execution.sourceEventSeq
+	if err := execution.compiled.store.Append(context.WithoutCancel(ctx), record); err != nil {
+		return execution.recordSinkFailure(err)
+	}
 	delivery := eventDelivery{event: event}
-	if err := delivery.emit(ctx, execution.eventSinks); err != nil {
+	if err := delivery.emit(ctx, execution.replaySinks); err != nil {
 		return execution.recordSinkFailure(err)
 	}
 	execution.eventCursor = execution.sequence
@@ -1757,12 +1671,6 @@ func (execution *workflowExecution[I, O]) restoreSourceSinks() {
 	association := runlog.Association{SourceRunID: execution.sourceRunID, SourceEventSeq: execution.sourceEventSeq}
 	associated := associateEventSinks(execution.childSinks, association)
 	execution.replaySinks = applyEventSinkWrappers(associated, execution.compiled.eventSinkWrappers)
-	if execution.journalSink == nil {
-		execution.eventSinks = execution.replaySinks
-		return
-	}
-	*execution.journalSink = runlog.NewSink(execution.compiled.journal).Associate(association)
-	execution.eventSinks = append([]gopact.EventSink{execution.eventSinks[0]}, execution.replaySinks...)
 }
 
 func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm CheckpointStatus, pending gopact.Event) error {
@@ -1799,13 +1707,13 @@ func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm Chec
 }
 
 func (execution *workflowExecution[I, O]) reconcileJournal() error {
-	if execution.compiled.journal == nil {
+	if execution.compiled.store == nil {
 		return nil
 	}
 	execution.eventMu.Lock()
 	defer execution.eventMu.Unlock()
 	for {
-		records, err := execution.compiled.journal.List(execution.ctx, runlog.Query{
+		records, err := execution.compiled.store.List(execution.ctx, runlog.Query{
 			RunID: execution.runID, After: execution.eventCursor, Limit: journalReconcilePageSize,
 		})
 		if err != nil {
@@ -2181,12 +2089,12 @@ func (execution *workflowExecution[I, O]) finishInterrupt(state runState, waits 
 			return preservedExecutionError{cause: err}
 		}
 		event := gopact.Event{Type: EventGuardInterrupted, Source: "workflow.guard", Summary: interrupt.Subject, Payload: payload}
-		if err := execution.commitInterruptEvent(state, waits, event); err != nil {
+		if err := execution.commitInterruptEvent(state, waits, event, false); err != nil {
 			return preservedExecutionError{cause: err}
 		}
 	}
 	workflowEvent := gopact.Event{Type: EventWorkflowInterrupted, Source: "workflow", Summary: first.Request.Subject}
-	if err := execution.commitInterruptEvent(state, waits, workflowEvent); err != nil {
+	if err := execution.commitInterruptEvent(state, waits, workflowEvent, true); err != nil {
 		return preservedExecutionError{cause: err}
 	}
 	first.RunID = execution.runID
@@ -2196,7 +2104,7 @@ func (execution *workflowExecution[I, O]) finishInterrupt(state runState, waits 
 	return preservedExecutionError{cause: first}
 }
 
-func (execution *workflowExecution[I, O]) commitInterruptEvent(state runState, waits []checkpointInterrupt, event gopact.Event) error {
+func (execution *workflowExecution[I, O]) commitInterruptEvent(state runState, waits []checkpointInterrupt, event gopact.Event, final bool) error {
 	execution.eventMu.Lock()
 	defer execution.eventMu.Unlock()
 	if execution.sinkFailure != nil {
@@ -2215,7 +2123,11 @@ func (execution *workflowExecution[I, O]) commitInterruptEvent(state runState, w
 	}
 	request = execution.writeRequest(execution.step, nil)
 	request.State = state
-	saved, err = execution.compiled.interruptCheckpoint(execution.ctx, request, waits)
+	if final {
+		saved, err = execution.compiled.interruptCheckpoint(execution.ctx, request, waits)
+	} else {
+		saved, err = execution.compiled.saveCheckpoint(execution.ctx, request)
+	}
 	if err != nil {
 		return err
 	}
@@ -2589,7 +2501,7 @@ func (execution *workflowExecution[I, O]) cancelOnCheckpointLeaseError(cause err
 }
 
 func (c *compiled[I, O]) prepareCheckpoint(ctx context.Context, req checkpointPrepareRequest[O]) (CheckpointRecord, error) {
-	if c.checkpointer == nil {
+	if c.store == nil {
 		if req.IsResume {
 			return CheckpointRecord{}, errors.New("workflow: resume requires checkpointer")
 		}
@@ -2623,7 +2535,7 @@ func (c *compiled[I, O]) prepareCheckpoint(ctx context.Context, req checkpointPr
 		LeaseDuration: c.checkpointLeaseDuration, ClaimSequence: meta.ClaimSequence,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err := c.checkpointer.Create(ctx, rec); err != nil {
+	if err := c.store.Create(ctx, rec); err != nil {
 		return CheckpointRecord{}, err
 	}
 	return rec, nil
@@ -2656,7 +2568,7 @@ func (c *compiled[I, O]) validateCheckpointIdentity(payload checkpointPayload[O]
 }
 
 func (c *compiled[I, O]) prepareResumeCheckpoint(ctx context.Context, req checkpointPrepareRequest[O]) (CheckpointRecord, error) {
-	record, err := c.checkpointer.Load(ctx, req.Resume.RunID)
+	record, err := c.store.Load(ctx, req.Resume.RunID)
 	if err != nil {
 		return CheckpointRecord{}, err
 	}
@@ -2765,7 +2677,7 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 	next.LeaseDuration = c.checkpointLeaseDuration
 	next.ClaimSequence = payload.ClaimSequence
 	next.UpdatedAt = now
-	if err := c.checkpointer.Claim(ctx, next, rec.Version); err != nil {
+	if err := c.store.Claim(ctx, next, rec.Version); err != nil {
 		return CheckpointRecord{}, err
 	}
 	next.Version++
@@ -2806,7 +2718,7 @@ func findInterruptResolution(resolutions []InterruptResolution, interruptID stri
 }
 
 func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWriteRequest[O]) (CheckpointRecord, error) {
-	if c.checkpointer == nil || req.Record.ID == "" {
+	if c.store == nil || req.Record.ID == "" {
 		return req.Record, nil
 	}
 	meta, err := decodeCheckpointPayloadMeta[O](req.Record.Payload)
@@ -2835,7 +2747,7 @@ func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWrite
 	next.PendingSequence = pendingEventSequence(req.PendingEvent)
 	next.ReplayStatus = req.ReplayStatus
 	next.UpdatedAt = now
-	if err := c.checkpointer.Save(ctx, next, req.Record.Version); err != nil {
+	if err := c.store.Save(ctx, next, req.Record.Version); err != nil {
 		return CheckpointRecord{}, markCheckpointLeaseError(err, req.Record)
 	}
 	next.Version++
@@ -2843,7 +2755,7 @@ func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWrite
 }
 
 func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpointWriteRequest[O], interrupts []checkpointInterrupt) (CheckpointRecord, error) {
-	if c.checkpointer == nil || req.Record.ID == "" {
+	if c.store == nil || req.Record.ID == "" {
 		return req.Record, nil
 	}
 	leaseRecord := req.Record
@@ -2851,8 +2763,14 @@ func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpoint
 	if err != nil {
 		return CheckpointRecord{}, err
 	}
-	meta.OwnerID = ""
-	meta.LeaseExpiresAt = time.Time{}
+	now := time.Now()
+	if req.PendingEvent != nil {
+		meta.OwnerID = req.Record.OwnerID
+		meta.LeaseExpiresAt = now.Add(c.checkpointLeaseDuration)
+	} else {
+		meta.OwnerID = ""
+		meta.LeaseExpiresAt = time.Time{}
+	}
 	meta.EventCursor = req.EventCursor
 	meta.PendingEvent = req.PendingEvent
 	meta.PendingTerm = req.PendingTerm
@@ -2863,15 +2781,22 @@ func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpoint
 	}
 	next := req.Record
 	next.Payload = payload
-	next.Status = CheckpointInterrupted
-	next.OwnerID = ""
-	next.LeaseExpiresAt = time.Time{}
-	next.LeaseDuration = 0
+	if req.PendingEvent != nil {
+		next.Status = CheckpointRunning
+		next.OwnerID = meta.OwnerID
+		next.LeaseExpiresAt = meta.LeaseExpiresAt
+		next.LeaseDuration = c.checkpointLeaseDuration
+	} else {
+		next.Status = CheckpointInterrupted
+		next.OwnerID = ""
+		next.LeaseExpiresAt = time.Time{}
+		next.LeaseDuration = 0
+	}
 	next.ConfirmedSequence = req.EventCursor
 	next.PendingSequence = pendingEventSequence(req.PendingEvent)
 	next.ReplayStatus = req.ReplayStatus
-	next.UpdatedAt = time.Now()
-	if err := c.checkpointer.Save(ctx, next, req.Record.Version); err != nil {
+	next.UpdatedAt = now
+	if err := c.store.Save(ctx, next, req.Record.Version); err != nil {
 		return CheckpointRecord{}, markCheckpointLeaseError(err, leaseRecord)
 	}
 	next.Version++
@@ -2879,7 +2804,7 @@ func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpoint
 }
 
 func (c *compiled[I, O]) finishCheckpoint(ctx context.Context, status CheckpointStatus, req checkpointWriteRequest[O]) error {
-	if c.checkpointer == nil || req.Record.ID == "" {
+	if c.store == nil || req.Record.ID == "" {
 		return nil
 	}
 	meta, err := decodeCheckpointPayloadMeta[O](req.Record.Payload)
@@ -2904,7 +2829,7 @@ func (c *compiled[I, O]) finishCheckpoint(ctx context.Context, status Checkpoint
 	req.Record.PendingSequence = pendingEventSequence(req.PendingEvent)
 	req.Record.ReplayStatus = req.ReplayStatus
 	req.Record.UpdatedAt = time.Now()
-	return c.checkpointer.Finish(ctx, req.Record, req.Record.Version)
+	return c.store.Finish(ctx, req.Record, req.Record.Version)
 }
 
 func pendingEventSequence(event *gopact.Event) int64 {
