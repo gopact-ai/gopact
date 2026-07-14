@@ -2,7 +2,7 @@
 
 Status: `superseded`
 
-Superseded on 2026-07-14 by [ADR-0001](../../decisions/0001-run-closure.md), [ADR-0002](../../decisions/0002-durable-store-authority.md), and the [Run、Store 与历史语义对齐 RFC](../../rfcs/run-store-history-alignment.md). 本文正文完整保留 2026-07-12 已批准并实现的历史结论，不再是现行实现依据；Run 终态、source-lineage 新 Run、单一 Store 与恢复规则以新决策为准。
+Superseded on 2026-07-14. 现行最高权威是[系统宪法](../../design/system-constitution_zh.md)，具体决策见 [ADR-0001](../../decisions/0001-run-closure.md)、[ADR-0002](../../decisions/0002-durable-store-authority.md)、[ADR-0003](../../decisions/0003-history-policy.md) 与 [Run、Store 与历史语义对齐 RFC](../../rfcs/run-store-history-alignment.md)。本文正文完整保留 2026-07-12 已批准并实现的历史结论，不再是现行实现依据。
 
 ## Purpose
 
