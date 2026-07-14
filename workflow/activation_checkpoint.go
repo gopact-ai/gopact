@@ -55,18 +55,6 @@ func (record *activationRecord) checkpoint() checkpointActivationState {
 	}
 }
 
-func registerCheckpointActivations(records []checkpointActivationState) {
-	for _, record := range records {
-		record.Activation.register()
-		if record.HasResult {
-			record.Result.register()
-		}
-		if record.HasInput {
-			record.EffectiveInput.register()
-		}
-	}
-}
-
 func (state *runState) restoreActivations(records []checkpointActivationState) {
 	if state.nodeVersions == nil {
 		state.nodeVersions = map[string]int64{}

@@ -161,6 +161,8 @@ type Workflow[I, O any] struct {
 	contextInit               func(any) (any, error)
 	contextSet                bool
 	contextTwice              bool
+	checkpointTypes           []reflect.Type
+	checkpointTypeErr         error
 	compiled                  *compiled[I, O]
 }
 
@@ -453,6 +455,8 @@ type buildConfig struct {
 	plugins                   []Plugin
 	topologyVersion           string
 	topologySet               bool
+	checkpointTypes           []reflect.Type
+	checkpointTypeErr         error
 }
 
 // WithIDGenerator replaces the default UUID generator for one identity kind.
@@ -502,6 +506,26 @@ func WithTopologyVersion(version string) BuildOption {
 	return buildOptionFunc(func(cfg *buildConfig) {
 		cfg.topologyVersion = version
 		cfg.topologySet = true
+	})
+}
+
+// WithCheckpointTypes registers dynamic concrete types that cannot be inferred
+// from the workflow topology, such as values stored inside interface fields or
+// iterator cursors. Each item may be a typed value or a reflect.Type. Because
+// encoding/gob treats T and *T as one base type, a workflow cannot register both.
+func WithCheckpointTypes(values ...any) BuildOption {
+	return buildOptionFunc(func(cfg *buildConfig) {
+		for _, value := range values {
+			typ, ok := value.(reflect.Type)
+			if !ok {
+				typ = reflect.TypeOf(value)
+			}
+			if typ == nil {
+				cfg.checkpointTypeErr = errors.New("workflow: checkpoint type is nil")
+				continue
+			}
+			cfg.checkpointTypes = append(cfg.checkpointTypes, typ)
+		}
 	})
 }
 
@@ -644,6 +668,8 @@ func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
 		plugins:                   append([]Plugin(nil), cfg.plugins...),
 		topologyVersion:           cfg.topologyVersion,
 		topologySet:               cfg.topologySet,
+		checkpointTypes:           append([]reflect.Type(nil), cfg.checkpointTypes...),
+		checkpointTypeErr:         cfg.checkpointTypeErr,
 	}
 }
 
@@ -826,6 +852,9 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 	if wf.contextSet && wf.contextInit == nil {
 		return nil, errors.New("workflow: context initializer is nil")
 	}
+	if wf.checkpointTypeErr != nil {
+		return nil, wf.checkpointTypeErr
+	}
 	if len(wf.duplicateNodes) > 0 {
 		for name := range wf.duplicateNodes {
 			return nil, fmt.Errorf("workflow: duplicate node %q", name)
@@ -868,6 +897,13 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 		if err := wf.validateEdges(source, targets); err != nil {
 			return nil, err
 		}
+	}
+	checkpointTypes, err := workflowCheckpointTypes(wf)
+	if err != nil {
+		return nil, err
+	}
+	if err := registerWorkflowCheckpointTypes(checkpointTypes); err != nil {
+		return nil, err
 	}
 	plugins, err := setupPlugins(context.Background(), wf.plugins)
 	if err != nil {
@@ -3307,31 +3343,9 @@ func encodeCheckpointPayloadWithMeta[O any](state runState, outputs []O, nextSte
 		SourceRunID:        meta.SourceRunID,
 		SourceEventSeq:     meta.SourceEventSeq,
 	}
-	if payload.HasContext {
-		payload.WorkflowContext.register()
-	}
 	for _, item := range state.queue {
-		checkpoint := item.checkpoint()
-		checkpoint.register()
-		payload.Queue = append(payload.Queue, checkpoint)
+		payload.Queue = append(payload.Queue, item.checkpoint())
 	}
-	for _, output := range payload.Outputs {
-		registerGobValue(output)
-	}
-	for _, interrupt := range payload.PendingInterrupts {
-		if interrupt.HasCandidateOutput {
-			registerGobValue(interrupt.CandidateOutput)
-		}
-	}
-	for _, resolution := range payload.ResolvedInterrupts {
-		if resolution.HasCandidateOutput {
-			registerGobValue(resolution.CandidateOutput)
-		}
-	}
-	registerCheckpointJoinBuckets(payload.JoinBuckets)
-	registerCheckpointSourceSets(payload.SourceSets)
-	registerCheckpointIterSources(payload.IterSources)
-	registerCheckpointActivations(payload.Activations)
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(payload); err != nil {
 		return nil, fmt.Errorf("workflow: encode checkpoint payload: %w", err)
@@ -3340,18 +3354,6 @@ func encodeCheckpointPayloadWithMeta[O any](state runState, outputs []O, nextSte
 		return nil, errors.New("workflow: checkpoint payload is too large")
 	}
 	return buf.Bytes(), nil
-}
-
-func registerCheckpointSources(bySource map[string][]any) {
-	for _, values := range bySource {
-		registerGobValues(values)
-	}
-}
-
-func registerGobValues(values []any) {
-	for _, value := range values {
-		registerGobValue(value)
-	}
 }
 
 func decodeCheckpointPayload[O any](payload []byte) (checkpointPayload[O], error) {
@@ -3466,13 +3468,6 @@ func (p checkpointPayload[O]) state() runState {
 	state.restoreSourceSets(p.SourceSets)
 	state.restoreIterSources(p.IterSources)
 	return state
-}
-
-func registerGobValue(value any) {
-	if value == nil {
-		return
-	}
-	gob.Register(value)
 }
 
 func (n *Node[I, O]) endpointName() string {

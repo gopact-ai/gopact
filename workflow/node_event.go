@@ -119,7 +119,6 @@ func snapshotNodeValue(value any) (NodeValue, error) {
 		return NodeValue{Type: typeName, JSON: data}, nil
 	}
 	checkpoint := newCheckpointValue(value)
-	checkpoint.register()
 	var buffer bytes.Buffer
 	if err := gob.NewEncoder(&buffer).Encode(checkpoint); err != nil {
 		return NodeValue{}, fmt.Errorf("workflow: encode node fact %s: %w", typeName, err)
