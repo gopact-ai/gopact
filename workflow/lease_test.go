@@ -14,6 +14,16 @@ import (
 	"github.com/gopact-ai/gopact/runlog"
 )
 
+type renewalCountingStore struct {
+	*MemoryStore
+	renews atomic.Int32
+}
+
+func (store *renewalCountingStore) RenewLease(ctx context.Context, lease CheckpointLease) error {
+	store.renews.Add(1)
+	return store.MemoryStore.RenewLease(ctx, lease)
+}
+
 func TestMemoryCheckpointerClaimRejectsLeaseRenewedAfterLoad(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
@@ -641,7 +651,7 @@ func TestWorkflowHeartbeatKeepsLongNodeLeased(t *testing.T) {
 			leaseDuration = time.Minute
 			renewEvery    = 20 * time.Second
 		)
-		store := NewMemoryStore()
+		store := &renewalCountingStore{MemoryStore: NewMemoryStore()}
 		started := make(chan struct{})
 		release := make(chan struct{})
 		first := New[string, string](
@@ -682,6 +692,9 @@ func TestWorkflowHeartbeatKeepsLongNodeLeased(t *testing.T) {
 		<-started
 		time.Sleep(2 * leaseDuration)
 		synctest.Wait()
+		if store.renews.Load() == 0 {
+			t.Fatal("observer blocked without any lease renewal")
+		}
 
 		_, err := second.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
 		if !errors.Is(err, ErrCheckpointConflict) {
@@ -697,6 +710,188 @@ func TestWorkflowHeartbeatKeepsLongNodeLeased(t *testing.T) {
 			t.Fatalf("first Invoke() error = %v", err)
 		}
 	})
+}
+
+func TestWorkflowHeartbeatStaysActiveThroughTerminalObserver(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			leaseDuration = time.Minute
+			renewEvery    = 20 * time.Second
+		)
+		store := &renewalCountingStore{MemoryStore: NewMemoryStore()}
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		build := func() *Workflow[string, string] {
+			wf := New[string, string]("terminal-observer-lease", WithStore(store), WithCheckpointLease(leaseDuration, renewEvery))
+			node := wf.Node("node", func(_ context.Context, input string) (string, error) { return input, nil })
+			wf.Entry(node)
+			wf.Exit(node)
+			return wf
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := build().Invoke(context.Background(), "input", gopact.WithRunID("terminal-observer-run"),
+				gopact.WithEventHandler(func(_ context.Context, event gopact.Event) error {
+					if event.Type == EventWorkflowCompleted {
+						close(entered)
+						<-release
+					}
+					return nil
+				}))
+			done <- err
+		}()
+		<-entered
+		time.Sleep(2 * leaseDuration)
+		synctest.Wait()
+		if store.renews.Load() == 0 {
+			t.Fatal("observer blocked without any lease renewal")
+		}
+
+		_, err := build().Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "terminal-observer-run"}))
+		if !errors.Is(err, ErrCheckpointConflict) {
+			t.Fatalf("takeover Invoke() error = %v, want ErrCheckpointConflict", err)
+		}
+		close(release)
+		synctest.Wait()
+		if err := <-done; err != nil {
+			t.Fatalf("first Invoke() error = %v", err)
+		}
+		renews := store.renews.Load()
+		time.Sleep(2 * renewEvery)
+		synctest.Wait()
+		if store.renews.Load() != renews {
+			t.Fatal("lease heartbeat continued after terminal checkpoint closed")
+		}
+	})
+}
+
+func TestWorkflowHeartbeatStaysActiveThroughInterruptObserver(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			leaseDuration = time.Minute
+			renewEvery    = 20 * time.Second
+		)
+		store := &renewalCountingStore{MemoryStore: NewMemoryStore()}
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		build := func() *Workflow[string, string] {
+			wf := New[string, string]("interrupt-observer-lease", WithStore(store), WithCheckpointLease(leaseDuration, renewEvery))
+			node := wf.Node("node", func(_ context.Context, input string) (string, error) { return input, nil })
+			node.Guard(BeforeRun("approval", GuardFunc[string, string](func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+				return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval-1"}}, nil
+			})))
+			wf.Entry(node)
+			wf.Exit(node)
+			return wf
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := build().Invoke(context.Background(), "input", gopact.WithRunID("interrupt-observer-run"),
+				gopact.WithEventHandler(func(_ context.Context, event gopact.Event) error {
+					if event.Type == EventWorkflowInterrupted {
+						close(entered)
+						<-release
+					}
+					return nil
+				}))
+			done <- err
+		}()
+		<-entered
+		time.Sleep(2 * leaseDuration)
+		synctest.Wait()
+		if store.renews.Load() == 0 {
+			t.Fatal("observer blocked without any lease renewal")
+		}
+
+		_, err := build().Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "interrupt-observer-run"}))
+		if !errors.Is(err, ErrCheckpointConflict) {
+			t.Fatalf("takeover Invoke() error = %v, want ErrCheckpointConflict", err)
+		}
+		close(release)
+		synctest.Wait()
+		var interrupted InterruptError
+		if err := <-done; !errors.As(err, &interrupted) {
+			t.Fatalf("first Invoke() error = %v, want InterruptError", err)
+		}
+		renews := store.renews.Load()
+		time.Sleep(2 * renewEvery)
+		synctest.Wait()
+		if store.renews.Load() != renews {
+			t.Fatal("lease heartbeat continued after interrupted checkpoint closed")
+		}
+	})
+}
+
+func TestWorkflowHeartbeatStaysActiveThroughErrorTerminalObservers(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		eventType string
+		terminate bool
+	}{
+		{name: "failed", eventType: EventWorkflowFailed},
+		{name: "terminated", eventType: EventWorkflowTerminated, terminate: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				const (
+					leaseDuration = time.Minute
+					renewEvery    = 20 * time.Second
+				)
+				store := &renewalCountingStore{MemoryStore: NewMemoryStore()}
+				entered := make(chan struct{})
+				release := make(chan struct{})
+				started := make(chan struct{})
+				wf := New[string, string]("error-terminal-observer-"+test.name, WithStore(store), WithCheckpointLease(leaseDuration, renewEvery))
+				node := wf.Node("node", func(ctx context.Context, input string) (string, error) {
+					if !test.terminate {
+						return "", errors.New("node failed")
+					}
+					close(started)
+					<-ctx.Done()
+					return "", ctx.Err()
+				})
+				wf.Entry(node)
+				wf.Exit(node)
+				done := make(chan error, 1)
+				go func() {
+					_, err := wf.Invoke(context.Background(), "input", gopact.WithRunID("error-terminal-run-"+test.name),
+						gopact.WithEventHandler(func(_ context.Context, event gopact.Event) error {
+							if event.Type == test.eventType {
+								close(entered)
+								<-release
+							}
+							return nil
+						}))
+					done <- err
+				}()
+				if test.terminate {
+					<-started
+					if err := wf.Terminate("error-terminal-run-" + test.name); err != nil {
+						t.Fatal(err)
+					}
+				}
+				<-entered
+				time.Sleep(2 * leaseDuration)
+				synctest.Wait()
+				if store.renews.Load() == 0 {
+					t.Fatal("observer blocked without any lease renewal")
+				}
+				close(release)
+				synctest.Wait()
+				if err := <-done; err == nil {
+					t.Fatal("Invoke() error = nil")
+				}
+				renews := store.renews.Load()
+				time.Sleep(2 * renewEvery)
+				synctest.Wait()
+				if store.renews.Load() != renews {
+					t.Fatal("lease heartbeat continued after terminal checkpoint closed")
+				}
+			})
+		})
+	}
 }
 
 func TestWorkflowLeaseLossCancelsNode(t *testing.T) {

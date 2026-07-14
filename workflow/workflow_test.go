@@ -34,6 +34,62 @@ func TestWorkflowInvokeDirectly(t *testing.T) {
 	}
 }
 
+func TestInterruptBatchResumesAfterStrictObserverFailureWithoutRerunningGuard(t *testing.T) {
+	store := NewMemoryStore()
+	guardRuns := 0
+	build := func() *Workflow[string, string] {
+		wf := New[string, string]("durable-interrupt-batch", WithStore(store))
+		wait := testNode(wf, "wait", func(_ context.Context, input string) (string, error) { return input, nil })
+		wait.Guard(BeforeRun("approval", GuardFunc[string, string](func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+			guardRuns++
+			return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval-1", Subject: "approve"}}, nil
+		})))
+		wf.Entry(wait)
+		wf.Exit(wait)
+		return wf
+	}
+
+	observerFailed := false
+	_, err := build().Invoke(context.Background(), "input", gopact.WithRunID("durable-interrupt-run"),
+		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+			if event.Type == EventGuardInterrupted && !observerFailed {
+				observerFailed = true
+				return errors.New("observer unavailable")
+			}
+			return nil
+		}))
+	if err == nil || !strings.Contains(err.Error(), "observer unavailable") {
+		t.Fatalf("first Invoke() error = %v, want observer failure", err)
+	}
+
+	_, err = build().Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "durable-interrupt-run"}))
+	var interrupted InterruptError
+	if !errors.As(err, &interrupted) {
+		t.Fatalf("resume Invoke() error = %v, want InterruptError", err)
+	}
+	if guardRuns != 1 {
+		t.Fatalf("guard runs = %d, want 1", guardRuns)
+	}
+	records, err := store.List(context.Background(), runlog.Query{RunID: "durable-interrupt-run"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	counts := map[string]int{}
+	for _, record := range records {
+		counts[record.EventType]++
+	}
+	if counts[EventGuardInterrupted] != 1 || counts[EventWorkflowInterrupted] != 1 {
+		t.Fatalf("interrupt event counts = %v, want exactly one of each", counts)
+	}
+	checkpoint, err := store.Load(context.Background(), "durable-interrupt-run")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if checkpoint.Status != CheckpointInterrupted || checkpoint.OwnerID != "" {
+		t.Fatalf("checkpoint = status %q owner %q, want interrupted and unowned", checkpoint.Status, checkpoint.OwnerID)
+	}
+}
+
 func TestWorkflowInvokeDirectlyConcurrent(t *testing.T) {
 	wf := New[string, int]("direct-concurrent")
 	length := testNode(wf, "length", func(_ context.Context, input string) (int, error) {
