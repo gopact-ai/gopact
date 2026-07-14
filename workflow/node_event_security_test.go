@@ -20,7 +20,9 @@ type historySecretState struct {
 
 func TestWorkflowNodeHistoryContainsMetadataWithoutBusinessPayload(t *testing.T) {
 	const secret = "history-secret-4b7d9a"
-	wf := New[historySecretState, historySecretState]("history-metadata")
+	const runID = "history-metadata-run"
+	store := NewMemoryStore()
+	wf := New[historySecretState, historySecretState]("history-metadata", WithStore(store))
 	wf.Context(func(input historySecretState) historySecretState { return input })
 	node := wf.Node("node", func(context.Context, historySecretState) (historySecretState, error) {
 		return historySecretState{}, errors.New("provider rejected token " + secret)
@@ -29,7 +31,7 @@ func TestWorkflowNodeHistoryContainsMetadataWithoutBusinessPayload(t *testing.T)
 	wf.Exit(node)
 
 	var nodeEvents []gopact.Event
-	_, err := wf.Invoke(t.Context(), historySecretState{Secret: secret}, gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+	_, err := wf.Invoke(t.Context(), historySecretState{Secret: secret}, gopact.WithRunID(runID), gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
 		if strings.HasPrefix(event.Type, "node.") {
 			event.Payload = bytes.Clone(event.Payload)
 			nodeEvents = append(nodeEvents, event)
@@ -39,12 +41,23 @@ func TestWorkflowNodeHistoryContainsMetadataWithoutBusinessPayload(t *testing.T)
 	if err == nil {
 		t.Fatal("Invoke() error = nil, want node failure")
 	}
+	if !strings.Contains(err.Error(), secret) {
+		t.Fatalf("Invoke() error = %v, want original cause", err)
+	}
+	records, listErr := store.List(t.Context(), runlog.Query{RunID: runID})
+	if listErr != nil {
+		t.Fatalf("List() error = %v", listErr)
+	}
+	secrets := secretRepresentations(t, secret)
+	for _, record := range records {
+		assertRecordHasNoSecrets(t, record, secrets)
+	}
 	if len(nodeEvents) != 2 {
 		t.Fatalf("node events = %d, want started and failed", len(nodeEvents))
 	}
 	for _, event := range nodeEvents {
 		assertNodeEventEnvelope(t, event)
-		assertMetadataOnlyNodePayload(t, event.Payload, secretRepresentations(t, secret))
+		assertMetadataOnlyNodePayload(t, event.Payload, secrets)
 	}
 	var failed map[string]any
 	if err := json.Unmarshal(nodeEvents[1].Payload, &failed); err != nil {
@@ -52,6 +65,19 @@ func TestWorkflowNodeHistoryContainsMetadataWithoutBusinessPayload(t *testing.T)
 	}
 	if failed["status"] != "failed" || failed["error"] != "failed" {
 		t.Fatalf("failed metadata = %+v, want status/error classification failed", failed)
+	}
+}
+
+func assertRecordHasNoSecrets(t *testing.T, record runlog.Record, secrets [][]byte) {
+	t.Helper()
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal persisted event %q: %v", record.EventType, err)
+	}
+	for _, secret := range secrets {
+		if bytes.Contains(encoded, secret) {
+			t.Fatalf("persisted automatic event %q contains secret representation %q: %s", record.EventType, secret, encoded)
+		}
 	}
 }
 

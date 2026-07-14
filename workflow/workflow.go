@@ -2410,16 +2410,16 @@ func (execution *workflowExecution[I, O]) cancellationCause() error {
 }
 
 func (execution *workflowExecution[I, O]) fail(cause error) error {
-	event := gopact.Event{Type: EventWorkflowFailed, Summary: cause.Error()}
+	event := gopact.Event{Type: EventWorkflowFailed}
 	return execution.commitTerminalError(CheckpointFailed, event, cause)
 }
 
 func (execution *workflowExecution[I, O]) cancelRun(cause error) error {
 	if errors.Is(cause, ErrRunTerminated) {
-		event := gopact.Event{Type: EventWorkflowTerminated, Summary: cause.Error(), Origin: "external_terminate"}
+		event := gopact.Event{Type: EventWorkflowTerminated, Origin: "external_terminate"}
 		return execution.commitTerminalError(CheckpointTerminated, event, cause)
 	}
-	event := gopact.Event{Type: EventWorkflowCanceled, Summary: cause.Error()}
+	event := gopact.Event{Type: EventWorkflowCanceled}
 	return execution.commitTerminalError(CheckpointCanceled, event, cause)
 }
 

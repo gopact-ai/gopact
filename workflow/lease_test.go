@@ -859,6 +859,9 @@ func TestWorkflowHeartbeatStaysActiveThroughErrorTerminalObservers(t *testing.T)
 					_, err := wf.Invoke(context.Background(), "input", gopact.WithRunID("error-terminal-run-"+test.name),
 						gopact.WithEventHandler(func(_ context.Context, event gopact.Event) error {
 							if event.Type == test.eventType {
+								if event.Summary != "" {
+									t.Errorf("terminal event summary = %q, want metadata only", event.Summary)
+								}
 								close(entered)
 								<-release
 							}

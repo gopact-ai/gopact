@@ -48,6 +48,9 @@ func TestWorkflowCallerCancellationCommitsCanceledTerminal(t *testing.T) {
 		events[len(events)-1].Type != EventWorkflowCanceled {
 		t.Fatalf("last events = %v, want node failed then workflow canceled", events)
 	}
+	if events[len(events)-1].Summary != "" {
+		t.Fatalf("canceled event summary = %q, want metadata only", events[len(events)-1].Summary)
+	}
 }
 
 func TestWorkflowCallerLeaseSentinelCauseCommitsCanceledTerminal(t *testing.T) {
