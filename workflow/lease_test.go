@@ -19,6 +19,24 @@ type renewalCountingStore struct {
 	renews atomic.Int32
 }
 
+type delayedRenewalStore struct {
+	Store
+	delay time.Duration
+	calls int
+}
+
+func (store *delayedRenewalStore) RenewLease(ctx context.Context, _ CheckpointLease) error {
+	store.calls++
+	timer := time.NewTimer(store.delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (store *renewalCountingStore) RenewLease(ctx context.Context, lease CheckpointLease) error {
 	store.renews.Add(1)
 	return store.MemoryStore.RenewLease(ctx, lease)
@@ -327,6 +345,32 @@ func TestWorkflowRenewLeasePassesDuration(t *testing.T) {
 	if store.renewed[0].ExpiresAt.IsZero() {
 		t.Fatal("renewed lease ExpiresAt is zero, want compatibility value")
 	}
+}
+
+func TestWorkflowRenewLeaseAllowsStoreLatencyBeyondRenewInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			leaseDuration = 300 * time.Millisecond
+			renewEvery    = 50 * time.Millisecond
+		)
+		store := &delayedRenewalStore{Store: NewMemoryStore(), delay: 2 * renewEvery}
+		ctx, cancel := context.WithCancelCause(context.Background())
+		defer cancel(nil)
+		execution := workflowExecution[int, int]{
+			compiled: &compiled[int, int]{
+				store: store, checkpointLeaseDuration: leaseDuration,
+				checkpointLeaseRenewEvery: renewEvery,
+			},
+			cancel: cancel,
+		}
+		lease := CheckpointLease{RunID: "run-1", OwnerID: "owner-1", ClaimSequence: 1}
+		if err := execution.renewCheckpointLease(ctx, &lease); err != nil {
+			t.Fatalf("renewCheckpointLease() error = %v", err)
+		}
+		if store.calls != 1 {
+			t.Fatalf("RenewLease() calls = %d, want 1", store.calls)
+		}
+	})
 }
 
 type authoritativeClaimCheckpointer struct {

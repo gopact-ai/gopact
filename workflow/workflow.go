@@ -1186,7 +1186,8 @@ func (execution *workflowExecution[I, O]) renewCheckpointLeaseOnTick(ctx context
 func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Context, lease *CheckpointLease) error {
 	lease.Duration = execution.compiled.checkpointLeaseDuration
 	lease.ExpiresAt = time.Now().Add(execution.compiled.checkpointLeaseDuration)
-	renewCtx, cancel := context.WithTimeout(ctx, execution.compiled.checkpointLeaseRenewEvery)
+	renewCtx, cancel := context.WithTimeout(ctx,
+		execution.compiled.checkpointLeaseDuration-execution.compiled.checkpointLeaseRenewEvery)
 	err := execution.compiled.store.RenewLease(renewCtx, *lease)
 	cancel()
 	if err == nil || ctx.Err() != nil {
