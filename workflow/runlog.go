@@ -15,6 +15,8 @@ const (
 	historyPageSize           = 256
 )
 
+var errInconsistentRunLifecycle = errors.New("workflow: inconsistent run lifecycle")
+
 // SnapshotStore loads a read model for a run.
 type SnapshotStore interface {
 	Load(context.Context, SnapshotRequest) (Snapshot, error)
@@ -92,50 +94,76 @@ func ListSessionRuns(ctx context.Context, log runlog.Log, request SessionRunsReq
 			record.ParentRunID != summary.ParentRunID {
 			return nil, fmt.Errorf("workflow: run %q contains inconsistent session, definition, or parent identity", record.RunID)
 		}
+		if err := summary.applyLifecycle(record); err != nil {
+			return nil, fmt.Errorf("%w: run %q event %q after status %q", err, record.RunID, record.EventType, summary.Status)
+		}
 		summary.UpdatedAt = record.Timestamp
-		summary.applyLifecycle(record)
 	}
 	return summaries, nil
 }
 
-func (summary *RunSummary) applyLifecycle(record runlog.Record) {
+func (summary *RunSummary) applyLifecycle(record runlog.Record) error {
 	switch record.EventType {
-	case EventWorkflowStarted, EventWorkflowResumed, EventWorkflowRetryStarted, EventWorkflowJumpStarted:
-		summary.reopen()
+	case EventWorkflowStarted, EventWorkflowRetryStarted, EventWorkflowJumpStarted:
+		return summary.start()
+	case EventWorkflowResumed:
+		return summary.resume()
 	case EventWorkflowInterrupted:
-		summary.interrupt()
+		return summary.interrupt()
 	case EventWorkflowCompleted:
-		summary.end(CheckpointCompleted, record.Timestamp)
+		return summary.end(CheckpointCompleted, record.Timestamp)
 	case EventWorkflowFailed:
-		summary.end(CheckpointFailed, record.Timestamp)
+		return summary.end(CheckpointFailed, record.Timestamp)
 	case EventWorkflowCanceled:
-		summary.end(CheckpointCanceled, record.Timestamp)
+		return summary.end(CheckpointCanceled, record.Timestamp)
 	case EventWorkflowTerminated:
-		summary.end(CheckpointTerminated, record.Timestamp)
+		return summary.end(CheckpointTerminated, record.Timestamp)
 	}
+	return nil
 }
 
-func (summary *RunSummary) reopen() {
+func (summary *RunSummary) start() error {
+	if summary.Status != "" {
+		return errInconsistentRunLifecycle
+	}
 	summary.Status = CheckpointRunning
-	summary.EndedAt = time.Time{}
+	return nil
 }
 
-func (summary *RunSummary) interrupt() {
+func (summary *RunSummary) resume() error {
+	if summary.Status != CheckpointRunning && summary.Status != CheckpointInterrupted {
+		return errInconsistentRunLifecycle
+	}
+	summary.Status = CheckpointRunning
+	return nil
+}
+
+func (summary *RunSummary) interrupt() error {
+	if summary.Status != CheckpointRunning {
+		return errInconsistentRunLifecycle
+	}
 	summary.Status = CheckpointInterrupted
 	summary.EndedAt = time.Time{}
+	return nil
 }
 
-func (summary *RunSummary) end(status CheckpointStatus, timestamp time.Time) {
+func (summary *RunSummary) end(status CheckpointStatus, timestamp time.Time) error {
+	if summary.Status != CheckpointRunning && summary.Status != CheckpointInterrupted {
+		return errInconsistentRunLifecycle
+	}
 	summary.Status = status
 	summary.EndedAt = timestamp
+	return nil
 }
 
 // RunMeta is the snapshot run identity view.
 type RunMeta struct {
-	SessionID   string
-	RunID       string
-	ParentRunID string
-	SourceRunID string
+	SessionID        string
+	RunID            string
+	ParentRunID      string
+	SourceRunID      string
+	SourceEventSeq   int64
+	SourceRevisionID string
 }
 
 // Snapshot is a read model built from runlog/checkpoint/artifact refs.
@@ -236,6 +264,8 @@ func (snapshot *Snapshot) projectTimeline(records []runlog.Record) error {
 			snapshot.RunMeta.SessionID = record.SessionID
 			snapshot.RunMeta.ParentRunID = record.ParentRunID
 			snapshot.RunMeta.SourceRunID = record.SourceRunID
+			snapshot.RunMeta.SourceEventSeq = record.SourceEventSeq
+			snapshot.RunMeta.SourceRevisionID = record.SourceRevisionID
 		} else if !snapshot.sameLineage(record) {
 			return errors.New("workflow: runlog contains inconsistent run lineage")
 		}
@@ -247,7 +277,9 @@ func (snapshot *Snapshot) projectTimeline(records []runlog.Record) error {
 }
 
 func (snapshot Snapshot) sameLineage(record runlog.Record) bool {
-	return record.SessionID == snapshot.RunMeta.SessionID && record.ParentRunID == snapshot.RunMeta.ParentRunID && record.SourceRunID == snapshot.RunMeta.SourceRunID
+	return record.SessionID == snapshot.RunMeta.SessionID && record.ParentRunID == snapshot.RunMeta.ParentRunID &&
+		record.SourceRunID == snapshot.RunMeta.SourceRunID && record.SourceEventSeq == snapshot.RunMeta.SourceEventSeq &&
+		record.SourceRevisionID == snapshot.RunMeta.SourceRevisionID
 }
 
 type checkpointProjection struct {
@@ -341,8 +373,15 @@ func (snapshot *Snapshot) acceptCheckpointIdentity(record CheckpointRecord) erro
 	}
 	if snapshot.RunMeta.SessionID == "" {
 		snapshot.RunMeta.SessionID = record.SessionID
+		snapshot.RunMeta.SourceRunID = record.SourceRunID
+		snapshot.RunMeta.SourceEventSeq = record.SourceEventSeq
+		snapshot.RunMeta.SourceRevisionID = record.SourceRevisionID
 	} else if record.SessionID != snapshot.RunMeta.SessionID {
 		return fmt.Errorf("%w: snapshot checkpoint session %q does not match %q", ErrCheckpointMismatch, record.SessionID, snapshot.RunMeta.SessionID)
+	}
+	if record.SourceRunID != snapshot.RunMeta.SourceRunID || record.SourceEventSeq != snapshot.RunMeta.SourceEventSeq ||
+		record.SourceRevisionID != snapshot.RunMeta.SourceRevisionID {
+		return fmt.Errorf("%w: snapshot checkpoint source lineage is inconsistent", ErrCheckpointMismatch)
 	}
 	if record.SchemaVersion != checkpointSchemaVersion {
 		return fmt.Errorf("%w: snapshot checkpoint schema is incompatible", ErrCheckpointMismatch)
@@ -435,7 +474,7 @@ func (s Snapshot) Fork[I, O any](ctx context.Context, target *Workflow[I, O], re
 	}
 	association := forkAssociationOption{association: runlog.Association{SourceRunID: req.SourceRunID, SourceEventSeq: req.FromEventSeq}}
 	forkOptions := append([]gopact.RunOption(nil), opts...)
-	forkOptions = append(forkOptions, association)
+	forkOptions = append(forkOptions, gopact.WithSessionID(s.RunMeta.SessionID), association)
 	return compiled.Invoke(ctx, input, forkOptions...)
 }
 

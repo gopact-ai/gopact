@@ -65,11 +65,14 @@ func TestWorkflowJournalReconciliationRejectsGapAndIdentityMismatch(t *testing.T
 		parentRunID:    "parent",
 		executionEpoch: 2,
 		sourceRevision: "source-revision",
+		sourceRunID:    "source-run",
+		sourceEventSeq: 5,
 	}
 	valid := runlog.Record{
 		DefinitionID: "definition", DefinitionVersion: "version", SessionID: "session", RunID: "run",
 		RevisionID: "revision", ParentRunID: "parent", Sequence: 7, ExecutionEpoch: 2,
-		SourceRevisionID: "source-revision", EventType: "event.type", Source: "source", Timestamp: time.Now().UTC(),
+		SourceRunID: "source-run", SourceEventSeq: 5, SourceRevisionID: "source-revision",
+		EventType: "event.type", Source: "source", Timestamp: time.Now().UTC(),
 	}
 	if err := execution.validateJournalRecord(valid, 7); err != nil {
 		t.Fatalf("validateJournalRecord(valid) error = %v", err)
@@ -85,6 +88,8 @@ func TestWorkflowJournalReconciliationRejectsGapAndIdentityMismatch(t *testing.T
 		{name: "topology mismatch", mutate: func(record *runlog.Record) { record.DefinitionVersion = "other" }},
 		{name: "parent mismatch", mutate: func(record *runlog.Record) { record.ParentRunID = "other" }},
 		{name: "epoch mismatch", mutate: func(record *runlog.Record) { record.ExecutionEpoch++ }},
+		{name: "source run mismatch", mutate: func(record *runlog.Record) { record.SourceRunID = "other" }},
+		{name: "source event mismatch", mutate: func(record *runlog.Record) { record.SourceEventSeq++ }},
 		{name: "source revision mismatch", mutate: func(record *runlog.Record) { record.SourceRevisionID = "other" }},
 	}
 	for _, test := range tests {
@@ -93,6 +98,51 @@ func TestWorkflowJournalReconciliationRejectsGapAndIdentityMismatch(t *testing.T
 			test.mutate(&record)
 			if err := execution.validateJournalRecord(record, 7); err == nil {
 				t.Fatal("validateJournalRecord() error = nil, want rejection")
+			}
+		})
+	}
+}
+
+func TestWorkflowJournalAheadRejectsSourceLineageMismatchBeforeWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*runlog.Record)
+	}{
+		{name: "source run", mutate: func(record *runlog.Record) { record.SourceRunID = "other" }},
+		{name: "source event", mutate: func(record *runlog.Record) { record.SourceEventSeq++ }},
+		{name: "source revision", mutate: func(record *runlog.Record) { record.SourceRevisionID = "other" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			compiled := &compiled[string, string]{name: "definition", topologyVersion: "version"}
+			checkpoint := CheckpointRecord{RunID: "run", SessionID: "session", ConfirmedSequence: 0}
+			store := &recordingCheckpointer{records: map[string]CheckpointRecord{"run": checkpoint}}
+			journal := runlog.NewMemoryLog()
+			record := runlog.Record{
+				DefinitionID: "definition", DefinitionVersion: "version", SessionID: "session", RunID: "run",
+				RevisionID: "revision", Sequence: 1, ExecutionEpoch: 2, SourceRunID: "source-run",
+				SourceEventSeq: 5, SourceRevisionID: "source-revision", EventType: "audit.custom",
+				Source: "workflow", Timestamp: time.Now().UTC(),
+			}
+			test.mutate(&record)
+			if err := journal.Append(t.Context(), record); err != nil {
+				t.Fatal(err)
+			}
+			compiled.checkpointer, compiled.journal = store, journal
+			delivered := 0
+			execution := workflowExecution[string, string]{
+				compiled: compiled, ctx: t.Context(), sessionID: "session", runID: "run", checkpoint: checkpoint,
+				executionEpoch: 2, sourceRunID: "source-run", sourceEventSeq: 5, sourceRevision: "source-revision",
+				replaySinks: []gopact.EventSink{gopact.EventSinkFunc(func(context.Context, gopact.Event) error {
+					delivered++
+					return nil
+				})},
+			}
+			if err := execution.reconcileJournal(); err == nil {
+				t.Fatal("reconcileJournal() error = nil, want lineage mismatch")
+			}
+			if delivered != 0 || len(store.saved) != 0 {
+				t.Fatalf("delivered = %d, saves = %d, want zero writes and events", delivered, len(store.saved))
 			}
 		})
 	}

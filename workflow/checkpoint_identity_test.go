@@ -80,6 +80,56 @@ func TestWorkflowResumeAcceptsMatchingExplicitSessionID(t *testing.T) {
 	}
 }
 
+func TestWorkflowResumeRejectsCheckpointSourceLineageMismatchBeforeMutation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*CheckpointRecord)
+	}{
+		{name: "source run", mutate: func(record *CheckpointRecord) { record.SourceRunID = "other" }},
+		{name: "source event", mutate: func(record *CheckpointRecord) { record.SourceEventSeq = 1 }},
+		{name: "source revision", mutate: func(record *CheckpointRecord) { record.SourceRevisionID = "other" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wf, store := interruptedSessionWorkflow(t, "source-lineage-"+strings.ReplaceAll(test.name, " ", "-"))
+			interruptSessionWorkflow(t, wf, "run-1", "session-1")
+			record, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload, err := decodeCheckpointPayload[RunInfo](record.Payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			meta := payload.meta()
+			meta.SourceRunID, meta.SourceEventSeq, meta.SourceRevisionID = "source-run", 7, "source-revision"
+			record.Payload, err = encodeCheckpointPayloadWithMeta(payload.state(), payload.Outputs, payload.NextStep, meta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID = "source-run", 7, "source-revision"
+			test.mutate(&record)
+			store.restore(record)
+			before, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
+			if !errors.Is(err, ErrCheckpointMismatch) {
+				t.Fatalf("Resume() error = %v, want ErrCheckpointMismatch", err)
+			}
+			after, loadErr := store.Load(t.Context(), "run-1")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("checkpoint mutated after lineage mismatch\nbefore: %+v\nafter: %+v", before, after)
+			}
+		})
+	}
+}
+
 func TestWorkflowResumeRejectsSchemaV1Checkpoint(t *testing.T) {
 	wf, store := interruptedSessionWorkflow(t, "schema-v1")
 	interruptSessionWorkflow(t, wf, "run-1", "session-1")

@@ -308,8 +308,7 @@ func validateCheckpointRecord(record CheckpointRecord) error {
 	if record.ConfirmedSequence < 0 || record.PendingSequence < 0 {
 		return fmt.Errorf("%w: checkpoint sequence must not be negative", ErrInvalidCheckpoint)
 	}
-	if (record.SourceRunID == "") != (record.SourceEventSeq == 0) || record.SourceEventSeq < 0 ||
-		(record.SourceRunID == "" && record.SourceRevisionID != "") {
+	if !validSourceLineage(record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID) {
 		return fmt.Errorf("%w: checkpoint source lineage is incomplete", ErrInvalidCheckpoint)
 	}
 	if record.LeaseDuration < 0 {
@@ -325,6 +324,11 @@ func validateCheckpointRecord(record CheckpointRecord) error {
 		return fmt.Errorf("%w: checkpoint timestamps are required", ErrInvalidCheckpoint)
 	}
 	return nil
+}
+
+func validSourceLineage(sourceRunID string, srcSeq int64, srcRevision string) bool {
+	return srcSeq >= 0 && (sourceRunID == "") == (srcSeq == 0) &&
+		(sourceRunID != "" || srcRevision == "")
 }
 
 func leaseExpiry(now, expiresAt time.Time, duration time.Duration) time.Time {

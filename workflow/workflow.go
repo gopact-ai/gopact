@@ -1854,6 +1854,7 @@ func (execution *workflowExecution[I, O]) validateJournalRecord(record runlog.Re
 	case record.DefinitionID != execution.compiled.name || record.DefinitionVersion != execution.compiled.topologyVersion:
 		return fmt.Errorf("workflow: reconcile journal: sequence %d has inconsistent workflow identity", record.Sequence)
 	case record.ParentRunID != execution.parentRunID || record.ExecutionEpoch != execution.executionEpoch ||
+		record.SourceRunID != execution.sourceRunID || record.SourceEventSeq != execution.sourceEventSeq ||
 		record.SourceRevisionID != execution.sourceRevision:
 		return fmt.Errorf("workflow: reconcile journal: sequence %d has inconsistent execution identity", record.Sequence)
 	case record.RevisionID == "" || record.EventType == "" || record.Source == "" || record.Timestamp.IsZero():
@@ -2665,6 +2666,13 @@ func (c *compiled[I, O]) prepareResumeCheckpoint(ctx context.Context, req checkp
 	if err := c.validateCheckpointRecordIdentity(record); err != nil {
 		return CheckpointRecord{}, err
 	}
+	meta, err := decodeCheckpointPayloadMeta[O](record.Payload)
+	if err != nil {
+		return CheckpointRecord{}, err
+	}
+	if err := validateCheckpointSourceIdentity(record, meta); err != nil {
+		return CheckpointRecord{}, err
+	}
 	if req.SessionID != "" && record.SessionID != req.SessionID {
 		return CheckpointRecord{}, fmt.Errorf(
 			"%w: checkpoint session %q does not match %q",
@@ -2681,6 +2689,16 @@ func (c *compiled[I, O]) prepareResumeCheckpoint(ctx context.Context, req checkp
 	default:
 		return CheckpointRecord{}, fmt.Errorf("workflow: checkpoint status %q cannot resume", record.Status)
 	}
+}
+
+func validateCheckpointSourceIdentity(record CheckpointRecord, meta checkpointPayloadMeta) error {
+	if !validSourceLineage(record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID) ||
+		!validSourceLineage(meta.SourceRunID, meta.SourceEventSeq, meta.SourceRevisionID) ||
+		record.SourceRunID != meta.SourceRunID || record.SourceEventSeq != meta.SourceEventSeq ||
+		record.SourceRevisionID != meta.SourceRevisionID {
+		return fmt.Errorf("%w: checkpoint source lineage is inconsistent", ErrCheckpointMismatch)
+	}
+	return nil
 }
 
 func (c *compiled[I, O]) validateCheckpointRecordIdentity(record CheckpointRecord) error {

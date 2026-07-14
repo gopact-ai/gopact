@@ -2286,6 +2286,7 @@ func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	log := runlog.NewMemoryLog()
 	if _, err := compiled.Invoke(context.Background(), "old",
 		gopact.WithRunID("source-run"),
+		gopact.WithSessionID("source-session"),
 		gopact.WithEventSink(runlog.NewSink(log)),
 	); err != nil {
 		t.Fatalf("source Invoke() error = %v", err)
@@ -2312,15 +2313,36 @@ func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) == 0 || records[0].SourceRunID != "source-run" || records[0].SourceEventSeq != 1 || records[0].ParentRunID != "" {
+	if len(records) == 0 || records[0].SessionID != "source-session" || records[0].SourceRunID != "source-run" || records[0].SourceEventSeq != 1 || records[0].ParentRunID != "" {
 		t.Fatalf("fork records = %+v, want independent source association", records)
 	}
 	forkCheckpoint, err := store.Load(context.Background(), "fork-run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if forkCheckpoint.SourceRunID != "source-run" || forkCheckpoint.SourceEventSeq != 1 || forkCheckpoint.SourceRevisionID != "" {
+	if forkCheckpoint.SessionID != "source-session" || forkCheckpoint.SourceRunID != "source-run" || forkCheckpoint.SourceEventSeq != 1 || forkCheckpoint.SourceRevisionID != "" {
 		t.Fatalf("fork checkpoint lineage = %q/%d/%q, want source-run/1 with no revision", forkCheckpoint.SourceRunID, forkCheckpoint.SourceEventSeq, forkCheckpoint.SourceRevisionID)
+	}
+	matching, err := snapshot.Fork(context.Background(), wf, ForkRequest{
+		SourceRunID: "source-run", FromEventSeq: 1,
+		Patch: ForkPatch{WorkflowInput: &InputPatch{Value: "matching"}},
+	}, gopact.WithRunID("fork-matching"), gopact.WithSessionID("source-session"), gopact.WithEventSink(runlog.NewSink(log)))
+	if err != nil || matching != "matching!" {
+		t.Fatalf("matching-session Fork() = %q, %v", matching, err)
+	}
+	_, err = snapshot.Fork(context.Background(), wf, ForkRequest{
+		SourceRunID: "source-run", FromEventSeq: 1,
+		Patch: ForkPatch{WorkflowInput: &InputPatch{Value: "conflict"}},
+	}, gopact.WithRunID("fork-conflict"), gopact.WithSessionID("other-session"), gopact.WithEventSink(runlog.NewSink(log)))
+	if !errors.Is(err, gopact.ErrRunConfig) {
+		t.Fatalf("conflicting-session Fork() error = %v, want ErrRunConfig", err)
+	}
+	conflictRecords, listErr := log.List(t.Context(), runlog.Query{RunID: "fork-conflict"})
+	if listErr != nil || len(conflictRecords) != 0 {
+		t.Fatalf("conflicting fork records = %+v, %v, want none", conflictRecords, listErr)
+	}
+	if _, loadErr := store.Load(t.Context(), "fork-conflict"); !errors.Is(loadErr, ErrCheckpointNotFound) {
+		t.Fatalf("conflicting fork checkpoint error = %v, want ErrCheckpointNotFound", loadErr)
 	}
 }
 

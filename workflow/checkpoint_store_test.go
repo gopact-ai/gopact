@@ -21,6 +21,33 @@ func TestCheckpointRecordLeaseDurationIsNotPersisted(t *testing.T) {
 	}
 }
 
+func TestCheckpointRecordRejectsPartialSourceLineage(t *testing.T) {
+	now := time.Now().UTC()
+	base := CheckpointRecord{
+		ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: "example",
+		TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+		Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: []byte(`{"state":"ready"}`),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	tests := []struct {
+		name   string
+		mutate func(*CheckpointRecord)
+	}{
+		{name: "run only", mutate: func(record *CheckpointRecord) { record.SourceRunID = "source" }},
+		{name: "event only", mutate: func(record *CheckpointRecord) { record.SourceEventSeq = 1 }},
+		{name: "revision only", mutate: func(record *CheckpointRecord) { record.SourceRevisionID = "revision" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record := base
+			test.mutate(&record)
+			if err := validateCheckpointRecord(record); !errors.Is(err, ErrInvalidCheckpoint) {
+				t.Fatalf("validateCheckpointRecord() error = %v, want ErrInvalidCheckpoint", err)
+			}
+		})
+	}
+}
+
 func TestMemoryCheckpointerPreservesVersionHistory(t *testing.T) {
 	store := NewMemoryCheckpointer()
 	now := time.Now().UTC()
