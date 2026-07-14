@@ -3365,7 +3365,7 @@ func decodeCheckpointPayload[O any](payload []byte) (checkpointPayload[O], error
 		return decoded, errors.New("workflow: checkpoint payload is too large")
 	}
 	if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&decoded); err != nil {
-		return decoded, fmt.Errorf("workflow: decode checkpoint payload: %w", err)
+		return decoded, fmt.Errorf("%w: decode checkpoint payload: %w", ErrInvalidCheckpoint, err)
 	}
 	return decoded, nil
 }

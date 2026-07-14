@@ -55,7 +55,7 @@ func registerCheckpointType(typ reflect.Type) (err error) {
 			err = fmt.Errorf("workflow: register checkpoint type %s: %v", typ, recovered)
 		}
 	}()
-	gob.RegisterName(checkpointTypeIdentity(typ), reflect.Zero(typ).Interface())
+	gob.Register(reflect.Zero(typ).Interface())
 	return nil
 }
 

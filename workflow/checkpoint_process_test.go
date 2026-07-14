@@ -57,7 +57,7 @@ func TestWorkflowCheckpointProcessHelper(t *testing.T) {
 	}
 	path := os.Getenv(checkpointProcessFileEnv)
 	store := NewMemoryStore()
-	if mode == "reader" || mode == "iterator-reader" {
+	if mode == "reader" || mode == "missing-reader" || mode == "iterator-reader" {
 		restoreCheckpointProcessSnapshot(t, store, path)
 	}
 	if mode == "renamed-writer" {
@@ -87,13 +87,29 @@ func TestWorkflowCheckpointProcessHelper(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := decodeCheckpointPayload[checkpointProcessRenamed](payload); err == nil || !strings.Contains(err.Error(), "name not registered") {
+		if _, err := decodeCheckpointPayload[checkpointProcessRenamed](payload); !errors.Is(err, ErrInvalidCheckpoint) {
 			t.Fatalf("decode error = %v, want stable unknown type error", err)
 		}
 		return
 	}
+	if mode == "legacy-writer" || mode == "legacy-reader" {
+		runLegacyCheckpointProcess(t, mode, path)
+		return
+	}
+	if mode == "same-registration" {
+		gob.Register((*checkpointLegacyType)(nil))
+		wf := New[int, int]("same-registration", WithCheckpointTypes((*checkpointLegacyType)(nil)))
+		node := wf.Node("node", func(_ context.Context, input int) (int, error) { return input, nil })
+		wf.Entry(node)
+		wf.Exit(node)
+		if _, err := wf.compile(); err != nil {
+			t.Fatalf("Compile() error = %v, want idempotent external registration", err)
+		}
+		return
+	}
 	if mode == "registration-conflict" {
-		name := checkpointTypeIdentity(reflect.TypeOf(checkpointConflictVictim{}))
+		typ := reflect.TypeOf(checkpointConflictVictim{})
+		name := typ.PkgPath() + "." + typ.Name()
 		gob.RegisterName(name, checkpointConflictOccupier{})
 		wf := New[checkpointConflictVictim, checkpointConflictVictim]("conflict")
 		node := wf.Node("node", func(_ context.Context, input checkpointConflictVictim) (checkpointConflictVictim, error) {
@@ -120,6 +136,14 @@ func TestWorkflowCheckpointProcessHelper(t *testing.T) {
 	}
 	if mode == "iterator-writer" || mode == "iterator-reader" {
 		runCheckpointIteratorProcess(t, mode, store, path)
+		return
+	}
+	if mode == "missing-reader" {
+		wf := checkpointProcessWorkflowWithTypes(store, false)
+		_, err := wf.Invoke(t.Context(), checkpointProcessInput{}, WithResume(ResumeRequest{RunID: "fresh-process-run"}))
+		if !errors.Is(err, ErrInvalidCheckpoint) {
+			t.Fatalf("Resume() error = %v, want ErrInvalidCheckpoint", err)
+		}
 		return
 	}
 	wf := checkpointProcessWorkflow(store)
@@ -162,11 +186,15 @@ func readCheckpointProcess(t *testing.T, wf *Workflow[checkpointProcessInput, ch
 }
 
 func checkpointProcessWorkflow(store Store) *Workflow[checkpointProcessInput, checkpointProcessOutput] {
-	wf := New[checkpointProcessInput, checkpointProcessOutput](
-		"fresh-process",
-		WithStore(store),
-		WithCheckpointTypes(checkpointProcessDynamic{}, reflect.TypeOf(checkpointProcessDynamic{})),
-	)
+	return checkpointProcessWorkflowWithTypes(store, true)
+}
+
+func checkpointProcessWorkflowWithTypes(store Store, withTypes bool) *Workflow[checkpointProcessInput, checkpointProcessOutput] {
+	options := []BuildOption{WithStore(store)}
+	if withTypes {
+		options = append(options, WithCheckpointTypes(checkpointProcessDynamic{}, reflect.TypeOf(checkpointProcessDynamic{})))
+	}
+	wf := New[checkpointProcessInput, checkpointProcessOutput]("fresh-process", options...)
 	state := wf.Context(func(checkpointProcessInput) checkpointProcessContext {
 		return checkpointProcessContext{Visits: 1}
 	})
@@ -213,6 +241,65 @@ func TestWorkflowCheckpointTypeRenameReturnsError(t *testing.T) {
 	path := t.TempDir() + "/renamed.gob"
 	runCheckpointProcess(t, "renamed-writer", path)
 	runCheckpointProcess(t, "renamed-reader", path)
+}
+
+func TestWorkflowCheckpointTypeMissingReturnsInvalidCheckpoint(t *testing.T) {
+	path := t.TempDir() + "/missing.json"
+	runCheckpointProcess(t, "writer", path)
+	runCheckpointProcess(t, "missing-reader", path)
+}
+
+type checkpointLegacyType struct {
+	Value string
+}
+
+func TestWorkflowCheckpointTypeLegacyWireNameCompatibility(t *testing.T) {
+	path := t.TempDir() + "/legacy.gob"
+	runCheckpointProcess(t, "legacy-writer", path)
+	runCheckpointProcess(t, "legacy-reader", path)
+}
+
+func TestWorkflowCheckpointTypeExternalSameRegistrationIsIdempotent(t *testing.T) {
+	runCheckpointProcess(t, "same-registration", t.TempDir()+"/unused")
+}
+
+func runLegacyCheckpointProcess(t *testing.T, mode, path string) {
+	t.Helper()
+	if mode == "legacy-writer" {
+		gob.Register((*checkpointLegacyType)(nil))
+		gob.Register([]checkpointLegacyType(nil))
+		payload, err := encodeCheckpointPayloadWithMeta[any](runState{}, []any{
+			&checkpointLegacyType{Value: "pointer"},
+			[]checkpointLegacyType{{Value: "composite"}},
+		}, 1, checkpointPayloadMeta{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, payload, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	wf := New[any, any]("legacy-reader", WithCheckpointTypes((*checkpointLegacyType)(nil), []checkpointLegacyType(nil)))
+	node := wf.Node("node", func(_ context.Context, input any) (any, error) { return input, nil })
+	wf.Entry(node)
+	wf.Exit(node)
+	if _, err := wf.compile(); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeCheckpointPayload[any](payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pointer, pointerOK := decoded.Outputs[0].(*checkpointLegacyType)
+	composite, compositeOK := decoded.Outputs[1].([]checkpointLegacyType)
+	if !pointerOK || pointer.Value != "pointer" || !compositeOK || len(composite) != 1 || composite[0].Value != "composite" {
+		t.Fatalf("decoded outputs = %#v", decoded.Outputs)
+	}
 }
 
 type checkpointConcurrentType struct {
