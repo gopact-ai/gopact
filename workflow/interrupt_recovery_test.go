@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -205,4 +207,106 @@ func recordInterruptFact(t *testing.T, ids map[string]int, payload []byte) {
 		t.Fatal(err)
 	}
 	ids[request.ID]++
+}
+
+func TestResumeRejectsMalformedInterruptProgressBeforeClaim(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*CheckpointRecord, *checkpointPayload[string])
+	}{
+		{name: "negative next", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) { payload.InterruptProgress.Next = -1 }},
+		{name: "next past events", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) {
+			payload.InterruptProgress.Next = len(payload.InterruptProgress.Events) + 1
+		}},
+		{name: "empty events", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) { payload.InterruptProgress.Events = nil }},
+		{name: "missing progress", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) { payload.InterruptProgress = nil }},
+		{name: "partial events", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) {
+			payload.InterruptProgress.Events = payload.InterruptProgress.Events[:1]
+		}},
+		{name: "substituted type", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) {
+			payload.InterruptProgress.Events[0].Type = EventWorkflowInterrupted
+		}},
+		{name: "sequence gap", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) {
+			payload.InterruptProgress.Events[1].Sequence++
+		}},
+		{name: "foreign run", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) {
+			payload.InterruptProgress.Events[0].RunID = "other"
+		}},
+		{name: "substituted request", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) {
+			payload.InterruptProgress.Events[0].Payload = []byte(`{"ID":"other"}`)
+		}},
+		{name: "pending differs", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) { payload.PendingEvent.Summary = "other" }},
+		{name: "cursor differs", mutate: func(_ *CheckpointRecord, payload *checkpointPayload[string]) { payload.EventCursor++ }},
+		{name: "pending sequence differs", mutate: func(record *CheckpointRecord, _ *checkpointPayload[string]) { record.PendingSequence++ }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wf, store := interruptProgressFixture(t, "malformed-"+strings.ReplaceAll(test.name, " ", "-"))
+			record, err := store.Load(t.Context(), "run-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload, err := decodeCheckpointPayload[string](record.Payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(&record, &payload)
+			record.Payload, err = encodeCheckpointPayloadWithMeta(payload.state(), payload.Outputs, payload.NextStep, payload.meta())
+			if err != nil {
+				t.Fatal(err)
+			}
+			store.MemoryCheckpointer.restore(record)
+			beforeHead, beforeHistory, beforeLog := checkpointStoreSnapshot(t, store, "run-1")
+
+			_, err = wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "run-1"}))
+			if !errors.Is(err, ErrInvalidCheckpoint) {
+				t.Fatalf("Resume() error = %v, want ErrInvalidCheckpoint", err)
+			}
+			afterHead, afterHistory, afterLog := checkpointStoreSnapshot(t, store, "run-1")
+			if !reflect.DeepEqual(afterHead, beforeHead) || !reflect.DeepEqual(afterHistory, beforeHistory) || !reflect.DeepEqual(afterLog, beforeLog) {
+				t.Fatal("invalid resume mutated checkpoint head, history, or runlog")
+			}
+		})
+	}
+}
+
+func interruptProgressFixture(t *testing.T, name string) (*Workflow[string, string], *MemoryStore) {
+	t.Helper()
+	store := NewMemoryStore()
+	wf := New[string, string](name, WithStore(store))
+	node := wf.Node("node", func(_ context.Context, input string) (string, error) { return input, nil })
+	node.Guard(BeforeRun("approval", GuardFunc[string, string](func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+		return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval-1"}}, nil
+	})))
+	wf.Entry(node)
+	wf.Exit(node)
+	failed := false
+	_, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("run-1"), gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+		if event.Type == EventGuardInterrupted && !failed {
+			failed = true
+			return errors.New("observer failed")
+		}
+		return nil
+	}))
+	if err == nil {
+		t.Fatal("fixture Invoke() error = nil")
+	}
+	return wf, store
+}
+
+func checkpointStoreSnapshot(t *testing.T, store *MemoryStore, runID string) (CheckpointRecord, []CheckpointRecord, []runlog.Record) {
+	t.Helper()
+	head, err := store.Load(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := store.ListCheckpoints(t.Context(), CheckpointHistoryRequest{RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := store.List(t.Context(), runlog.Query{RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return head, history, records
 }

@@ -894,6 +894,229 @@ func TestWorkflowHeartbeatStaysActiveThroughErrorTerminalObservers(t *testing.T)
 	}
 }
 
+func TestTerminalObserverUsesCallerContextAndFreshResumeConverges(t *testing.T) {
+	tests := []struct {
+		status    CheckpointStatus
+		eventType string
+	}{
+		{status: CheckpointCompleted, eventType: EventWorkflowCompleted},
+		{status: CheckpointFailed, eventType: EventWorkflowFailed},
+		{status: CheckpointCanceled, eventType: EventWorkflowCanceled},
+		{status: CheckpointTerminated, eventType: EventWorkflowTerminated},
+	}
+	for _, test := range tests {
+		t.Run(string(test.status), func(t *testing.T) {
+			testTerminalObserverCallerContext(t, test.status, test.eventType)
+		})
+	}
+}
+
+func testTerminalObserverCallerContext(t *testing.T, status CheckpointStatus, eventType string) {
+	t.Helper()
+	synctest.Test(t, func(t *testing.T) {
+		const renewEvery = 20 * time.Second
+		store := &renewalCountingStore{MemoryStore: NewMemoryStore()}
+		started := make(chan struct{})
+		entered := make(chan struct{})
+		exited := make(chan struct{})
+		build := func() *Workflow[string, string] {
+			wf := New[string, string]("caller-context-"+string(status), WithStore(store), WithCheckpointLease(time.Minute, renewEvery))
+			node := wf.Node("node", func(ctx context.Context, input string) (string, error) {
+				return terminalContextNode(ctx, input, status, started)
+			})
+			wf.Entry(node)
+			wf.Exit(node)
+			return wf
+		}
+		wf := build()
+		callerCtx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			_, err := wf.Invoke(callerCtx, "input", gopact.WithRunID("caller-context-run"), gopact.WithStrictEventHandler(func(ctx context.Context, event gopact.Event) error {
+				if event.Type != eventType {
+					return nil
+				}
+				close(entered)
+				<-ctx.Done()
+				close(exited)
+				return ctx.Err()
+			}))
+			done <- err
+		}()
+		(terminalContextTrigger{t: t, wf: wf, status: status, started: started, entered: entered, cancel: cancel}).run()
+		<-exited
+		if err := <-done; err == nil {
+			t.Fatal("first Invoke() error = nil")
+		}
+		renews := store.renews.Load()
+		time.Sleep(2 * renewEvery)
+		synctest.Wait()
+		if store.renews.Load() != renews {
+			t.Fatal("heartbeat continued after strict observer cancellation")
+		}
+		_, _ = build().Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "caller-context-run"}))
+		record, err := store.Load(t.Context(), "caller-context-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.Status != status {
+			t.Fatalf("checkpoint status = %q, want %q", record.Status, status)
+		}
+	})
+}
+
+func terminalContextNode(ctx context.Context, input string, status CheckpointStatus, started chan<- struct{}) (string, error) {
+	switch status {
+	case CheckpointCompleted:
+		return input, nil
+	case CheckpointFailed:
+		return "", errors.New("node failed")
+	default:
+		return waitTerminalContext(ctx, started)
+	}
+}
+
+func waitTerminalContext(ctx context.Context, started chan<- struct{}) (string, error) {
+	close(started)
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+type terminalContextTrigger struct {
+	t       *testing.T
+	wf      *Workflow[string, string]
+	status  CheckpointStatus
+	started <-chan struct{}
+	entered <-chan struct{}
+	cancel  context.CancelFunc
+}
+
+func (trigger terminalContextTrigger) run() {
+	trigger.t.Helper()
+	switch trigger.status {
+	case CheckpointCanceled:
+		trigger.cancelRun()
+	case CheckpointTerminated:
+		trigger.terminateRun()
+	default:
+		trigger.cancelObserver()
+	}
+}
+
+func (trigger terminalContextTrigger) cancelRun() {
+	<-trigger.started
+	trigger.cancel()
+	<-trigger.entered
+}
+
+func (trigger terminalContextTrigger) terminateRun() {
+	<-trigger.started
+	if err := trigger.wf.Terminate("caller-context-run"); err != nil {
+		trigger.t.Fatal(err)
+	}
+	<-trigger.entered
+}
+
+func (trigger terminalContextTrigger) cancelObserver() {
+	<-trigger.entered
+	trigger.cancel()
+}
+
+func TestInterruptObserverUsesCallerContextAndFreshResumeConverges(t *testing.T) {
+	for _, multi := range []bool{false, true} {
+		name := "single"
+		if multi {
+			name = "multi"
+		}
+		t.Run(name, func(t *testing.T) {
+			testInterruptObserverCallerContext(t, multi)
+		})
+	}
+}
+
+func testInterruptObserverCallerContext(t *testing.T, multi bool) {
+	t.Helper()
+	synctest.Test(t, func(t *testing.T) {
+		const renewEvery = 20 * time.Second
+		store := &renewalCountingStore{MemoryStore: NewMemoryStore()}
+		build := func() *Workflow[string, string] {
+			return interruptContextWorkflow(store, multi)
+		}
+		entered := make(chan struct{})
+		exited := make(chan struct{})
+		callerCtx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			_, err := build().Invoke(callerCtx, "input", gopact.WithRunID("interrupt-context-run"), gopact.WithStrictEventHandler(func(ctx context.Context, event gopact.Event) error {
+				if event.Type != EventGuardInterrupted {
+					return nil
+				}
+				close(entered)
+				<-ctx.Done()
+				close(exited)
+				return ctx.Err()
+			}))
+			done <- err
+		}()
+		<-entered
+		cancel()
+		<-exited
+		if err := <-done; err == nil {
+			t.Fatal("first Invoke() error = nil")
+		}
+		renews := store.renews.Load()
+		time.Sleep(2 * renewEvery)
+		synctest.Wait()
+		if store.renews.Load() != renews {
+			t.Fatal("heartbeat continued after strict interrupt observer cancellation")
+		}
+		_, err := build().Invoke(context.Background(), "ignored", WithResume(ResumeRequest{RunID: "interrupt-context-run"}))
+		var interrupted InterruptError
+		if !errors.As(err, &interrupted) {
+			t.Fatalf("resume Invoke() error = %v, want InterruptError", err)
+		}
+		record, err := store.Load(t.Context(), "interrupt-context-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.Status != CheckpointInterrupted {
+			t.Fatalf("checkpoint status = %q, want interrupted", record.Status)
+		}
+	})
+}
+
+func interruptContextWorkflow(store Store, multi bool) *Workflow[string, string] {
+	wf := New[string, string]("interrupt-caller-context", WithStore(store), WithCheckpointLease(time.Minute, 20*time.Second), WithMaxParallelism(2))
+	if !multi {
+		node := interruptContextNode(wf, "node", "approval-1")
+		wf.Entry(node)
+		wf.Exit(node)
+		return wf
+	}
+	plan := wf.Node("plan", func(_ context.Context, input string) (string, error) { return input, nil })
+	first := interruptContextNode(wf, "first", "approval-first")
+	second := interruptContextNode(wf, "second", "approval-second")
+	merge := wf.Merge("merge", func(_ context.Context, _ Inputs) (string, error) { return "done", nil })
+	plan.Route(func(_ context.Context, input string) (Dispatch, error) {
+		return plan.Once(first, input).And(plan.Once(second, input)).WithSettle(SettleAll()), nil
+	})
+	wf.Entry(plan)
+	wf.Edge(plan, first)
+	wf.Edge(plan, second)
+	wf.Edge(first, merge)
+	wf.Edge(second, merge)
+	wf.Exit(merge)
+	return wf
+}
+
+func interruptContextNode(wf *Workflow[string, string], name, interruptID string) *Node[string, string] {
+	node := wf.Node(name, func(_ context.Context, input string) (string, error) { return input, nil })
+	node.Guard(BeforeRun("approval", GuardFunc[string, string](func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+		return GuardInterrupt[string, string]{Request: InterruptRequest{ID: interruptID}}, nil
+	})))
+	return node
+}
+
 func TestWorkflowLeaseLossCancelsNode(t *testing.T) {
 	tests := []struct {
 		name       string

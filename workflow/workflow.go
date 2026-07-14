@@ -1523,7 +1523,11 @@ func (execution *workflowExecution[I, O]) commitObservedEventLocked(ctx context.
 }
 
 func (execution *workflowExecution[I, O]) appendFencedEvent(ctx context.Context, event gopact.Event) error {
-	appendCtx := eventSinkContext{Context: context.WithoutCancel(ctx)}
+	return execution.appendFencedEventWithObserver(ctx, ctx, event)
+}
+
+func (execution *workflowExecution[I, O]) appendFencedEventWithObserver(storeCtx, observerCtx context.Context, event gopact.Event) error {
+	appendCtx := eventSinkContext{Context: context.WithoutCancel(storeCtx)}
 	record := runlog.RecordFromEvent(event)
 	record.SourceRunID = execution.sourceRunID
 	record.SourceEventSeq = execution.sourceEventSeq
@@ -1538,7 +1542,7 @@ func (execution *workflowExecution[I, O]) appendFencedEvent(ctx context.Context,
 	if err != nil {
 		return execution.recordSinkFailure(err)
 	}
-	if err := (eventDelivery{event: event}).emit(ctx, execution.replaySinks); err != nil {
+	if err := (eventDelivery{event: event}).emit(observerCtx, execution.replaySinks); err != nil {
 		return execution.recordSinkFailure(err)
 	}
 	execution.eventCursor = execution.sequence
@@ -1546,22 +1550,26 @@ func (execution *workflowExecution[I, O]) appendFencedEvent(ctx context.Context,
 }
 
 func (execution *workflowExecution[I, O]) emitLocked(ctx context.Context, event gopact.Event) error {
+	return execution.emitLockedWithContexts(ctx, ctx, event)
+}
+
+func (execution *workflowExecution[I, O]) emitLockedWithContexts(storeCtx, observerCtx context.Context, event gopact.Event) error {
 	if execution.sinkFailure != nil {
 		return execution.sinkFailure
 	}
 	execution.sequence++
 	event = execution.runtimeEvent(event, execution.sequence)
 	if execution.checkpoint.ID != "" {
-		return execution.appendFencedEvent(ctx, event)
+		return execution.appendFencedEventWithObserver(storeCtx, observerCtx, event)
 	}
 	record := runlog.RecordFromEvent(event)
 	record.SourceRunID = execution.sourceRunID
 	record.SourceEventSeq = execution.sourceEventSeq
-	if err := execution.compiled.store.Append(context.WithoutCancel(ctx), record); err != nil {
+	if err := execution.compiled.store.Append(context.WithoutCancel(storeCtx), record); err != nil {
 		return execution.recordSinkFailure(err)
 	}
 	delivery := eventDelivery{event: event}
-	if err := delivery.emit(ctx, execution.replaySinks); err != nil {
+	if err := delivery.emit(observerCtx, execution.replaySinks); err != nil {
 		return execution.recordSinkFailure(err)
 	}
 	execution.eventCursor = execution.sequence
@@ -1628,7 +1636,7 @@ func (execution *workflowExecution[I, O]) restore() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := validateCheckpointInterruptProgress(payload); err != nil {
+	if err := validateCheckpointInterruptProgress(execution.checkpoint, payload); err != nil {
 		return false, err
 	}
 	execution.applyResumePayload(payload)
@@ -1655,17 +1663,23 @@ func (execution *workflowExecution[I, O]) restore() (bool, error) {
 	return false, execution.emitEvent(gopact.Event{Type: EventCheckpointLoaded})
 }
 
-func validateCheckpointInterruptProgress[O any](payload checkpointPayload[O]) error {
+func validateCheckpointInterruptProgress[O any](record CheckpointRecord, payload checkpointPayload[O]) error {
 	progress := payload.InterruptProgress
 	if progress == nil {
+		if (payload.PendingEvent != nil && interruptEventType(payload.PendingEvent.Type)) ||
+			(record.Status == CheckpointRunning && len(payload.PendingInterrupts) > 0) {
+			return fmt.Errorf("%w: checkpoint interrupt progress is missing", ErrInvalidCheckpoint)
+		}
 		return nil
 	}
-	if len(payload.PendingInterrupts) == 0 || len(progress.Events) != len(payload.PendingInterrupts)+1 ||
+	if record.Status != CheckpointRunning || len(payload.PendingInterrupts) == 0 ||
+		len(progress.Events) != len(payload.PendingInterrupts)+1 ||
 		progress.Next < 0 || progress.Next > len(progress.Events) {
 		return fmt.Errorf("%w: checkpoint interrupt progress is inconsistent", ErrInvalidCheckpoint)
 	}
 	for index, event := range progress.Events {
-		if event.Sequence != progress.Events[0].Sequence+int64(index) {
+		if !checkpointInterruptEventIdentityMatches(record, payload, event) ||
+			event.Sequence != progress.Events[0].Sequence+int64(index) {
 			return fmt.Errorf("%w: checkpoint interrupt event sequence is inconsistent", ErrInvalidCheckpoint)
 		}
 		wantType := EventGuardInterrupted
@@ -1675,12 +1689,50 @@ func validateCheckpointInterruptProgress[O any](payload checkpointPayload[O]) er
 		if event.Type != wantType {
 			return fmt.Errorf("%w: checkpoint interrupt event type is inconsistent", ErrInvalidCheckpoint)
 		}
+		if index < len(payload.PendingInterrupts) && !checkpointInterruptRequestMatches(event, payload.PendingInterrupts[index].Request) {
+			return fmt.Errorf("%w: checkpoint interrupt request is inconsistent", ErrInvalidCheckpoint)
+		}
+		if index == len(progress.Events)-1 && !checkpointWorkflowInterruptEventMatches(event, payload.PendingInterrupts[0].Request) {
+			return fmt.Errorf("%w: checkpoint workflow interrupt event is inconsistent", ErrInvalidCheckpoint)
+		}
 	}
 	confirmed := progress.Events[0].Sequence + int64(progress.Next) - 1
-	if payload.EventCursor != confirmed {
+	if payload.EventCursor != confirmed || record.ConfirmedSequence != confirmed {
 		return fmt.Errorf("%w: checkpoint interrupt cursor is inconsistent", ErrInvalidCheckpoint)
 	}
+	if payload.PendingEvent == nil {
+		if progress.Next == 0 || record.PendingSequence != 0 {
+			return fmt.Errorf("%w: checkpoint pending interrupt sequence is inconsistent", ErrInvalidCheckpoint)
+		}
+		return nil
+	}
+	if progress.Next >= len(progress.Events) || record.PendingSequence != payload.PendingEvent.Sequence ||
+		!reflect.DeepEqual(*payload.PendingEvent, progress.Events[progress.Next]) {
+		return fmt.Errorf("%w: checkpoint pending interrupt event is inconsistent", ErrInvalidCheckpoint)
+	}
 	return nil
+}
+
+func checkpointInterruptEventIdentityMatches[O any](record CheckpointRecord, payload checkpointPayload[O], event gopact.Event) bool {
+	return event.RunID == record.RunID && event.SessionID == record.SessionID &&
+		event.DefinitionID == record.WorkflowName && event.DefinitionVersion == record.TopologyVersion &&
+		event.ExecutionEpoch == payload.ExecutionEpoch && event.SourceRevisionID == payload.SourceRevisionID &&
+		event.RevisionID == fmt.Sprintf("%s/revision-%d", record.RunID, event.Sequence) &&
+		event.Origin == payload.ControlOrigin && !event.Timestamp.IsZero()
+}
+
+func checkpointInterruptRequestMatches(event gopact.Event, request InterruptRequest) bool {
+	var decoded InterruptRequest
+	return event.Source == "workflow.guard" && event.Summary == request.Subject &&
+		json.Unmarshal(event.Payload, &decoded) == nil && reflect.DeepEqual(decoded, request)
+}
+
+func checkpointWorkflowInterruptEventMatches(event gopact.Event, first InterruptRequest) bool {
+	return event.Source == "workflow" && event.Summary == first.Subject && len(event.Payload) == 0
+}
+
+func interruptEventType(eventType string) bool {
+	return eventType == EventGuardInterrupted || eventType == EventWorkflowInterrupted
 }
 
 func (execution *workflowExecution[I, O]) applyResumePayload(payload checkpointPayload[O]) {
@@ -1739,7 +1791,7 @@ func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm Chec
 		)
 	}
 	pending = execution.runtimeEvent(pending, pending.Sequence)
-	if err := execution.emitLocked(execution.finalizationContext(), pending); err != nil {
+	if err := execution.emitLockedWithContexts(execution.finalizationContext(), execution.ctx, pending); err != nil {
 		return err
 	}
 	if execution.interruptProgress != nil && execution.interruptProgress.Next < len(execution.interruptProgress.Events) &&
@@ -2195,7 +2247,7 @@ func (execution *workflowExecution[I, O]) commitInterruptBatchEvent(event gopact
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitLocked(execution.finalizationContext(), event); err != nil {
+	if err := execution.emitLockedWithContexts(execution.finalizationContext(), execution.ctx, event); err != nil {
 		return err
 	}
 	execution.interruptProgress.Next++
@@ -2344,11 +2396,11 @@ func (execution *workflowExecution[I, O]) commitTerminal(status CheckpointStatus
 	return execution.commitTerminalEvent(execution.finalizationContext(), status, event)
 }
 
-func (execution *workflowExecution[I, O]) commitTerminalEvent(ctx context.Context, status CheckpointStatus, event gopact.Event) error {
+func (execution *workflowExecution[I, O]) commitTerminalEvent(storeCtx context.Context, status CheckpointStatus, event gopact.Event) error {
 	execution.eventMu.Lock()
 	defer execution.eventMu.Unlock()
 	if execution.checkpoint.ID == "" {
-		return execution.emitLocked(ctx, event)
+		return execution.emitLocked(execution.ctx, event)
 	}
 	if execution.sinkFailure != nil {
 		return execution.sinkFailure
@@ -2356,12 +2408,12 @@ func (execution *workflowExecution[I, O]) commitTerminalEvent(ctx context.Contex
 	pending := execution.runtimeEvent(event, execution.sequence+1)
 	request := execution.writeRequest(execution.step, &pending)
 	request.PendingTerm = status
-	saved, err := execution.compiled.saveCheckpoint(ctx, request)
+	saved, err := execution.compiled.saveCheckpoint(storeCtx, request)
 	if err != nil {
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitLocked(ctx, pending); err != nil {
+	if err := execution.emitLockedWithContexts(storeCtx, execution.ctx, pending); err != nil {
 		return err
 	}
 	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
@@ -2685,11 +2737,17 @@ func (c *compiled[I, O]) prepareResumeCheckpoint(ctx context.Context, req checkp
 }
 
 func (c *compiled[I, O]) activeResumeCheckpoint(ctx context.Context, record CheckpointRecord, req checkpointPrepareRequest[O]) (CheckpointRecord, error) {
-	meta, err := decodeCheckpointPayloadMeta[O](record.Payload)
+	payload, err := decodeCheckpointPayload[O](record.Payload)
 	if err != nil {
 		return CheckpointRecord{}, err
 	}
-	if err := validateCheckpointSourceIdentity(record, meta); err != nil {
+	if err := c.validateCheckpointIdentity(payload); err != nil {
+		return CheckpointRecord{}, err
+	}
+	if err := validateCheckpointSourceIdentity(record, payload.meta()); err != nil {
+		return CheckpointRecord{}, err
+	}
+	if err := validateCheckpointInterruptProgress(record, payload); err != nil {
 		return CheckpointRecord{}, err
 	}
 	return c.claimCheckpoint(ctx, record, req.OwnerID, req.Resume)
