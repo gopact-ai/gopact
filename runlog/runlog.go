@@ -20,6 +20,8 @@ var (
 	ErrInvalidRecord = errors.New("runlog: invalid record")
 	// ErrInvalidQuery reports invalid query bounds.
 	ErrInvalidQuery = errors.New("runlog: invalid query")
+	// ErrHistoryCompacted reports a query whose requested history is no longer retained.
+	ErrHistoryCompacted = errors.New("runlog: history compacted")
 	// ErrConflict reports different content for an existing run sequence.
 	ErrConflict = errors.New("runlog: record conflict")
 )

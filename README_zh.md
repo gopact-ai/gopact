@@ -56,9 +56,22 @@ wf := workflow.New[Input, Output](
 )
 ```
 
+Workflow 默认使用 Go 标准库 UUID 生成 Session、Run 与租约 owner ID。服务可以在构建阶段按 identity kind 分别替换，单次调用还可以再次覆盖：
+
+```go
+wf := workflow.New[Input, Output]("agent",
+    workflow.WithIDGenerator(gopact.IDKindSession, newSessionID),
+)
+out, err := wf.Invoke(ctx, input,
+    gopact.WithIDGenerator(gopact.IDKindRun, newRunID),
+)
+```
+
+优先级为：显式 ID > RunOption generator > Workflow generator > UUID 默认值。生成结果必须非空、是合法 UTF-8、最多 191 字节、不含 NUL 且不能以空格结尾，否则运行会被拒绝。generator 可能被并发调用，并由实现者保证全局唯一性。
+
 部署边界是明确的：`workflow.MemoryStore` 仅用于测试和短生命周期本地进程；`stores/sqlite` 适用于单机，或安全共享同一个本地数据库文件的多进程。多主机部署必须使用支持原子 Claim 与 fencing 的分布式数据库 Store。
 
-配置后的 Store 是权威数据源，写入失败会直接终止 Run。Checkpointer 必须支持原子抢占和续租；续租失败时，runtime 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。节点实现必须在 Context 被取消后及时停止。
+配置后的 Store 是权威数据源，写入失败会直接终止 Run。Checkpointer 必须支持原子抢占和续租；runtime 会传递租约时长，让分布式 Store 在持有 ownership lock 时用数据库时钟生成到期时间，而不是信任主机墙钟。续租失败时，runtime 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。节点实现必须在 Context 被取消后及时停止。
 
 多实例持久化执行必须把同一个组合 Store 实例同时配置为 Checkpointer 和 Journal，并使用实现了 `runlog.FencedLog` 的 Store。这样 Store 可以在同一把锁或同一个数据库事务中校验当前 owner/claim 并追加 observed event，关闭 Claim 后旧 owner 继续物理写 journal 的窗口，同时避免每个 observed event 额外产生两份 checkpoint history。若 checkpoint 与 journal 是两个独立后端，runtime 会使用持久化 pending-event 进行恢复，但无法让跨后端的 owner 校验与物理 journal append 成为一个原子操作。
 

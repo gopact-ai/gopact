@@ -1,11 +1,24 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 )
+
+func TestCheckpointRecordLeaseDurationIsNotPersisted(t *testing.T) {
+	record := CheckpointRecord{LeaseDuration: time.Minute}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("LeaseDuration")) {
+		t.Fatalf("json = %s, want LeaseDuration omitted", encoded)
+	}
+}
 
 func TestMemoryCheckpointerPreservesVersionHistory(t *testing.T) {
 	store := NewMemoryCheckpointer()

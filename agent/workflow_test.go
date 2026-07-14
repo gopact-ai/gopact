@@ -43,6 +43,131 @@ func TestWorkflowAgentInvokesWorkflow(t *testing.T) {
 	}
 }
 
+func TestWorkflowAgentStreamsCommittedResponses(t *testing.T) {
+	identity := testIdentity()
+	wf := workflow.New[Request, Response](identity.Name, workflow.WithTopologyVersion(identity.Version))
+	respond := wf.Node("respond", func(_ context.Context, request Request) (Response, error) {
+		return Response{Message: request.Messages[0]}, nil
+	})
+	wf.Entry(respond)
+	wf.Exit(respond)
+	target, err := NewWorkflowAgent(identity, wf)
+	if err != nil {
+		t.Fatalf("NewWorkflowAgent() error = %v", err)
+	}
+	var _ StreamingAgent = target
+
+	var chunks []Chunk
+	for chunk, streamErr := range target.InvokeStream(
+		context.Background(),
+		Request{Messages: []gopact.Message{gopact.UserMessage("hello stream")}},
+		gopact.WithRunID("agent-stream-run"),
+	) {
+		if streamErr != nil {
+			t.Fatalf("InvokeStream() error = %v", streamErr)
+		}
+		chunks = append(chunks, chunk)
+	}
+	if len(chunks) != 1 || chunks[0].Text != "hello stream" ||
+		len(chunks[0].Parts) != 1 || chunks[0].Parts[0].Text != "hello stream" {
+		t.Fatalf("chunks = %+v, want one cloned text chunk", chunks)
+	}
+}
+
+func TestWorkflowAgentStreamPreservesArtifactsAndMessageParts(t *testing.T) {
+	identity := testIdentity()
+	wf := workflow.New[Request, Response](identity.Name, workflow.WithTopologyVersion(identity.Version))
+	existingRef := gopact.ArtifactRef{URI: "artifact://existing", Kind: "image", Digest: "sha256:existing"}
+	response := Response{
+		Message: gopact.Message{Role: gopact.MessageRoleAssistant, Parts: []gopact.MessagePart{
+			{Type: gopact.MessagePartTypeText, Text: "hello "},
+			{Type: "reasoning", Text: "kept"},
+			{Type: gopact.MessagePartTypeArtifact, Ref: &existingRef},
+			{Type: gopact.MessagePartTypeText, Text: "world"},
+		}},
+		Artifacts: []gopact.ArtifactRef{{
+			URI: "artifact://response", Kind: "document", Digest: "sha256:response",
+		}},
+	}
+	respond := wf.Node("respond", func(context.Context, Request) (Response, error) {
+		return response, nil
+	})
+	wf.Entry(respond)
+	wf.Exit(respond)
+	target, err := NewWorkflowAgent(identity, wf)
+	if err != nil {
+		t.Fatalf("NewWorkflowAgent() error = %v", err)
+	}
+
+	var chunks []Chunk
+	for chunk, streamErr := range target.InvokeStream(context.Background(), Request{}) {
+		if streamErr != nil {
+			t.Fatalf("InvokeStream() error = %v", streamErr)
+		}
+		chunks = append(chunks, chunk)
+	}
+	existingRef.URI = "artifact://mutated"
+	response.Artifacts[0].URI = "artifact://mutated"
+	if len(chunks) != 1 || chunks[0].Text != "hello world" || len(chunks[0].Parts) != 5 {
+		t.Fatalf("chunks = %+v, want text and all message/artifact parts", chunks)
+	}
+	parts := chunks[0].Parts
+	if parts[1].Type != "reasoning" || parts[1].Text != "kept" || parts[2].Ref == nil ||
+		parts[2].Ref.URI != "artifact://existing" || parts[4].Type != gopact.MessagePartTypeArtifact ||
+		parts[4].Ref == nil || *parts[4].Ref != (gopact.ArtifactRef{
+		URI: "artifact://response", Kind: "document", Digest: "sha256:response",
+	}) {
+		t.Fatalf("parts = %+v, want cloned existing and projected response artifacts", parts)
+	}
+}
+
+func TestWorkflowAgentStreamPreservesSentinelError(t *testing.T) {
+	identity := testIdentity()
+	wf := workflow.New[Request, Response](identity.Name, workflow.WithTopologyVersion(identity.Version))
+	wantErr := errors.New("sentinel")
+	fail := wf.Node("fail", func(context.Context, Request) (Response, error) {
+		return Response{}, wantErr
+	})
+	wf.Entry(fail)
+	wf.Exit(fail)
+	target, err := NewWorkflowAgent(identity, wf)
+	if err != nil {
+		t.Fatalf("NewWorkflowAgent() error = %v", err)
+	}
+
+	var gotErr error
+	for _, streamErr := range target.InvokeStream(context.Background(), Request{}) {
+		gotErr = streamErr
+	}
+	if !errors.Is(gotErr, wantErr) {
+		t.Fatalf("InvokeStream() error = %v, want errors.Is sentinel", gotErr)
+	}
+}
+
+func TestWorkflowAgentStreamPreservesCanceledContext(t *testing.T) {
+	identity := testIdentity()
+	wf := workflow.New[Request, Response](identity.Name, workflow.WithTopologyVersion(identity.Version))
+	respond := wf.Node("respond", func(context.Context, Request) (Response, error) {
+		return Response{}, nil
+	})
+	wf.Entry(respond)
+	wf.Exit(respond)
+	target, err := NewWorkflowAgent(identity, wf)
+	if err != nil {
+		t.Fatalf("NewWorkflowAgent() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var gotErr error
+	for _, streamErr := range target.InvokeStream(ctx, Request{}) {
+		gotErr = streamErr
+	}
+	if !errors.Is(gotErr, context.Canceled) {
+		t.Fatalf("InvokeStream() error = %v, want errors.Is context.Canceled", gotErr)
+	}
+}
+
 func TestWorkflowAgentForwardsResumeOption(t *testing.T) {
 	identity := testIdentity()
 	bodyRuns := 0

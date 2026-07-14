@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"iter"
+	"strings"
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/workflow"
@@ -14,7 +16,7 @@ type WorkflowAgent struct {
 	workflow *workflow.Workflow[Request, Response]
 }
 
-var _ Agent = (*WorkflowAgent)(nil)
+var _ StreamingAgent = (*WorkflowAgent)(nil)
 
 // NewWorkflowAgent binds immutable Agent identity to its Workflow definition.
 func NewWorkflowAgent(identity Identity, wf *workflow.Workflow[Request, Response]) (*WorkflowAgent, error) {
@@ -47,4 +49,44 @@ func (target *WorkflowAgent) Invoke(ctx context.Context, request Request, option
 	request.Artifacts = cloneRefs(request.Artifacts)
 	request.Metadata = cloneStringMap(request.Metadata)
 	return target.workflow.Invoke(ctx, request, options...)
+}
+
+// InvokeStream streams each committed Workflow response as one Agent chunk.
+func (target *WorkflowAgent) InvokeStream(ctx context.Context, request Request, options ...gopact.RunOption) iter.Seq2[Chunk, error] {
+	return func(yield func(Chunk, error) bool) {
+		if target == nil || target.workflow == nil {
+			yield(Chunk{}, errors.New("agent: workflow agent is nil"))
+			return
+		}
+		request.Messages = cloneMessages(request.Messages)
+		request.Artifacts = cloneRefs(request.Artifacts)
+		request.Metadata = cloneStringMap(request.Metadata)
+		for response, err := range target.workflow.InvokeStream(ctx, request, options...) {
+			if err != nil {
+				yield(Chunk{}, err)
+				return
+			}
+			if !yield(responseChunk(response), nil) {
+				return
+			}
+		}
+	}
+}
+
+func responseChunk(response Response) Chunk {
+	message := cloneMessage(response.Message)
+	artifacts := cloneRefs(response.Artifacts)
+	for i := range artifacts {
+		message.Parts = append(message.Parts, gopact.MessagePart{
+			Type: gopact.MessagePartTypeArtifact,
+			Ref:  &artifacts[i],
+		})
+	}
+	var text strings.Builder
+	for _, part := range message.Parts {
+		if part.Type == gopact.MessagePartTypeText {
+			text.WriteString(part.Text)
+		}
+	}
+	return Chunk{Text: text.String(), Parts: message.Parts}
 }

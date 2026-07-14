@@ -83,6 +83,9 @@ func (store *MemoryCheckpointer) Create(ctx context.Context, record CheckpointRe
 	if _, exists := store.records[record.RunID]; exists {
 		return ErrCheckpointExists
 	}
+	if record.LeaseDuration > 0 {
+		record.LeaseExpiresAt = time.Now().Add(record.LeaseDuration)
+	}
 	record = cloneCheckpointRecord(record)
 	store.records[record.RunID] = record
 	store.history[record.RunID] = append(store.history[record.RunID], cloneCheckpointRecord(record))
@@ -118,7 +121,8 @@ func (store *MemoryCheckpointer) Claim(ctx context.Context, candidate Checkpoint
 		return err
 	}
 	if version <= 0 || candidate.Version != version || candidate.Status != CheckpointRunning ||
-		candidate.OwnerID == "" || candidate.ClaimSequence <= 0 || candidate.LeaseExpiresAt.IsZero() {
+		candidate.OwnerID == "" || candidate.ClaimSequence <= 0 ||
+		(candidate.LeaseDuration == 0 && candidate.LeaseExpiresAt.IsZero()) {
 		return fmt.Errorf("%w: invalid checkpoint claim", ErrInvalidCheckpoint)
 	}
 	if err := validateCheckpointRecord(candidate); err != nil {
@@ -127,6 +131,7 @@ func (store *MemoryCheckpointer) Claim(ctx context.Context, candidate Checkpoint
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	now := time.Now()
+	candidate.LeaseExpiresAt = leaseExpiry(now, candidate.LeaseExpiresAt, candidate.LeaseDuration)
 	if !candidate.LeaseExpiresAt.After(now) {
 		return fmt.Errorf("%w: checkpoint claim lease must be in the future", ErrInvalidCheckpoint)
 	}
@@ -158,7 +163,8 @@ func (store *MemoryCheckpointer) RenewLease(ctx context.Context, lease Checkpoin
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if lease.RunID == "" || lease.OwnerID == "" || lease.ClaimSequence <= 0 || lease.ExpiresAt.IsZero() {
+	if lease.RunID == "" || lease.OwnerID == "" || lease.ClaimSequence <= 0 || lease.Duration < 0 ||
+		(lease.Duration == 0 && lease.ExpiresAt.IsZero()) {
 		return fmt.Errorf("%w: invalid checkpoint lease", ErrInvalidCheckpoint)
 	}
 	store.mu.Lock()
@@ -171,13 +177,14 @@ func (store *MemoryCheckpointer) RenewLease(ctx context.Context, lease Checkpoin
 	if !current.LeaseExpiresAt.After(now) {
 		return ErrCheckpointLeaseLost
 	}
-	if !lease.ExpiresAt.After(now) {
+	expiresAt := leaseExpiry(now, lease.ExpiresAt, lease.Duration)
+	if !expiresAt.After(now) {
 		return fmt.Errorf("%w: renewed lease must expire in the future", ErrInvalidCheckpoint)
 	}
-	if !lease.ExpiresAt.After(current.LeaseExpiresAt) {
+	if !expiresAt.After(current.LeaseExpiresAt) {
 		return nil
 	}
-	current.LeaseExpiresAt = lease.ExpiresAt
+	current.LeaseExpiresAt = expiresAt
 	store.records[lease.RunID] = cloneCheckpointRecord(current)
 	return nil
 }
@@ -273,6 +280,7 @@ func (store *MemoryCheckpointer) write(ctx context.Context, record CheckpointRec
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	now := time.Now()
 	current, exists := store.records[record.RunID]
 	if !exists {
 		return ErrCheckpointNotFound
@@ -284,7 +292,7 @@ func (store *MemoryCheckpointer) write(ctx context.Context, record CheckpointRec
 		(record.OwnerID != "" && record.OwnerID != current.OwnerID) {
 		return ErrCheckpointLeaseLost
 	}
-	if current.OwnerID != "" && !current.LeaseExpiresAt.After(time.Now()) {
+	if current.OwnerID != "" && !current.LeaseExpiresAt.After(now) {
 		return ErrCheckpointLeaseLost
 	}
 	if checkpointTerminal(current.Status) {
@@ -293,9 +301,14 @@ func (store *MemoryCheckpointer) write(ctx context.Context, record CheckpointRec
 	if current.Version != version {
 		return fmt.Errorf("%w: stored version %d, expected %d", ErrCheckpointConflict, current.Version, version)
 	}
-	if record.OwnerID == current.OwnerID && record.ClaimSequence == current.ClaimSequence &&
-		current.LeaseExpiresAt.After(record.LeaseExpiresAt) {
+	if record.OwnerID == "" {
+		record.LeaseExpiresAt = time.Time{}
+		record.LeaseDuration = 0
+	} else {
 		record.LeaseExpiresAt = current.LeaseExpiresAt
+		if expiresAt := leaseExpiry(now, time.Time{}, record.LeaseDuration); expiresAt.After(record.LeaseExpiresAt) {
+			record.LeaseExpiresAt = expiresAt
+		}
 	}
 	record = cloneCheckpointRecord(record)
 	record.Version = version + 1
@@ -329,6 +342,9 @@ func validateCheckpointRecord(record CheckpointRecord) error {
 	if record.ConfirmedSequence < 0 || record.PendingSequence < 0 {
 		return fmt.Errorf("%w: checkpoint sequence must not be negative", ErrInvalidCheckpoint)
 	}
+	if record.LeaseDuration < 0 {
+		return fmt.Errorf("%w: checkpoint lease duration must not be negative", ErrInvalidCheckpoint)
+	}
 	if record.ReplayStatus != ReplayUnknown && record.ReplayStatus != ReplaySafe && record.ReplayStatus != ReplayUnsafe {
 		return fmt.Errorf("%w: replay status %q", ErrInvalidCheckpoint, record.ReplayStatus)
 	}
@@ -341,11 +357,19 @@ func validateCheckpointRecord(record CheckpointRecord) error {
 	return nil
 }
 
+func leaseExpiry(now, expiresAt time.Time, duration time.Duration) time.Time {
+	if duration > 0 {
+		return now.Add(duration)
+	}
+	return expiresAt
+}
+
 func sameCheckpointIdentity(left, right CheckpointRecord) bool {
 	return left.ID == right.ID && left.SessionID == right.SessionID && left.RunID == right.RunID && left.WorkflowName == right.WorkflowName && left.TopologyVersion == right.TopologyVersion && left.SchemaVersion == right.SchemaVersion
 }
 
 func cloneCheckpointRecord(record CheckpointRecord) CheckpointRecord {
 	record.Payload = append([]byte(nil), record.Payload...)
+	record.LeaseDuration = 0
 	return record
 }

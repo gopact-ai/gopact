@@ -10,19 +10,20 @@ import (
 	"fmt"
 	"iter"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
+	"uuid"
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/runlog"
 )
 
 var (
-	errNilWorkflow    = errors.New("workflow: nil workflow")
-	errNilCompiled    = errors.New("workflow: nil compiled workflow")
-	runIDSequence     atomic.Uint64
-	sessionIDSequence atomic.Uint64
+	errNilWorkflow = errors.New("workflow: nil workflow")
+	errNilCompiled = errors.New("workflow: nil compiled workflow")
 
 	// ErrCheckpointExists reports a duplicate checkpoint create.
 	ErrCheckpointExists = errors.New("workflow: checkpoint already exists")
@@ -52,6 +53,7 @@ const (
 	maxWorkflowEventPayloadBytes      = 64 << 10
 	maxWorkflowCheckpointPayloadBytes = 4 << 20
 	journalReconcilePageSize          = 256
+	maxGeneratedIDBytes               = 191
 )
 
 type resumeOptionConflict struct{}
@@ -149,6 +151,7 @@ type Workflow[I, O any] struct {
 	maxParallelism            int
 	checkpointLeaseDuration   time.Duration
 	checkpointLeaseRenewEvery time.Duration
+	idGenerators              map[gopact.IDKind]gopact.IDGenerator
 	beforeWorkflow            []LifecycleHook[WorkflowContext[I, O]]
 	afterWorkflow             []LifecycleHook[WorkflowContext[I, O]]
 	plugins                   []Plugin
@@ -173,6 +176,19 @@ type RunInfo struct {
 	Attempt      int
 }
 
+// IDKind identifies an automatically generated workflow identity.
+type IDKind = gopact.IDKind
+
+// IDGenerator creates globally unique IDs.
+type IDGenerator = gopact.IDGenerator
+
+// Automatically generated workflow identity kinds.
+const (
+	IDKindSession = gopact.IDKindSession
+	IDKindRun     = gopact.IDKindRun
+	IDKindOwner   = gopact.IDKindOwner
+)
+
 // RunInfoFromContext returns the current Workflow execution identity.
 func RunInfoFromContext(ctx context.Context) RunInfo {
 	if ctx == nil {
@@ -196,6 +212,7 @@ type compiled[I, O any] struct {
 	maxParallelism            int
 	checkpointLeaseDuration   time.Duration
 	checkpointLeaseRenewEvery time.Duration
+	idGenerators              map[gopact.IDKind]gopact.IDGenerator
 	beforeWorkflow            []LifecycleHook[WorkflowContext[I, O]]
 	afterWorkflow             []LifecycleHook[WorkflowContext[I, O]]
 	eventTypes                map[string]EventTypeValidator
@@ -257,6 +274,7 @@ const (
 )
 
 // CheckpointRecord is a workflow-owned durable runtime snapshot.
+// LeaseDuration is a transient TTL request and must not be persisted.
 type CheckpointRecord struct {
 	ID                string
 	SessionID         string
@@ -272,20 +290,26 @@ type CheckpointRecord struct {
 	ReplayStatus      ReplayStatus
 	OwnerID           string
 	LeaseExpiresAt    time.Time
+	LeaseDuration     time.Duration `json:"-"`
 	ClaimSequence     int64
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
 
 // CheckpointLease identifies one Run ownership claim to renew.
+// Duration is the preferred TTL; ExpiresAt remains the compatibility fallback.
 type CheckpointLease struct {
 	RunID         string
 	OwnerID       string
 	ClaimSequence int64
 	ExpiresAt     time.Time
+	Duration      time.Duration
 }
 
 // Checkpointer persists workflow checkpoint records.
+// When LeaseDuration or Duration is positive, implementations derive expiry
+// from their clock while holding the ownership lock. ExpiresAt remains the
+// fallback for callers that do not yet supply a duration.
 // Claim must atomically replace only an expired running or interrupted head.
 // RenewLease must atomically extend only the current unexpired running claim
 // when both OwnerID and ClaimSequence still match, and return
@@ -293,7 +317,8 @@ type CheckpointLease struct {
 // never shorten the current expiry.
 // Save and Finish must fence writes against the current head's non-empty,
 // unexpired ownership claim. A concurrent RenewLease must never be overwritten
-// by an older snapshot; clearing OwnerID with the current ClaimSequence is an
+// by an older snapshot, and Save must not trust a caller-supplied ExpiresAt to
+// extend the same claim. Clearing OwnerID with the current ClaimSequence is an
 // explicit release, interrupt, or terminal transition. An owner/claim mismatch
 // or expired current lease must return ErrCheckpointLeaseLost before reporting
 // a version conflict; a same-claim CAS conflict returns ErrCheckpointConflict.
@@ -386,8 +411,16 @@ type delivery struct {
 	useSourceOutput bool
 }
 
-// IterOption configures one EachIter dispatch.
-type IterOption[T any] func(*iterConfig[T])
+// IterOption configures one EachIter dispatch without exposing scheduler state.
+type IterOption[T any] interface {
+	applyIterOption(*iterConfig[T])
+}
+
+type iterOptionFunc[T any] func(*iterConfig[T])
+
+func (option iterOptionFunc[T]) applyIterOption(config *iterConfig[T]) {
+	option(config)
+}
 
 type iterConfig[T any] struct {
 	checkpoint func() any
@@ -415,9 +448,21 @@ type buildConfig struct {
 	journalSet                bool
 	checkpointLeaseDuration   time.Duration
 	checkpointLeaseRenewEvery time.Duration
+	idGenerators              map[gopact.IDKind]gopact.IDGenerator
 	plugins                   []Plugin
 	topologyVersion           string
 	topologySet               bool
+}
+
+// WithIDGenerator replaces the default UUID generator for one identity kind.
+// Explicit IDs and per-run generators take precedence.
+func WithIDGenerator(kind gopact.IDKind, generator gopact.IDGenerator) BuildOption {
+	return buildOptionFunc(func(cfg *buildConfig) {
+		if cfg.idGenerators == nil {
+			cfg.idGenerators = make(map[gopact.IDKind]gopact.IDGenerator)
+		}
+		cfg.idGenerators[kind] = generator
+	})
 }
 
 // WithMaxSteps limits scheduler steps for one workflow run.
@@ -481,7 +526,7 @@ func WithTopologyVersion(version string) BuildOption {
 
 // WithIterReplay configures a durable typed cursor for EachIter.
 func WithIterReplay[T, C any](checkpoint func() C, restore func(context.Context, C) iter.Seq2[T, error]) IterOption[T] {
-	return func(cfg *iterConfig[T]) {
+	return iterOptionFunc[T](func(cfg *iterConfig[T]) {
 		if checkpoint == nil || restore == nil {
 			cfg.err = errors.New("workflow: iterator checkpoint and restore are required")
 			return
@@ -494,7 +539,7 @@ func WithIterReplay[T, C any](checkpoint func() C, restore func(context.Context,
 			}
 			return restore(ctx, typed)
 		}
-	}
+	})
 }
 
 func failedIter[T any](cause error) iter.Seq2[T, error] {
@@ -561,6 +606,7 @@ func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
 		maxSteps: defaultMaxSteps, maxParallelism: defaultMaxParallelism,
 		checkpointLeaseDuration:   defaultCheckpointLeaseDuration,
 		checkpointLeaseRenewEvery: defaultCheckpointLeaseRenewEvery,
+		idGenerators:              make(map[gopact.IDKind]gopact.IDGenerator),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -589,6 +635,7 @@ func New[I, O any](name string, opts ...BuildOption) *Workflow[I, O] {
 		maxParallelism:            cfg.maxParallelism,
 		checkpointLeaseDuration:   cfg.checkpointLeaseDuration,
 		checkpointLeaseRenewEvery: cfg.checkpointLeaseRenewEvery,
+		idGenerators:              cloneIDGenerators(cfg.idGenerators),
 		plugins:                   append([]Plugin(nil), cfg.plugins...),
 		topologyVersion:           cfg.topologyVersion,
 		topologySet:               cfg.topologySet,
@@ -754,6 +801,14 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 			wf.checkpointLeaseDuration,
 		)
 	}
+	for kind, generator := range wf.idGenerators {
+		if kind == "" {
+			return nil, errors.New("workflow: id kind is empty")
+		}
+		if generator == nil {
+			return nil, fmt.Errorf("workflow: %s id generator is nil", kind)
+		}
+	}
 	if wf.checkpointerSet && wf.checkpointer == nil {
 		return nil, errors.New("workflow: checkpointer is nil")
 	}
@@ -833,6 +888,7 @@ func (wf *Workflow[I, O]) compile() (*compiled[I, O], error) {
 		maxParallelism:            wf.maxParallelism,
 		checkpointLeaseDuration:   wf.checkpointLeaseDuration,
 		checkpointLeaseRenewEvery: wf.checkpointLeaseRenewEvery,
+		idGenerators:              cloneIDGenerators(wf.idGenerators),
 		beforeWorkflow:            append([]LifecycleHook[WorkflowContext[I, O]](nil), wf.beforeWorkflow...),
 		afterWorkflow:             append([]LifecycleHook[WorkflowContext[I, O]](nil), wf.afterWorkflow...),
 		eventTypes:                plugins.eventTypes,
@@ -989,6 +1045,7 @@ type workflowExecution[I, O any] struct {
 	eventSinks     []gopact.EventSink
 	replaySinks    []gopact.EventSink
 	childSinks     []gopact.EventSink
+	idGenerators   map[gopact.IDKind]gopact.IDGenerator
 	sequence       int64
 	eventCursor    int64
 	replayStatus   ReplayStatus
@@ -1034,7 +1091,10 @@ func (execution *workflowExecution[I, O]) startCheckpointLeaseHeartbeat() {
 	ctx, cancel := context.WithCancel(execution.ctx)
 	done := make(chan error, 1)
 	execution.leaseHeartbeat = &checkpointLeaseHeartbeat{cancel: cancel, done: done}
-	lease := CheckpointLease{RunID: record.RunID, OwnerID: record.OwnerID, ClaimSequence: record.ClaimSequence}
+	lease := CheckpointLease{
+		RunID: record.RunID, OwnerID: record.OwnerID, ClaimSequence: record.ClaimSequence,
+		Duration: execution.compiled.checkpointLeaseDuration,
+	}
 	go func() {
 		done <- execution.runCheckpointLeaseHeartbeat(ctx, lease)
 	}()
@@ -1062,6 +1122,7 @@ func (execution *workflowExecution[I, O]) renewCheckpointLeaseOnTick(ctx context
 }
 
 func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Context, lease *CheckpointLease) error {
+	lease.Duration = execution.compiled.checkpointLeaseDuration
 	lease.ExpiresAt = time.Now().Add(execution.compiled.checkpointLeaseDuration)
 	renewCtx, cancel := context.WithTimeout(ctx, execution.compiled.checkpointLeaseRenewEvery)
 	err := execution.compiled.checkpointer.RenewLease(renewCtx, *lease)
@@ -1079,6 +1140,62 @@ func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Conte
 
 func (execution *workflowExecution[I, O]) stopCheckpointLeaseHeartbeat() error {
 	return execution.leaseHeartbeat.stop()
+}
+
+func defaultIDGenerator(kind gopact.IDKind) (string, error) {
+	prefix := ""
+	switch kind {
+	case IDKindSession:
+		prefix = "session-"
+	case IDKindRun:
+		prefix = "workflow-"
+	case IDKindOwner:
+		prefix = "workflow-owner-"
+	default:
+		return "", fmt.Errorf("unknown id kind %q", kind)
+	}
+	return prefix + uuid.New().String(), nil
+}
+
+func generateID(generator gopact.IDGenerator, kind gopact.IDKind) (string, error) {
+	id, err := generator()
+	if err != nil {
+		return "", fmt.Errorf("workflow: generate %s id: %w", kind, err)
+	}
+	switch {
+	case id == "":
+		err = errors.New("id is required")
+	case len(id) > maxGeneratedIDBytes:
+		err = fmt.Errorf("id exceeds %d bytes", maxGeneratedIDBytes)
+	case !utf8.ValidString(id):
+		err = errors.New("id must be valid UTF-8")
+	case strings.IndexByte(id, 0) >= 0:
+		err = errors.New("id must not contain NUL")
+	case strings.HasSuffix(id, " "):
+		err = errors.New("id must not end with a space")
+	}
+	if err != nil {
+		return "", fmt.Errorf("workflow: generate %s id: %w", kind, err)
+	}
+	return id, nil
+}
+
+func cloneIDGenerators(source map[gopact.IDKind]gopact.IDGenerator) map[gopact.IDKind]gopact.IDGenerator {
+	cloned := make(map[gopact.IDKind]gopact.IDGenerator, len(source))
+	for kind, generator := range source {
+		cloned[kind] = generator
+	}
+	return cloned
+}
+
+func (c *compiled[I, O]) idGenerator(config gopact.RunConfig, kind gopact.IDKind) gopact.IDGenerator {
+	if generator, ok := config.IDGenerator(kind); ok {
+		return generator
+	}
+	if generator := c.idGenerators[kind]; generator != nil {
+		return generator
+	}
+	return func() (string, error) { return defaultIDGenerator(kind) }
 }
 
 func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink[O], opts ...gopact.RunOption) (outputs []O, err error) {
@@ -1101,11 +1218,21 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	}
 	sessionID := cfg.SessionID
 	if !resume && sessionID == "" {
-		sessionID = fmt.Sprintf("session-%d-%d", time.Now().UnixNano(), sessionIDSequence.Add(1))
+		sessionID, err = generateID(c.idGenerator(cfg, IDKindSession), IDKindSession)
+		if err != nil {
+			return nil, err
+		}
 	}
 	runID := cfg.RunID
 	if runID == "" {
-		runID = fmt.Sprintf("workflow-%d-%d", time.Now().UnixNano(), runIDSequence.Add(1))
+		runID, err = generateID(c.idGenerator(cfg, IDKindRun), IDKindRun)
+		if err != nil {
+			return nil, err
+		}
+	}
+	ownerID, err := generateID(c.idGenerator(cfg, IDKindOwner), IDKindOwner)
+	if err != nil {
+		return nil, err
 	}
 	parentRunID := ""
 	depth := 1
@@ -1133,9 +1260,9 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	execution := workflowExecution[I, O]{
 		compiled: c, ctx: runCtx, input: input,
 		sessionID: sessionID, runID: runID, parentRunID: parentRunID,
-		ownerID: fmt.Sprintf("workflow-owner-%d", time.Now().UnixNano()), depth: depth,
+		ownerID: ownerID, depth: depth,
 		eventSinks: eventSinks, replaySinks: replaySinks,
-		childSinks: append([]gopact.EventSink(nil), cfg.EventSinks...), step: 1, cancel: cancel,
+		childSinks: append([]gopact.EventSink(nil), cfg.EventSinks...), idGenerators: cfg.IDGenerators(), step: 1, cancel: cancel,
 		outputSink: sink, replayStatus: ReplayUnknown, executionEpoch: 1, controlOrigin: "natural",
 	}
 	defer execution.stopLiveIterators()
@@ -1253,7 +1380,7 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 	if err != nil {
 		return err
 	}
-	if record.OwnerID == "" && record.LeaseExpiresAt.IsZero() &&
+	if record.OwnerID == "" && record.LeaseExpiresAt.IsZero() && record.LeaseDuration == 0 &&
 		payload.OwnerID == "" && payload.LeaseExpiresAt.IsZero() {
 		return nil
 	}
@@ -1267,6 +1394,7 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 	record.Payload = encoded
 	record.OwnerID = ""
 	record.LeaseExpiresAt = time.Time{}
+	record.LeaseDuration = 0
 	record.UpdatedAt = time.Now()
 	if err := execution.compiled.checkpointer.Save(context.WithoutCancel(execution.ctx), record, record.Version); err != nil {
 		return err
@@ -1833,6 +1961,9 @@ func (execution *workflowExecution[I, O]) childOptions(ctx context.Context, curr
 	if resume != nil {
 		options = append(options, WithResume(*resume))
 	}
+	for kind, generator := range execution.idGenerators {
+		options = append(options, gopact.WithIDGenerator(kind, generator))
+	}
 	for _, sink := range execution.childSinks {
 		options = append(options, gopact.WithEventSink(sink))
 	}
@@ -2370,7 +2501,8 @@ func (c *compiled[I, O]) prepareCheckpoint(ctx context.Context, req checkpointPr
 		ID: "checkpoint:" + req.RunID, SessionID: req.SessionID, RunID: req.RunID, WorkflowName: c.name,
 		TopologyVersion: c.topologyVersion, SchemaVersion: checkpointSchemaVersion,
 		Version: 1, Status: CheckpointRunning, Payload: payload, ReplayStatus: ReplayUnknown,
-		OwnerID: meta.OwnerID, LeaseExpiresAt: meta.LeaseExpiresAt, ClaimSequence: meta.ClaimSequence,
+		OwnerID: meta.OwnerID, LeaseExpiresAt: meta.LeaseExpiresAt,
+		LeaseDuration: c.checkpointLeaseDuration, ClaimSequence: meta.ClaimSequence,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := c.checkpointer.Create(ctx, rec); err != nil {
@@ -2477,26 +2609,9 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 		return CheckpointRecord{}, err
 	}
 	now := time.Now()
-	currentOwnerID := rec.OwnerID
-	if currentOwnerID == "" {
-		currentOwnerID = payload.OwnerID
-	}
-	leaseExpiresAt := rec.LeaseExpiresAt
-	if leaseExpiresAt.IsZero() {
-		leaseExpiresAt = payload.LeaseExpiresAt
-	}
 	claimSequence := rec.ClaimSequence
 	if claimSequence == 0 {
 		claimSequence = payload.ClaimSequence
-	}
-	if currentOwnerID != "" && leaseExpiresAt.After(now) {
-		return CheckpointRecord{}, fmt.Errorf(
-			"workflow: checkpoint run %q is leased by owner %q until %s: %w",
-			rec.RunID,
-			currentOwnerID,
-			leaseExpiresAt.Format(time.RFC3339Nano),
-			ErrCheckpointConflict,
-		)
 	}
 	if rec.Status == CheckpointInterrupted {
 		resolved, err := resolvePendingInterrupts(payload.PendingInterrupts, req.Resolutions)
@@ -2518,6 +2633,7 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 	next.Status = CheckpointRunning
 	next.OwnerID = payload.OwnerID
 	next.LeaseExpiresAt = payload.LeaseExpiresAt
+	next.LeaseDuration = c.checkpointLeaseDuration
 	next.ClaimSequence = payload.ClaimSequence
 	next.UpdatedAt = now
 	if err := c.checkpointer.Claim(ctx, next, rec.Version); err != nil {
@@ -2584,6 +2700,7 @@ func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWrite
 	next.Status = CheckpointRunning
 	next.OwnerID = meta.OwnerID
 	next.LeaseExpiresAt = meta.LeaseExpiresAt
+	next.LeaseDuration = c.checkpointLeaseDuration
 	next.ClaimSequence = meta.ClaimSequence
 	next.ConfirmedSequence = req.EventCursor
 	next.PendingSequence = pendingEventSequence(req.PendingEvent)
@@ -2620,6 +2737,7 @@ func (c *compiled[I, O]) interruptCheckpoint(ctx context.Context, req checkpoint
 	next.Status = CheckpointInterrupted
 	next.OwnerID = ""
 	next.LeaseExpiresAt = time.Time{}
+	next.LeaseDuration = 0
 	next.ConfirmedSequence = req.EventCursor
 	next.PendingSequence = pendingEventSequence(req.PendingEvent)
 	next.ReplayStatus = req.ReplayStatus
@@ -2652,6 +2770,7 @@ func (c *compiled[I, O]) finishCheckpoint(ctx context.Context, status Checkpoint
 	req.Record.Status = status
 	req.Record.OwnerID = ""
 	req.Record.LeaseExpiresAt = time.Time{}
+	req.Record.LeaseDuration = 0
 	req.Record.ConfirmedSequence = req.EventCursor
 	req.Record.PendingSequence = pendingEventSequence(req.PendingEvent)
 	req.Record.ReplayStatus = req.ReplayStatus

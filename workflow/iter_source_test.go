@@ -4,11 +4,19 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/gopact-ai/gopact"
 )
+
+func TestIterOptionHidesPrivateConfiguration(t *testing.T) {
+	optionType := reflect.TypeFor[IterOption[int]]()
+	if optionType.Kind() != reflect.Interface {
+		t.Fatalf("IterOption kind = %s, want interface", optionType.Kind())
+	}
+}
 
 func TestWorkflowEachIterConvertsCallbackPanicsToFailures(t *testing.T) {
 	tests := []struct {

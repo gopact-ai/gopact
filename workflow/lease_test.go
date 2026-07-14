@@ -121,6 +121,214 @@ func TestMemoryCheckpointerClaimAllowsOneConcurrentClaimant(t *testing.T) {
 	}
 }
 
+func TestMemoryCheckpointerLeaseDurationUsesLockedClock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const leaseDuration = time.Minute
+		ctx := context.Background()
+		now := time.Now()
+		store := NewMemoryCheckpointer()
+		record := CheckpointRecord{
+			ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: "example",
+			TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+			Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: []byte(`{"state":"ready"}`),
+			OwnerID: "owner-1", ClaimSequence: 1, LeaseExpiresAt: now.Add(24 * time.Hour),
+			LeaseDuration: leaseDuration, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := store.Create(ctx, record); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		loaded, err := store.Load(ctx, record.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := now.Add(leaseDuration); !loaded.LeaseExpiresAt.Equal(want) {
+			t.Fatalf("Create() expiry = %v, want locked now + duration %v", loaded.LeaseExpiresAt, want)
+		}
+		if loaded.LeaseDuration != 0 {
+			t.Fatalf("Create()/Load() lease duration = %v, want transient value cleared", loaded.LeaseDuration)
+		}
+		if store.records[record.RunID].LeaseDuration != 0 || store.history[record.RunID][0].LeaseDuration != 0 {
+			t.Fatal("Create() persisted transient lease duration")
+		}
+		history, err := store.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: record.RunID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 1 || history[0].LeaseDuration != 0 {
+			t.Fatalf("Create()/ListCheckpoints() = %+v, want transient lease duration cleared", history)
+		}
+
+		loaded.LeaseDuration = leaseDuration
+		loaded.LeaseExpiresAt = now.Add(24 * time.Hour)
+		loaded.UpdatedAt = now.Add(time.Second)
+		if err := store.Save(ctx, loaded, loaded.Version); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+		loaded, err = store.Load(ctx, record.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := now.Add(leaseDuration); !loaded.LeaseExpiresAt.Equal(want) {
+			t.Fatalf("Save() expiry = %v, want %v instead of caller expiry", loaded.LeaseExpiresAt, want)
+		}
+		if loaded.LeaseDuration != 0 {
+			t.Fatalf("Save()/Load() lease duration = %v, want transient value cleared", loaded.LeaseDuration)
+		}
+		if store.records[record.RunID].LeaseDuration != 0 || store.history[record.RunID][1].LeaseDuration != 0 {
+			t.Fatal("Save() persisted transient lease duration")
+		}
+		history, err = store.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: record.RunID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 2 || history[1].LeaseDuration != 0 {
+			t.Fatalf("Save()/ListCheckpoints() = %+v, want transient lease duration cleared", history)
+		}
+
+		time.Sleep(10 * time.Second)
+		if err := store.RenewLease(ctx, CheckpointLease{
+			RunID: record.RunID, OwnerID: record.OwnerID, ClaimSequence: record.ClaimSequence,
+			ExpiresAt: now.Add(24 * time.Hour), Duration: leaseDuration,
+		}); err != nil {
+			t.Fatalf("RenewLease() error = %v", err)
+		}
+		loaded, err = store.Load(ctx, record.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := time.Now().Add(leaseDuration); !loaded.LeaseExpiresAt.Equal(want) {
+			t.Fatalf("RenewLease() expiry = %v, want locked now + duration %v", loaded.LeaseExpiresAt, want)
+		}
+		if loaded.LeaseDuration != 0 {
+			t.Fatalf("RenewLease()/Load() lease duration = %v, want transient value cleared", loaded.LeaseDuration)
+		}
+		if store.records[record.RunID].LeaseDuration != 0 {
+			t.Fatal("RenewLease() persisted transient lease duration")
+		}
+	})
+}
+
+func TestMemoryCheckpointerClaimUsesLeaseDuration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const leaseDuration = time.Minute
+		ctx := context.Background()
+		now := time.Now()
+		store := NewMemoryCheckpointer()
+		record := CheckpointRecord{
+			ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: "example",
+			TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+			Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: []byte(`{"state":"ready"}`),
+			OwnerID: "owner-1", ClaimSequence: 1, LeaseExpiresAt: now.Add(-time.Minute),
+			CreatedAt: now, UpdatedAt: now,
+		}
+		if err := store.Create(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+		candidate := record
+		candidate.OwnerID = "owner-2"
+		candidate.ClaimSequence++
+		candidate.LeaseExpiresAt = now.Add(24 * time.Hour)
+		candidate.LeaseDuration = leaseDuration
+		if err := store.Claim(ctx, candidate, record.Version); err != nil {
+			t.Fatalf("Claim() error = %v", err)
+		}
+		loaded, err := store.Load(ctx, record.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := now.Add(leaseDuration); !loaded.LeaseExpiresAt.Equal(want) {
+			t.Fatalf("Claim() expiry = %v, want locked now + duration %v", loaded.LeaseExpiresAt, want)
+		}
+		if loaded.LeaseDuration != 0 {
+			t.Fatalf("Claim()/Load() lease duration = %v, want transient value cleared", loaded.LeaseDuration)
+		}
+		if store.records[record.RunID].LeaseDuration != 0 || store.history[record.RunID][1].LeaseDuration != 0 {
+			t.Fatal("Claim() persisted transient lease duration")
+		}
+		history, err := store.ListCheckpoints(ctx, CheckpointHistoryRequest{RunID: record.RunID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 2 || history[1].LeaseDuration != 0 {
+			t.Fatalf("Claim()/ListCheckpoints() = %+v, want transient lease duration cleared", history)
+		}
+	})
+}
+
+func TestWorkflowClaimDefersExpiryDecisionToStore(t *testing.T) {
+	const leaseDuration = time.Minute
+	futureOnWorkflowClock := time.Now().Add(24 * time.Hour)
+	store := &authoritativeClaimCheckpointer{}
+	compiled := &compiled[int, int]{
+		name: "example", topologyVersion: "topology-v1",
+		checkpointer: store, checkpointLeaseDuration: leaseDuration,
+	}
+	payload, err := encodeCheckpointPayloadWithMeta[int](runState{}, nil, 1, compiled.checkpointMeta(checkpointPayloadMeta{
+		OwnerID: "owner-old", LeaseExpiresAt: futureOnWorkflowClock, ClaimSequence: 1,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	record := CheckpointRecord{
+		ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: compiled.name,
+		TopologyVersion: compiled.topologyVersion, SchemaVersion: checkpointSchemaVersion, Version: 1,
+		Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: payload,
+		OwnerID: "owner-old", ClaimSequence: 1, LeaseExpiresAt: futureOnWorkflowClock,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	claimed, err := compiled.claimCheckpoint(t.Context(), record, "owner-new", ResumeRequest{})
+	if err != nil {
+		t.Fatalf("claimCheckpoint() error = %v, want Store to decide expiry", err)
+	}
+	if len(store.claimed) != 1 || claimed.OwnerID != "owner-new" || claimed.LeaseDuration != leaseDuration {
+		t.Fatalf("claimed = %+v, Store calls = %+v", claimed, store.claimed)
+	}
+}
+
+func TestWorkflowRenewLeasePassesDuration(t *testing.T) {
+	const leaseDuration = 37 * time.Second
+	now := time.Now()
+	record := CheckpointRecord{
+		ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: "example",
+		TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+		Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: []byte(`{"state":"ready"}`),
+		OwnerID: "owner-1", ClaimSequence: 1, LeaseExpiresAt: now.Add(time.Minute),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	store := &recordingCheckpointer{records: map[string]CheckpointRecord{record.RunID: record}}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	execution := workflowExecution[int, int]{
+		compiled: &compiled[int, int]{
+			checkpointer: store, checkpointLeaseDuration: leaseDuration,
+			checkpointLeaseRenewEvery: 10 * time.Second,
+		},
+		checkpoint: record,
+		cancel:     cancel,
+	}
+	lease := CheckpointLease{RunID: record.RunID, OwnerID: record.OwnerID, ClaimSequence: record.ClaimSequence}
+	if err := execution.renewCheckpointLease(ctx, &lease); err != nil {
+		t.Fatalf("renewCheckpointLease() error = %v", err)
+	}
+	if len(store.renewed) != 1 || store.renewed[0].Duration != leaseDuration {
+		t.Fatalf("renewed leases = %+v, want duration %v", store.renewed, leaseDuration)
+	}
+	if store.renewed[0].ExpiresAt.IsZero() {
+		t.Fatal("renewed lease ExpiresAt is zero, want compatibility value")
+	}
+}
+
+type authoritativeClaimCheckpointer struct {
+	recordingCheckpointer
+	claimed []CheckpointRecord
+}
+
+func (store *authoritativeClaimCheckpointer) Claim(_ context.Context, candidate CheckpointRecord, _ int64) error {
+	store.claimed = append(store.claimed, candidate)
+	return nil
+}
+
 func TestMemoryCheckpointerSavePreservesConcurrentLeaseRenewal(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()

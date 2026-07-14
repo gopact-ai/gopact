@@ -9,6 +9,7 @@ import (
 // ActivationPhase describes one node activation execution state.
 type ActivationPhase string
 
+// Activation phases.
 const (
 	ActivationReady       ActivationPhase = "ready"
 	ActivationRunning     ActivationPhase = "running"

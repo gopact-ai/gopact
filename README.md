@@ -56,9 +56,22 @@ wf := workflow.New[Input, Output](
 )
 ```
 
+Workflow generates Session, Run, and lease-owner IDs with the Go standard-library UUID implementation. A service may replace each identity domain independently at build time, while one invocation may override it again:
+
+```go
+wf := workflow.New[Input, Output]("agent",
+    workflow.WithIDGenerator(gopact.IDKindSession, newSessionID),
+)
+out, err := wf.Invoke(ctx, input,
+    gopact.WithIDGenerator(gopact.IDKindRun, newRunID),
+)
+```
+
+The precedence is explicit ID > RunOption generator > Workflow generator > UUID default. Generated IDs are rejected unless they are non-empty valid UTF-8, at most 191 bytes, contain no NUL, and do not end in a space. Generators may be called concurrently and remain responsible for uniqueness.
+
 Deployment scope is deliberate: `workflow.MemoryStore` is for tests and short-lived local processes; `stores/sqlite` is for one machine or multiple processes that safely share the same local database file. Multi-host deployments need a distributed database Store that implements atomic Claim and fencing.
 
-Configured stores are authoritative and fail closed. A Checkpointer must claim and renew leases atomically; the runtime cancels the node context with `workflow.ErrCheckpointLeaseLost` when renewal fails. Node implementations must stop promptly when their Context is canceled.
+Configured stores are authoritative and fail closed. A Checkpointer must claim and renew leases atomically; the runtime passes a lease duration so distributed stores can materialize expiry from the database clock while holding the ownership lock instead of trusting a host wall clock. The runtime cancels the node context with `workflow.ErrCheckpointLeaseLost` when renewal fails. Node implementations must stop promptly when their Context is canceled.
 
 For multi-instance durable execution, configure the same combined store instance as both the Checkpointer and Journal, and use an implementation of `runlog.FencedLog`. This lets the store validate the current owner/claim and append observed events under one lock or database transaction, closing the post-claim journal-write window without creating two checkpoint-history versions per event. Separate checkpoint and journal backends use a durable pending-event recovery path, but cannot make ownership validation and the physical journal append atomic across those backends.
 

@@ -3,11 +3,19 @@ package runlog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/gopact-ai/gopact"
 )
+
+func TestErrHistoryCompactedIsStableSentinel(t *testing.T) {
+	err := fmt.Errorf("store: %w", ErrHistoryCompacted)
+	if !errors.Is(err, ErrHistoryCompacted) {
+		t.Fatalf("errors.Is(%v, ErrHistoryCompacted) = false", err)
+	}
+}
 
 func TestMemoryLogAppendListAndConflict(t *testing.T) {
 	log := NewMemoryLog()
