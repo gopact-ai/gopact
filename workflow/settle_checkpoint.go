@@ -52,10 +52,6 @@ func (item checkpointActivation) runtime() activation {
 	}
 }
 
-func (item checkpointActivation) register() {
-	checkpointValue{Value: item.Input, Inputs: item.JoinInput, HasInputs: item.HasJoinInput}.register()
-}
-
 func newCheckpointValue(value any) checkpointValue {
 	inputs, ok := value.(Inputs)
 	if !ok {
@@ -69,14 +65,6 @@ func (value checkpointValue) runtime() any {
 		return Inputs{contributions: copyContributions(value.Inputs)}
 	}
 	return value.Value
-}
-
-func (value checkpointValue) register() {
-	if value.HasInputs {
-		registerCheckpointSources(value.Inputs)
-		return
-	}
-	registerGobValue(value.Value)
 }
 
 func (state runState) checkpointSourceSets() []checkpointSourceSet {
@@ -121,19 +109,6 @@ func (outcome branchOutcome) checkpoint() checkpointBranchOutcome {
 	return checkpointBranchOutcome{
 		Activation: outcome.activation.checkpoint(), Output: newCheckpointValue(outcome.result.output), Skipped: outcome.result.skipped,
 		Cause: cause, Phase: outcome.phase, Completion: outcome.completion, Committed: outcome.committed,
-	}
-}
-
-func registerCheckpointSourceSets(sets []checkpointSourceSet) {
-	for _, set := range sets {
-		set.register()
-	}
-}
-
-func (set checkpointSourceSet) register() {
-	for _, outcome := range set.Outcomes {
-		outcome.Activation.register()
-		outcome.Output.register()
 	}
 }
 

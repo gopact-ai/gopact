@@ -8,7 +8,9 @@ import (
 	"github.com/gopact-ai/gopact"
 )
 
-// Plugin installs workflow runtime extensions during Compile.
+// Plugin registers workflow extensions during Compile. Setup does not transfer
+// resource ownership; the application or adapter that created a resource must
+// also close it.
 type Plugin interface {
 	Name() string
 	Setup(context.Context, *Registry) error

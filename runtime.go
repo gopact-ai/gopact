@@ -7,6 +7,21 @@ import (
 	"time"
 )
 
+// IDKind identifies one runtime-generated identity domain. Applications may
+// define additional kinds for their own runtimes.
+type IDKind string
+
+// Runtime-generated identity kinds used by Workflow.
+const (
+	IDKindSession IDKind = "session"
+	IDKindRun     IDKind = "run"
+	IDKindOwner   IDKind = "owner"
+)
+
+// IDGenerator creates a globally unique ID. It may be called concurrently.
+// Workflow validates generated IDs before persistence.
+type IDGenerator func() (string, error)
+
 // RunConfig is the cross-runtime invocation configuration.
 type RunConfig struct {
 	SessionID      string
@@ -14,6 +29,8 @@ type RunConfig struct {
 	Lineage        RunLineage
 	EventSinks     []EventSink
 	Extensions     map[string]any
+	idGenerators   map[IDKind]IDGenerator
+	idGeneratorErr error
 	sessionIDSet   bool
 	sessionIDError error
 	runIDSet       bool
@@ -49,11 +66,50 @@ var ErrRunConfig = errors.New("gopact: invalid run config")
 
 // RunConfigError returns core run config errors.
 func (c RunConfig) RunConfigError() error {
-	err := errors.Join(c.sessionIDError, c.runIDError, c.lineageError)
+	err := errors.Join(c.sessionIDError, c.runIDError, c.lineageError, c.idGeneratorErr)
 	if err == nil {
 		return nil
 	}
 	return errors.Join(ErrRunConfig, err)
+}
+
+// ConstrainIDGenerator overrides one identity generator for this invocation.
+// A later option for the same kind replaces the earlier option.
+func (c *RunConfig) ConstrainIDGenerator(kind IDKind, generator IDGenerator) {
+	if kind == "" {
+		c.idGeneratorErr = errors.Join(c.idGeneratorErr, errors.New("gopact: id kind is required"))
+		return
+	}
+	if generator == nil {
+		c.idGeneratorErr = errors.Join(c.idGeneratorErr, errors.New("gopact: id generator is required"))
+		return
+	}
+	if c.idGenerators == nil {
+		c.idGenerators = make(map[IDKind]IDGenerator)
+	}
+	c.idGenerators[kind] = generator
+}
+
+// IDGenerator returns the per-invocation generator configured for kind.
+func (c RunConfig) IDGenerator(kind IDKind) (IDGenerator, bool) {
+	generator, ok := c.idGenerators[kind]
+	return generator, ok
+}
+
+// IDGenerators returns an independent snapshot of all per-invocation generators.
+func (c RunConfig) IDGenerators() map[IDKind]IDGenerator {
+	generators := make(map[IDKind]IDGenerator, len(c.idGenerators))
+	for kind, generator := range c.idGenerators {
+		generators[kind] = generator
+	}
+	return generators
+}
+
+// WithIDGenerator overrides one identity generator for one invocation.
+func WithIDGenerator(kind IDKind, generator IDGenerator) RunOption {
+	return runOptionFunc(func(cfg *RunConfig) {
+		cfg.ConstrainIDGenerator(kind, generator)
+	})
 }
 
 // ConstrainSessionID fixes the session identity from a runtime-owned option.

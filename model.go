@@ -82,6 +82,15 @@ type Message struct {
 	Parts []MessagePart
 }
 
+// Provider-neutral message roles. Role remains a string so providers and
+// applications can define additional roles.
+const (
+	MessageRoleSystem    = "system"
+	MessageRoleUser      = "user"
+	MessageRoleAssistant = "assistant"
+	MessageRoleTool      = "tool"
+)
+
 // MessagePart is one provider-neutral message content part.
 type MessagePart struct {
 	Type string
@@ -89,9 +98,15 @@ type MessagePart struct {
 	Ref  *ArtifactRef
 }
 
+// Provider-neutral message part types. MessagePart.Type remains extensible.
+const (
+	MessagePartTypeText     = "text"
+	MessagePartTypeArtifact = "artifact"
+)
+
 // UserMessage creates a text user message.
 func UserMessage(text string) Message {
-	return Message{Role: "user", Parts: []MessagePart{{Type: "text", Text: text}}}
+	return Message{Role: MessageRoleUser, Parts: []MessagePart{{Type: MessagePartTypeText, Text: text}}}
 }
 
 // ArtifactRef is an opaque reference to external content.
@@ -233,6 +248,14 @@ type ToolChoice struct {
 	Name string
 }
 
+// Provider-neutral tool choice modes. ToolChoice.Mode remains extensible.
+const (
+	ToolChoiceModeAuto     = "auto"
+	ToolChoiceModeNone     = "none"
+	ToolChoiceModeRequired = "required"
+	ToolChoiceModeNamed    = "named"
+)
+
 // SchemaRef describes an inline schema or schema reference.
 type SchemaRef struct {
 	Value json.RawMessage
@@ -242,10 +265,24 @@ type SchemaRef struct {
 // Modality identifies a model input or output modality.
 type Modality string
 
+// Common model modalities. Applications may define additional Modality values.
+const (
+	ModalityText  Modality = "text"
+	ModalityImage Modality = "image"
+	ModalityAudio Modality = "audio"
+)
+
 // ReasoningConfig carries provider-neutral reasoning controls.
 type ReasoningConfig struct {
 	Effort string
 }
+
+// Common reasoning effort levels. ReasoningConfig.Effort remains extensible.
+const (
+	ReasoningEffortLow    = "low"
+	ReasoningEffortMedium = "medium"
+	ReasoningEffortHigh   = "high"
+)
 
 // OutputProtocol describes a model output decoder contract.
 type OutputProtocol interface {
@@ -357,7 +394,8 @@ const (
 	ModelIntentRepair   ModelIntentType = "repair"
 )
 
-// ModelIntent is a typed terminal model decision.
+// ModelIntent is the closed set of terminal model decisions understood by
+// provider normalization and Agent runtimes.
 type ModelIntent interface {
 	IntentType() ModelIntentType
 	isModelIntent()

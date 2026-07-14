@@ -36,12 +36,6 @@ func joinBucketLess(left, right joinBucketKey) bool {
 	return left.target < right.target
 }
 
-func registerCheckpointJoinBuckets(buckets []checkpointJoinBucket) {
-	for _, bucket := range buckets {
-		registerCheckpointSources(bucket.Contributions)
-	}
-}
-
 func (state *runState) restoreJoinBuckets(buckets []checkpointJoinBucket) {
 	for _, encoded := range buckets {
 		bucket := state.joinBucket(encoded.Target, encoded.Correlation)

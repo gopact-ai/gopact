@@ -6,6 +6,44 @@ import (
 	"testing"
 )
 
+func TestWithIDGeneratorConfiguresOneKind(t *testing.T) {
+	generator := IDGenerator(func() (string, error) { return "run-custom", nil })
+	config := ResolveRunOptions(WithIDGenerator(IDKindRun, generator))
+	if err := config.RunConfigError(); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := config.IDGenerator(IDKindRun)
+	if !ok {
+		t.Fatal("IDGenerator(run) is not configured")
+	}
+	id, err := got()
+	if err != nil || id != "run-custom" {
+		t.Fatalf("generator() = %q, %v, want run-custom", id, err)
+	}
+	if _, ok := config.IDGenerator(IDKindSession); ok {
+		t.Fatal("IDGenerator(session) is configured, want default fallback")
+	}
+}
+
+func TestWithIDGeneratorRejectsInvalidConfiguration(t *testing.T) {
+	tests := []struct {
+		name      string
+		kind      IDKind
+		generator IDGenerator
+	}{
+		{name: "empty kind", generator: func() (string, error) { return "id", nil }},
+		{name: "nil generator", kind: IDKindRun},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := ResolveRunOptions(WithIDGenerator(test.kind, test.generator))
+			if !errors.Is(config.RunConfigError(), ErrRunConfig) {
+				t.Fatalf("RunConfigError() = %v, want ErrRunConfig", config.RunConfigError())
+			}
+		})
+	}
+}
+
 func TestInvokableFunc(t *testing.T) {
 	inv := InvokableFunc[string, int](func(_ context.Context, input string, _ ...RunOption) (int, error) {
 		return len(input), nil
@@ -124,6 +162,33 @@ func TestModelRequestCopyOnWriteMethods(t *testing.T) {
 	}
 	if next.Temperature == nil || *next.Temperature != 0.2 || len(next.Tools) != 1 {
 		t.Fatalf("next request = %+v, want temperature and tool", next)
+	}
+}
+
+func TestProviderNeutralStringConstants(t *testing.T) {
+	if MessageRoleSystem != "system" || MessageRoleUser != "user" ||
+		MessageRoleAssistant != "assistant" || MessageRoleTool != "tool" {
+		t.Fatal("message role constants changed")
+	}
+	if MessagePartTypeText != "text" || MessagePartTypeArtifact != "artifact" {
+		t.Fatal("message part type constants changed")
+	}
+	if ToolChoiceModeAuto != "auto" || ToolChoiceModeNone != "none" ||
+		ToolChoiceModeRequired != "required" || ToolChoiceModeNamed != "named" {
+		t.Fatal("tool choice mode constants changed")
+	}
+	if ModalityText != "text" || ModalityImage != "image" || ModalityAudio != "audio" {
+		t.Fatal("modality constants changed")
+	}
+	if ReasoningEffortLow != "low" || ReasoningEffortMedium != "medium" || ReasoningEffortHigh != "high" {
+		t.Fatal("reasoning effort constants changed")
+	}
+
+	customRole := "provider-specific-role"
+	customPartType := "provider-specific-part"
+	message := Message{Role: customRole, Parts: []MessagePart{{Type: customPartType}}}
+	if message.Role != customRole || message.Parts[0].Type != customPartType {
+		t.Fatal("string protocols must remain extensible")
 	}
 }
 

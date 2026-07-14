@@ -3,11 +3,19 @@ package runlog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/gopact-ai/gopact"
 )
+
+func TestErrHistoryCompactedIsStableSentinel(t *testing.T) {
+	err := fmt.Errorf("store: %w", ErrHistoryCompacted)
+	if !errors.Is(err, ErrHistoryCompacted) {
+		t.Fatalf("errors.Is(%v, ErrHistoryCompacted) = false", err)
+	}
+}
 
 func TestMemoryLogAppendListAndConflict(t *testing.T) {
 	log := NewMemoryLog()
@@ -59,6 +67,14 @@ func TestMemoryLogAppendListAndConflict(t *testing.T) {
 func TestMemoryLogAppendRejectsMissingSessionID(t *testing.T) {
 	record := testRecord("run-1", 1, "missing session")
 	record.SessionID = ""
+	if err := NewMemoryLog().Append(context.Background(), record); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("Append() error = %v, want ErrInvalidRecord", err)
+	}
+}
+
+func TestMemoryLogAppendRejectsSourceRevisionWithoutSource(t *testing.T) {
+	record := testRecord("run-1", 1, "revision without source")
+	record.SourceRevisionID = "source-revision"
 	if err := NewMemoryLog().Append(context.Background(), record); !errors.Is(err, ErrInvalidRecord) {
 		t.Fatalf("Append() error = %v, want ErrInvalidRecord", err)
 	}

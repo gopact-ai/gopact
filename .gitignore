@@ -6,5 +6,23 @@ log/
 *.test
 .DS_Store
 .idea/
-/doc/
+# Keep these authoritative-doc exceptions in sync with the CI allowlist.
+/doc/*
+!/doc/decisions/
+/doc/decisions/*
+!/doc/decisions/0001-run-closure.md
+!/doc/decisions/0002-durable-store-authority.md
+!/doc/decisions/0003-history-policy.md
+!/doc/design/
+/doc/design/*
+!/doc/design/system-constitution_zh.md
+!/doc/rfcs/
+/doc/rfcs/*
+!/doc/rfcs/run-store-history-alignment.md
+!/doc/superpowers/
+/doc/superpowers/*
+!/doc/superpowers/specs/
+/doc/superpowers/specs/*
+!/doc/superpowers/specs/2026-07-11-agent-control-surface-design.md
+!/doc/superpowers/specs/2026-07-12-agent-state-identity-design.md
 /docs/

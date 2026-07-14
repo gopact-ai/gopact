@@ -84,7 +84,7 @@ func ObserveGuardRejection(rejection gopact.GuardRejection) (Observation, error)
 			GuardName:  rejection.GuardName,
 			SubjectRef: rejection.SubjectRef,
 		},
-		Message:   feedbackMessage("system", text),
+		Message:   feedbackMessage(gopact.MessageRoleSystem, text),
 		Summary:   boundedSummary(text),
 		RetryHint: cloneRetryHint(rejection.RetryHint),
 	}, nil
@@ -100,7 +100,7 @@ func ObserveRepairRequest(id string, request gopact.RepairRequest) (Observation,
 		if request.Reason == "" {
 			return Observation{}, fmt.Errorf("%w: repair feedback is required", ErrInvalidObservation)
 		}
-		message = feedbackMessage("system", request.Reason)
+		message = feedbackMessage(gopact.MessageRoleSystem, request.Reason)
 	}
 	return Observation{
 		ID:      id,
@@ -171,7 +171,7 @@ func (request toolObservationRequest) build() Observation {
 		Kind:      request.kind,
 		Source:    ObservationSource{Kind: ObservationSourceToolOutcome, ID: request.callID},
 		Subject:   ObservationSubject{ToolCallID: request.callID, ToolName: request.name},
-		Message:   feedbackMessage("tool", request.text),
+		Message:   feedbackMessage(gopact.MessageRoleTool, request.text),
 		Summary:   boundedSummary(request.text),
 		Refs:      boundedRefs(request.refs),
 		RetryHint: cloneRetryHint(request.retry),
@@ -186,7 +186,7 @@ func validateToolIdentity(callID, name string) error {
 }
 
 func feedbackMessage(role, text string) gopact.Message {
-	return gopact.Message{Role: role, Parts: []gopact.MessagePart{{Type: "text", Text: text}}}
+	return gopact.Message{Role: role, Parts: []gopact.MessagePart{{Type: gopact.MessagePartTypeText, Text: text}}}
 }
 
 func boundedSummary(value string) string {

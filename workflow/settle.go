@@ -12,6 +12,7 @@ var errSettleSatisfied = errors.New("workflow: source set satisfied")
 // BranchPhase describes a fan-out branch's settle state.
 type BranchPhase string
 
+// Branch settle phases.
 const (
 	BranchRunning    BranchPhase = "running"
 	BranchCompleted  BranchPhase = "completed"

@@ -44,14 +44,6 @@ func (source *iterSource) checkpoint() checkpointIterSource {
 	}
 }
 
-func registerCheckpointIterSources(sources []checkpointIterSource) {
-	for _, source := range sources {
-		if source.HasCursor {
-			source.Cursor.register()
-		}
-	}
-}
-
 func (state *runState) restoreIterSources(sources []checkpointIterSource) {
 	for _, encoded := range sources {
 		source := encoded.runtime()
