@@ -57,6 +57,13 @@
 - core tenant/auth 模型、distributed scheduler、托管 control plane。
 - Plugin 资源容器、Provider 业务流程引擎、自动保存任意业务 payload。
 
+## 历史规格
+
+- [Agent Control Surface Design](../superpowers/specs/2026-07-11-agent-control-surface-design.md)
+- [Agent State and Identity Design](../superpowers/specs/2026-07-12-agent-state-identity-design.md)
+
+两份旧规格只保留批准与实现历史，均已被现行宪法、ADR 与本 RFC 替代，不再是实现权威。
+
 ## 迁移影响
 
 旧的同 Run Retry/Jump/Reopen 调用应迁移到 source-lineage 新 Run；多个 Store 配置点应收敛到 `WithStore`；依赖完整 node payload 的查询应改为显式安全 Event 或引用。具体公共 API 删除和迁移由后续实现计划负责，本 RFC 不保留 pre-v1 双轨兼容层。

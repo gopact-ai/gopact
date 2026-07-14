@@ -15,6 +15,7 @@
 | 构建类型安全的 Workflow 和 Agent runtime | 当前仓库 |
 | 添加模型 adapter、Agent 组合或 Store | [gopact-ext](https://github.com/gopact-ai/gopact-ext) |
 | 运行完整的 quickstart 和集成示例 | [gopact-examples](https://github.com/gopact-ai/gopact-examples) |
+| 阅读权威系统契约 | [系统宪法](doc/design/system-constitution_zh.md) · [Run/Store/History RFC](doc/rfcs/run-store-history-alignment.md) · [ADR-0001](doc/decisions/0001-run-closure.md) · [ADR-0002](doc/decisions/0002-durable-store-authority.md) · [ADR-0003](doc/decisions/0003-history-policy.md) |
 
 当前仓库只保留：
 

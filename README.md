@@ -15,6 +15,7 @@ Chinese documentation: [README_zh.md](README_zh.md)
 | Build typed workflows and Agent runtimes | This repository |
 | Add model adapters, Agent compositions, or stores | [gopact-ext](https://github.com/gopact-ai/gopact-ext) |
 | Run complete quickstarts and integrations | [gopact-examples](https://github.com/gopact-ai/gopact-examples) |
+| Read authoritative system contracts | [System Constitution](doc/design/system-constitution_zh.md) · [Run/Store/History RFC](doc/rfcs/run-store-history-alignment.md) · [ADR-0001](doc/decisions/0001-run-closure.md) · [ADR-0002](doc/decisions/0002-durable-store-authority.md) · [ADR-0003](doc/decisions/0003-history-policy.md) |
 
 It contains only:
 
