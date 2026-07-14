@@ -159,6 +159,44 @@ func TestWorkflowTerminalResumeReturnsCheckpointConflict(t *testing.T) {
 	}
 }
 
+func TestWorkflowTerminalResumeRejectsMalformedPendingEventWithoutWrites(t *testing.T) {
+	statuses := []CheckpointStatus{CheckpointCompleted, CheckpointFailed, CheckpointTerminated, CheckpointCanceled}
+	for _, status := range statuses {
+		t.Run(string(status), func(t *testing.T) {
+			wf, store, _ := createTerminalRun(t, status)
+			injectTerminalPendingEvent(t, store, status)
+			before := loadRunFacts(t, store, "source-run")
+			_, err := wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "source-run"}))
+			if !errors.Is(err, ErrCheckpointConflict) {
+				t.Fatalf("terminal Resume() error = %v, want ErrCheckpointConflict", err)
+			}
+			assertRunFactsUnchanged(t, store, "source-run", before)
+		})
+	}
+}
+
+func injectTerminalPendingEvent(t *testing.T, store *MemoryStore, status CheckpointStatus) {
+	t.Helper()
+	record, err := store.Load(t.Context(), "source-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := decodeCheckpointPayload[string](record.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequence := record.ConfirmedSequence + 1
+	meta := payload.meta()
+	meta.PendingTerm = status
+	meta.PendingEvent = &gopact.Event{Sequence: sequence, Type: EventWorkflowCompleted}
+	record.Payload, err = encodeCheckpointPayloadWithMeta(payload.state(), payload.Outputs, payload.NextStep, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.PendingSequence = sequence
+	store.MemoryCheckpointer.restore(record)
+}
+
 func TestWorkflowRetryAndJumpRejectNonFailedTerminalSource(t *testing.T) {
 	statuses := []CheckpointStatus{CheckpointCompleted, CheckpointTerminated, CheckpointCanceled}
 	for _, status := range statuses {

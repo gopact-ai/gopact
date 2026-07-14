@@ -60,6 +60,74 @@ func TestSourceLineageSurvivesInterruptResume(t *testing.T) {
 	}
 }
 
+func TestExternalAssociatingSinkRestoresSourceLineageOnResume(t *testing.T) {
+	store := NewMemoryStore()
+	external := runlog.NewMemoryLog()
+	associations := 0
+	sink := countingAssociatingSink{log: external, count: &associations}
+	interruptEnabled := false
+	wf := New[string, string]("external-lineage-resume", WithStrictCheckpointer(store), WithStrictJournal(store))
+	node := wf.Node("node", func(_ context.Context, input string) (string, error) {
+		if !interruptEnabled {
+			return "", errors.New("source failed")
+		}
+		return input, nil
+	})
+	node.Guard(BeforeRun("approval", GuardFunc[string, string](
+		func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+			if interruptEnabled {
+				return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval-1"}}, nil
+			}
+			return GuardAllow[string, string]{}, nil
+		},
+	)))
+	wf.Entry(node)
+	wf.Exit(node)
+	if _, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("source-run")); err == nil {
+		t.Fatal("source Invoke() error = nil, want failure")
+	}
+	source := nodeStartedRecord(t, store, "source-run")
+	interruptEnabled = true
+
+	_, err := wf.Retry(t.Context(), RetryRequest{
+		RunID: "source-run", NodeID: source.NodeID, NodeExecutionVersion: source.NodeExecutionVersion,
+	}, gopact.WithRunID("target-run"), gopact.WithEventSink(sink))
+	var interrupted InterruptError
+	if !errors.As(err, &interrupted) {
+		t.Fatalf("Retry() error = %v, want InterruptError", err)
+	}
+	if associations != 1 {
+		t.Fatalf("initial Associate() calls = %d, want 1", associations)
+	}
+	associations = 0
+	if _, err := wf.Invoke(t.Context(), "ignored",
+		WithResume(ResumeRequest{
+			RunID:       "target-run",
+			Resolutions: []InterruptResolution{{InterruptID: "approval-1", PayloadRef: "artifact://approved"}},
+		}),
+		gopact.WithEventSink(sink),
+	); err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if associations != 1 {
+		t.Fatalf("resume Associate() calls = %d, want 1", associations)
+	}
+
+	records, err := external.List(t.Context(), runlog.Query{RunID: "target-run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.SourceRunID != "source-run" || record.SourceEventSeq != source.Sequence ||
+			record.SourceRevisionID != source.RevisionID {
+			t.Fatalf("external record %d lineage = %q/%d/%q, want source-run/%d/%q", record.Sequence, record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID, source.Sequence, source.RevisionID)
+		}
+	}
+	if _, err := NewRunLogSnapshotStore(external, store).Load(t.Context(), SnapshotRequest{RunID: "target-run"}); err != nil {
+		t.Fatalf("Snapshot Load() error = %v", err)
+	}
+}
+
 func testSourceLineageSurvivesInterruptResume(t *testing.T, mode string, start controlStarter) {
 	t.Helper()
 	store := NewMemoryStore()

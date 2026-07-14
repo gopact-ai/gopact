@@ -1735,10 +1735,8 @@ func (execution *workflowExecution[I, O]) applyResumePayload(payload checkpointP
 	execution.sourceRevision = payload.SourceRevisionID
 	execution.sourceRunID = payload.SourceRunID
 	execution.sourceEventSeq = payload.SourceEventSeq
-	if execution.journalSink != nil && execution.sourceRunID != "" {
-		*execution.journalSink = runlog.NewSink(execution.compiled.journal).Associate(runlog.Association{
-			SourceRunID: execution.sourceRunID, SourceEventSeq: execution.sourceEventSeq,
-		})
+	if execution.sourceRunID != "" {
+		execution.restoreSourceSinks()
 	}
 	if len(payload.ResolvedInterrupts) > 0 {
 		resolved := make(map[string][]resumedInterrupt, len(payload.ResolvedInterrupts))
@@ -1753,6 +1751,18 @@ func (execution *workflowExecution[I, O]) applyResumePayload(payload checkpointP
 		}
 		execution.ctx = context.WithValue(execution.ctx, resumedInterruptsContextKey{}, resolved)
 	}
+}
+
+func (execution *workflowExecution[I, O]) restoreSourceSinks() {
+	association := runlog.Association{SourceRunID: execution.sourceRunID, SourceEventSeq: execution.sourceEventSeq}
+	associated := associateEventSinks(execution.childSinks, association)
+	execution.replaySinks = applyEventSinkWrappers(associated, execution.compiled.eventSinkWrappers)
+	if execution.journalSink == nil {
+		execution.eventSinks = execution.replaySinks
+		return
+	}
+	*execution.journalSink = runlog.NewSink(execution.compiled.journal).Associate(association)
+	execution.eventSinks = append([]gopact.EventSink{execution.eventSinks[0]}, execution.replaySinks...)
 }
 
 func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm CheckpointStatus, pending gopact.Event) error {
@@ -2690,16 +2700,6 @@ func (c *compiled[I, O]) validateCheckpointRecordIdentity(record CheckpointRecor
 }
 
 func (c *compiled[I, O]) terminalResumeCheckpoint(record CheckpointRecord) (CheckpointRecord, error) {
-	payload, err := decodeCheckpointPayload[O](record.Payload)
-	if err != nil {
-		return CheckpointRecord{}, err
-	}
-	if err := c.validateCheckpointIdentity(payload); err != nil {
-		return CheckpointRecord{}, err
-	}
-	if payload.PendingEvent != nil {
-		return record, nil
-	}
 	return CheckpointRecord{}, fmt.Errorf("%w: workflow checkpoint status %q cannot resume", ErrCheckpointConflict, record.Status)
 }
 
