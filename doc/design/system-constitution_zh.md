@@ -4,7 +4,7 @@
 
 状态：十章条款已完成并通过组合一致性检查；2026-07-14 Run、Store 与历史语义修正已批准
 
-本文是 `gopact`、`gopact-ext`、`gopact-examples` 三仓的最高层设计契约。重建期间，只有经过共同审议并写入本文的条款具有宪法效力。现有设计文档、代码、测试和示例都是证据，不因已经存在而自动成为正确设计。
+本文是 `gopact`、`gopact-ext`、`gopact-examples` 三仓的最高层设计契约，只保存现行产品与系统不变量。
 
 2026-07-12，用户批准 [`Agent State and Identity Design`](../superpowers/specs/2026-07-12-agent-state-identity-design.md)，正式订正身份、Context、Memory 和执行存储术语。2026-07-14，用户又批准 [Run、Store 与历史语义对齐 RFC](../rfcs/run-store-history-alignment.md) 及 [ADR-0001](../decisions/0001-run-closure.md)、[ADR-0002](../decisions/0002-durable-store-authority.md)、[ADR-0003](../decisions/0003-history-policy.md)；本文已是两次修正后的现行条款，旧规格的状态以其页首为准。
 
@@ -22,118 +22,11 @@
 
 下层与上层冲突时，必须修正下层或正式修宪，不能用当前实现反向覆盖已经批准的设计。
 
-## 角色
+## 修订记录
 
-- 用户是系统意图和宪法条款的最终裁决者。
-- Codex 负责调查三仓证据、识别矛盾、提出备选方案和明确推荐、说明代价、记录裁决、传播影响并检查全局一致性。
-- 文档、代码、测试、示例和历史提交只提供证据，不参与多数表决。
-
-## 审议方法
-
-采用从系统不变量向下推导的宪法会议，不逐行批准旧文档，也不从当前实现反推目标架构。
-
-每个候选条款只处理一个可以独立裁决的问题。Codex 可以把多个候选条款一次性预写到批量审阅文档，用户可以按 ID 在一次反馈中批量裁决；每个候选条款的决策包仍必须包含：
-
-1. 一句可验证的候选条款。
-2. 条款保护的系统性质。
-3. 历史意图和外部约束。
-4. 当前文档、代码、测试和示例的证据。
-5. 已发现的矛盾。
-6. 两到三个可行方案。
-7. Codex 的推荐及理由。
-8. 代价、失败模式和受影响的后续条款。
-
-候选条款只有在用户明确表示批准该含义后才能标记为 `ratified`。沉默、切换话题、要求继续调查或批准另一条款都不构成批准。
-
-裁决状态只有以下四种：
-
-- `ratified`：批准并写入本文。
-- `rejected`：否决，理由保留在会议进程草稿中。
-- `deferred`：证据或上游条款不足，暂缓审议。
-- `superseded`：经正式修宪被新条款替代。
-
-每章结束后必须执行一次组合一致性检查，确认逐条成立的规则放在一起仍然成立。
-
-## 审议顺序
-
-1. 系统使命、用户价值和明确非目标。
-2. 核心概念及唯一术语。
-3. 执行模型、状态迁移和状态所有权。
-4. 三仓职责、包边界和依赖方向。
-5. Workflow 的 compile、node、activation、route、join、循环、并行和嵌套语义。
-6. Agent、Model、Tool、Context 和子 Agent 模型。
-7. Session、Checkpoint、Resume、Interrupt、Effect、Fork 和 RunLog。
-8. Event、Streaming、Tracing、Snapshot 和可观测性。
-9. Provider、Plugin、Middleware、Store Adapter 和其他扩展机制。
-10. Go 公共 API、错误模型、并发、安全、测试和发布门槛。
-
-后续章节可以发现前置条款不完整，但不能静默改写前置条款；必须回到对应章节正式修订。
-
-## 审议状态文档
-
-实时进度保存在 [`system-constitution-session_zh.md`](./system-constitution-session_zh.md)，剩余候选项保存在 [`system-constitution-batch-review_zh.md`](./system-constitution-batch-review_zh.md)。前者是上下文恢复与裁决记录，后者是唯一活动批审表面；两者都不是第二份宪法。
-
-每次审议批次结束前必须更新草稿中的：
-
-- 当前批次和未决 ID。
-- 本批次最后裁决。
-- 已批准、否决和暂缓的条款。
-- 新发现的文档、代码、测试和示例漂移。
-- 受本批次裁决影响但尚未处理的事项。
-- 下一批次的审阅入口。
-
-发生上下文切换、对话压缩或新会话接续时，Codex 必须先完整读取本文件、会议进程草稿和仍在活动的批审文档，再开展调查或处理反馈。聊天记录不能作为唯一恢复来源。
-
-## 纠偏门禁
-
-系统使命、核心概念、状态所有权和依赖拓扑四个基础章节批准前，不修改架构实现。必要的独立缺陷修复必须与宪法纠偏分开，且不能预设未批准的架构结论。
-
-基础章节批准后，Codex 根据已批准条款生成三仓漂移映射：
-
-- `P0`：实现或文档违反架构不变量。
-- `P1`：缺失必需语义、失败路径或契约。
-- `P2`：公共 API、命名、工程体验或文档一致性问题。
-
-每个纠偏切片必须引用对应宪法条款，同时修改必要的实现、测试和文档。执行中发现宪法冲突时停止该切片并回到审议流程，不能在代码中临时发明规则。
-
-## 防漂移机制
-
-- 每个长期有效的关键条款最终都应有最小可执行检查。
-- 依赖方向、禁止包和公共 API 形状优先使用 import / AST contract test。
-- 状态迁移、恢复、失败和并发语义使用行为测试或故障注入测试。
-- 新设计和实现计划必须列出所依据的宪法条款。
-- 修宪必须记录替代条款、原因、影响范围和迁移要求。
-- 在 Go 1.27 与相关工具链正式稳定前，不使用已知会触发 Staticcheck 泛型方法缺陷的全量 `golangci-lint run ./...` 作为验证手段。
-
-## 完成标准
-
-系统宪法只有在以下条件同时满足时才算完成：
-
-- 不存在未决的基础架构问题。
-- 每个仓库和公开包都有唯一存在理由和合法依赖方向。
-- 每类长期状态和每次状态迁移都有唯一所有者。
-- Agent、Workflow 和嵌套运行的执行、身份、恢复与事件语义无矛盾。
-- 每个公开能力都能追溯到已批准条款。
-- 所有已发现漂移都已进入纠偏计划，或被明确接受、暂缓或删除。
-
-## 元条款
-
-| ID | 条款 | 状态 |
-|---|---|---|
-| `META-001` | 采用从系统不变量向下推导、证据驱动、逐条裁决的宪法会议流程。 | `ratified` |
-| `META-002` | 现有文档、代码、测试和示例都是证据，不是自动权威。 | `ratified` |
-| `META-003` | 每轮只裁决一个独立问题，并在章节结束时检查组合一致性。 | `superseded` |
-| `META-004` | 每轮结束前必须更新会议进程草稿；上下文恢复必须先读取宪法和草稿。 | `ratified` |
-| `META-005` | 四个基础章节批准前，不修改架构实现。 | `ratified` |
-| `META-006` | 宪法与下层材料冲突时，只能修正下层或正式修宪。 | `ratified` |
-| `META-007` | 候选条款只有经用户明确批准才能成为宪法；不得从沉默或上下文切换推定批准。 | `ratified` |
-| `META-008` | 多个独立候选条款可以预写到同一批量审阅文档并由用户按 ID 批量批准、否决、修改或暂缓；每个 ID 仍独立裁决，依赖未决的下游条款保持候选状态，章节结束后仍执行组合一致性检查。 | `ratified` |
-
-### 元条款修订记录
-
-2026-07-11，用户明确要求停止逐轮聊天审议，改为把所有剩余候选项写入文档后批量反馈。`META-008` 因此取代 `META-003` 的“一次只处理一个候选项”限制，但保留原子 ID、明确批准、依赖顺序和章节组合一致性检查；批量反馈不得被解释为对未点名候选项的默认批准。
-
-2026-07-14，用户接受 Run、Store 与历史语义对齐 RFC 和 ADR-0001 至 ADR-0003。`SYS-004`、`CON-001`、`CON-002`、`CON-004`、`EXEC-002` 至 `EXEC-004`、`REPO-003`、`AGENT-001`、`AGENT-002`、`AGENT-004`、`DUR-001` 至 `DUR-004`、`OBS-001` 至 `OBS-004`、`EXT-001`、`EXT-003`、`API-002` 与 `API-004` 升级为下文现行版本；各条 2026-07-11/12 的原批准事实仍保留，但冲突语义由本次修正替代。
+- 2026-07-12：Agent 状态与身份专题订正身份、Context、Memory 和执行存储术语；该历史规格后来被 2026-07-14 决策整体替代。
+- 2026-07-14：Run、Store 与历史语义对齐 RFC 和 ADR-0001 至 ADR-0003 修订 `SYS-004`、`CON-001`、`CON-002`、`CON-004`、`EXEC-002` 至 `EXEC-004`、`REPO-003`、`AGENT-001`、`AGENT-002`、`AGENT-004`、`DUR-001` 至 `DUR-004`、`OBS-001` 至 `OBS-004`、`EXT-001`、`EXT-003`、`API-002` 与 `API-004`；旧批准事实保留，冲突语义由本次修正替代。
+- 2026-07-14：移除 META、会议进程、审议门禁和 session-review 链接；宪法只保存产品与系统不变量。
 
 ## 第一章：系统使命、用户价值和明确非目标
 
@@ -254,7 +147,7 @@
 
 批准日期：2026-07-11
 
-> 每次 Node body 执行前，runtime 必须形成含 ActivationID、AttemptID、NodeExecutionVersion、Run sequence 与触发来源的 AttemptStarted metadata；每个 Attempt 最多形成一个 terminal outcome，并记录 phase、status 与 error。Runtime 不自动复制业务 input、Workflow Context 或 output 到执行历史；业务只能显式写入有界安全的 `Event.Payload` 或 `PayloadRef`/`ArtifactRef`。natural flow 再次选择同一 Node 时创建新 Activation，Node 自动 retry 在同一非终态 Run 创建新 Attempt，两者都分配新 NodeExecutionVersion。框架不承诺业务副作用 exactly-once。
+> 每次 Node body 执行前，runtime 必须形成 metadata；其必填维度是 identity、sequence、causality/source、timestamp、type、phase、status 与 error。每个 Attempt 最多形成一个 terminal outcome。Runtime 不自动复制业务 input、Workflow Context 或 output 到执行历史；业务只能显式写入有界安全的 `Event.Payload` 或 `PayloadRef`/`ArtifactRef`。natural flow 再次选择同一 Node 时创建新 Activation，Node 自动 retry 在同一非终态 Run 创建新 Attempt，两者都分配新 NodeExecutionVersion。框架不承诺业务副作用 exactly-once。
 
 ### `EXEC-004` 可转移执行所有权
 
@@ -450,7 +343,7 @@
 
 状态：`ratified`
 
-> Invoke 只返回 typed final output/error，typed output streaming 只承载业务输出增量，live Event 用于过程订阅，配置的 Store 用于事后查询；这些通道不得互相冒充。Runtime 始终产生 identity/type/phase/status/error 等过程 metadata，但不自动把业务 input、Context 或 output 复制到历史。未监听且未保存的 event 不承诺补回，没有 durable Store 时不承诺跨重启历史。
+> Invoke 只返回 typed final output/error，typed output streaming 只承载业务输出增量，live Event 用于过程订阅，配置的 Store 用于事后查询；这些通道不得互相冒充。Runtime 过程 metadata 的必填维度是 identity、sequence、causality/source、timestamp、type、phase、status 与 error，但不自动把业务 input、Context 或 output 复制到历史。未监听且未保存的 event 不承诺补回，没有 durable Store 时不承诺跨重启历史。
 
 ### `OBS-002` Event identity、顺序与投递
 
@@ -534,7 +427,7 @@
 
 状态：`ratified`
 
-> 首个对外成熟版本以 Go 1.27 正式稳定工具链为基线；v1 前允许通过下一个 minor 做有迁移说明的 breaking 收敛而不保留双轨 compatibility layer，v1 后遵守语义化版本。发 tag 前必须以协调源码完成跨仓 E2E，发 tag 后必须用 `GOWORK=off` 和精确 tag 复验公开模块；RC 只能称为生产评估候选，stable 经 burn-in 后才可称为 production-ready。发布兼容矩阵与迁移说明。
+> 首个对外成熟版本以 Go 1.27 正式稳定工具链为基线；v1 前允许通过下一个 minor 做有迁移说明的 breaking 收敛而不保留双轨 compatibility layer，v1 后遵守语义化版本。发 tag 前必须以协调源码完成跨仓 E2E，发 tag 后必须用 `GOWORK=off` 和精确 tag 复验公开模块；RC 只能称为 `production evaluation candidate`（生产评估候选），stable 经 burn-in 后才可称为 production-ready。发布兼容矩阵与迁移说明。
 
 ### 第十章组合一致性检查
 

@@ -32,7 +32,7 @@
 
 ### 历史与数据边界
 
-- Runtime Node 历史默认只记录 metadata：identity、type、phase、status 与 error，不自动复制业务 input、Workflow Context 或 output。
+- Runtime Node 历史默认只记录 metadata，必填维度是 identity、sequence、causality/source、timestamp、type、phase、status 与 error；不自动复制业务 input、Workflow Context 或 output。
 - 业务需要时可显式写入有界且安全的 `Event.Payload`，或保存 `PayloadRef`/`ArtifactRef`。Checkpoint 是 opaque、可能敏感的恢复数据，不供 Query/View 解析。
 - 框架拥有的 buffer、serialization 和 query 必须有默认上限及可诊断的超限行为；业务 payload 的授权、脱敏与保留期仍由应用负责。
 
@@ -47,7 +47,7 @@
 
 - ext 的目标公开模块是 `github.com/gopact-ai/gopact-ext` 与 `github.com/gopact-ai/gopact-ext/stores`；保留现有 package path。测试 module 不发布。
 - 发 tag 前以协调源码做跨仓 E2E；发 tag 后用 `GOWORK=off` 和精确 tag 再验证。
-- RC 是“生产评估候选”，不是 production-ready 声明；stable 经 burn-in 后才可以称为 production-ready。
+- RC 是 `production evaluation candidate`（生产评估候选），不是 production-ready 声明；stable 经 burn-in 后才可以称为 production-ready。
 
 ## 非目标
 

@@ -14,7 +14,7 @@
 
 ## 决策
 
-- Runtime Node 历史默认只记录 identity、type、phase、status 与 error metadata。
+- Runtime Node 历史默认只记录 metadata，必填维度是 identity、sequence、causality/source、timestamp、type、phase、status 与 error。
 - Runtime 不自动复制业务 input、Workflow Context 或 output 到 Event/RunLog/Snapshot。
 - 业务可显式写入有界、安全的 `Event.Payload`，或保存 `PayloadRef`/`ArtifactRef`；应用负责授权、脱敏、完整性、访问控制和保留期。
 - Checkpoint 是 opaque、可能敏感的恢复数据；Query/View 不解析其 payload。

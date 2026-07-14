@@ -1,8 +1,8 @@
 # Agent State and Identity Design
 
-Status: `partially superseded`（其余内容已于 2026-07-12 实现并验证）
+Status: `superseded`
 
-2026-07-14 的 [ADR-0001](../../decisions/0001-run-closure.md) 仅替代本文关于“Retry、external jump-to、terminate 后控制 epoch 保持同一 Run”以及“跨 DefinitionVersion force-jump 继续”的表述；这些操作现按 source lineage 创建新 Run，终态不可重开。Node 自动 Retry 仍是同一非终态 Run 的新 Attempt，Resume 同一 Run 只适用于 interrupted 或 lease-expired running。身份分层、SessionID 关联、Context/Memory/OTel 边界和已实现删除项继续有效。总览见[对齐 RFC](../../rfcs/run-store-history-alignment.md)。
+Superseded on 2026-07-14 by [ADR-0001](../../decisions/0001-run-closure.md), [ADR-0002](../../decisions/0002-durable-store-authority.md), and the [Run、Store 与历史语义对齐 RFC](../../rfcs/run-store-history-alignment.md). 本文正文完整保留 2026-07-12 已批准并实现的历史结论，不再是现行实现依据；Run 终态、source-lineage 新 Run、单一 Store 与恢复规则以新决策为准。
 
 ## Purpose
 
@@ -37,12 +37,12 @@ SessionID
 ```
 
 - `SessionID` is a correlation value. It can group multiple independent root Runs across Agent invocations, Workflow definitions, tasks, and time.
-- `RunID` identifies exactly one Workflow Run and remains the identity used by checkpoint resume, terminate, Snapshot, and per-Run history. Business retry and external jump-to now create a new RunID linked to the source Run.
+- `RunID` identifies exactly one Workflow execution and remains the identity used by checkpoint resume, retry, external jump-to, terminate, Snapshot, and per-Run history.
 - `ParentRunID` expresses direct child lineage. `Depth` remains runtime safety metadata, not a new identity namespace.
 - A fresh root invocation generates SessionID and RunID when the caller does not provide them.
 - `WithSessionID` lets the caller reuse a SessionID. Child Runs inherit and constrain the parent SessionID; a conflicting child value is invalid. An intentionally unrelated Session must be started as a root invocation.
 - Resume loads the stored SessionID for the selected RunID. If the caller also supplies a different SessionID, resume fails rather than silently moving the Run.
-- Node automatic retry and valid resume retain SessionID and RunID. Business retry and external jump-to retain SessionID but create a source-lineage RunID.
+- Retry, resume, external jump-to, and same-Run control epochs retain SessionID and RunID.
 
 SessionID does not identify a unique resumable execution. A Session can contain multiple Runs, so resume always selects RunID.
 
@@ -50,7 +50,7 @@ SessionID does not identify a unique resumable execution. A Session can contain 
 
 Domain `TraceID` is removed. In the current implementation it is the root RunID copied through child Runs, while ParentRunID already records the execution tree. It is not a conforming OpenTelemetry TraceID and should not pretend to be one.
 
-`ExecutionID` is also removed. It was generated as `"execution:" + RunID` and had no independent lifecycle. The 2026-07-14 source-lineage model does not restore it: source and target already have distinct RunIDs.
+`ExecutionID` is also removed. It is currently generated as `"execution:" + RunID` and has no independent lifecycle: retry and external jump-to retain both values. Keeping a second spelling creates metadata without additional information.
 
 This removal does not affect `ExecutionEpoch`, NodeExecutionVersion, DefinitionID/Version, NodeID, ActivationID, AttemptID, RevisionID, SourceRunID, or per-Run Sequence. Those values retain their existing distinct semantics.
 
@@ -117,7 +117,7 @@ User-owned Agent Context construction does not weaken Workflow recovery:
 - If the latest checkpoint did not save that output, recovery starts from the last successful boundary and may execute the Context node again.
 - An interrupted in-flight Context node has no completed output and may be retried. It should therefore be pure; external effects retain the normal business idempotency responsibility.
 - Values placed in Workflow Context or node output must be serializable. Clients, functions, channels, streams, and other process objects remain injected dependencies rather than checkpoint data.
-- Definition upgrades require a new Run and explicit business migration of input, Context, and target. Custom Context construction adds no compatibility promise.
+- Definition upgrades continue to follow the approved topology mismatch and explicit force-jump rules. Custom Context construction adds no compatibility promise.
 
 ## Memory boundary
 
