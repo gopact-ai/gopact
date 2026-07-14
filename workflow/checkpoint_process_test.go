@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gopact-ai/gopact"
 	"github.com/gopact-ai/gopact/runlog"
@@ -20,6 +21,7 @@ import (
 const (
 	checkpointProcessModeEnv = "GOPACT_CHECKPOINT_PROCESS_MODE"
 	checkpointProcessFileEnv = "GOPACT_CHECKPOINT_PROCESS_FILE"
+	checkpointProcessTimeout = 5 * time.Second
 )
 
 type checkpointProcessInput struct {
@@ -136,6 +138,10 @@ func TestWorkflowCheckpointProcessHelper(t *testing.T) {
 	}
 	if strings.HasPrefix(mode, "batch-") {
 		runCheckpointTypeBatchProcess(t, mode)
+		return
+	}
+	if mode == "recursive-pointer" {
+		runRecursiveCheckpointTypeProcess(t)
 		return
 	}
 	if mode == "iterator-writer" || mode == "iterator-reader" {
@@ -387,6 +393,9 @@ func TestWorkflowCheckpointTypePointerAndValueConflictReturnsError(t *testing.T)
 }
 
 type checkpointBatchType struct{}
+type checkpointRecursivePointer *checkpointRecursivePointer
+type checkpointRecursiveLeft *checkpointRecursiveRight
+type checkpointRecursiveRight *checkpointRecursiveLeft
 
 func TestWorkflowCheckpointTypeBadBatchDoesNotPolluteChosenValue(t *testing.T) {
 	runCheckpointProcess(t, "batch-value", t.TempDir()+"/unused")
@@ -420,6 +429,30 @@ func TestWorkflowCheckpointTypeGobNameMatchesStandardLibrary(t *testing.T) {
 				t.Fatalf("checkpointGobName(%s) = %q, want %q", test.typ, got, test.want)
 			}
 		})
+	}
+}
+
+func TestWorkflowCheckpointTypeRecursivePointerDoesNotHangOrPollute(t *testing.T) {
+	runCheckpointProcessWithTimeout(t, "recursive-pointer", t.TempDir()+"/unused")
+}
+
+func runRecursiveCheckpointTypeProcess(t *testing.T) {
+	t.Helper()
+	for _, value := range []any{checkpointRecursivePointer(nil), checkpointRecursiveLeft(nil)} {
+		wf := New[int, int]("recursive", WithCheckpointTypes(value))
+		node := wf.Node("node", func(_ context.Context, input int) (int, error) { return input, nil })
+		wf.Entry(node)
+		wf.Exit(node)
+		if _, err := wf.compile(); !errors.Is(err, ErrCheckpointTypeConflict) {
+			t.Fatalf("Compile(%T) error = %v, want ErrCheckpointTypeConflict", value, err)
+		}
+	}
+	wf := New[int, int]("chosen")
+	node := wf.Node("node", func(_ context.Context, input int) (int, error) { return input, nil })
+	wf.Entry(node)
+	wf.Exit(node)
+	if _, err := wf.compile(); err != nil {
+		t.Fatalf("chosen Compile() error = %v, want clean registry", err)
 	}
 }
 
@@ -555,6 +588,21 @@ func runCheckpointProcess(t *testing.T, mode, path string) {
 	cmd.Env = append(os.Environ(), checkpointProcessModeEnv+"="+mode, checkpointProcessFileEnv+"="+path)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%s process failed: %v\n%s", mode, err, output)
+	}
+}
+
+func runCheckpointProcessWithTimeout(t *testing.T, mode, path string) {
+	t.Helper()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), checkpointProcessTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestWorkflowCheckpointProcessHelper$")
+	cmd.Env = append(os.Environ(), checkpointProcessModeEnv+"="+mode, checkpointProcessFileEnv+"="+path)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%s process failed: %v (context: %v)\n%s", mode, err, ctx.Err(), output)
 	}
 }
 

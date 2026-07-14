@@ -19,6 +19,11 @@ type checkpointTypeRegistration struct {
 	wireName string
 }
 
+type checkpointTypePlan struct {
+	checkpointTypeRegistration
+	base reflect.Type
+}
+
 func workflowCheckpointTypes[I, O any](wf *Workflow[I, O]) ([]reflect.Type, error) {
 	types := make(map[reflect.Type]struct{})
 	add := func(typ reflect.Type) {
@@ -50,19 +55,20 @@ func workflowCheckpointTypes[I, O any](wf *Workflow[I, O]) ([]reflect.Type, erro
 func registerWorkflowCheckpointTypes(types []reflect.Type) error {
 	checkpointTypeRegisterMu.Lock()
 	defer checkpointTypeRegisterMu.Unlock()
-	if err := preflightCheckpointTypes(types); err != nil {
+	plan, err := preflightCheckpointTypes(types)
+	if err != nil {
 		return err
 	}
-	for _, typ := range types {
-		if err := registerCheckpointType(typ); err != nil {
+	for _, registration := range plan {
+		if err := registerCheckpointType(registration.typ); err != nil {
 			return err
 		}
-		recordCheckpointType(typ)
+		recordCheckpointType(registration)
 	}
 	return nil
 }
 
-func preflightCheckpointTypes(types []reflect.Type) error {
+func preflightCheckpointTypes(types []reflect.Type) ([]checkpointTypePlan, error) {
 	byName := make(map[string]reflect.Type, len(checkpointTypesByName)+len(types))
 	for name, typ := range checkpointTypesByName {
 		byName[name] = typ
@@ -71,14 +77,18 @@ func preflightCheckpointTypes(types []reflect.Type) error {
 	for base, registration := range checkpointTypesByBase {
 		byBase[base] = registration
 	}
+	plan := make([]checkpointTypePlan, 0, len(types))
 	for _, typ := range types {
 		wireName := checkpointGobName(typ)
 		if existing, ok := byName[wireName]; ok && existing != typ {
-			return fmt.Errorf("%w: wire name %q maps to different concrete types", ErrCheckpointTypeConflict, wireName)
+			return nil, fmt.Errorf("%w: wire name %q maps to different concrete types", ErrCheckpointTypeConflict, wireName)
 		}
-		base := checkpointBaseType(typ)
+		base, err := checkpointBaseType(typ)
+		if err != nil {
+			return nil, err
+		}
 		if existing, ok := byBase[base]; ok && (existing.typ != typ || existing.wireName != wireName) {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"%w: base type %s cannot use both %q and %q",
 				ErrCheckpointTypeConflict,
 				base,
@@ -87,15 +97,16 @@ func preflightCheckpointTypes(types []reflect.Type) error {
 			)
 		}
 		byName[wireName] = typ
-		byBase[base] = checkpointTypeRegistration{typ: typ, wireName: wireName}
+		registration := checkpointTypeRegistration{typ: typ, wireName: wireName}
+		byBase[base] = registration
+		plan = append(plan, checkpointTypePlan{checkpointTypeRegistration: registration, base: base})
 	}
-	return nil
+	return plan, nil
 }
 
-func recordCheckpointType(typ reflect.Type) {
-	wireName := checkpointGobName(typ)
-	checkpointTypesByName[wireName] = typ
-	checkpointTypesByBase[checkpointBaseType(typ)] = checkpointTypeRegistration{typ: typ, wireName: wireName}
+func recordCheckpointType(registration checkpointTypePlan) {
+	checkpointTypesByName[registration.wireName] = registration.typ
+	checkpointTypesByBase[registration.base] = registration.checkpointTypeRegistration
 }
 
 func registerCheckpointType(typ reflect.Type) (err error) {
@@ -108,11 +119,16 @@ func registerCheckpointType(typ reflect.Type) (err error) {
 	return nil
 }
 
-func checkpointBaseType(typ reflect.Type) reflect.Type {
+func checkpointBaseType(typ reflect.Type) (reflect.Type, error) {
+	visited := make(map[reflect.Type]struct{})
 	for typ.Kind() == reflect.Pointer {
+		if _, ok := visited[typ]; ok {
+			return nil, fmt.Errorf("%w: recursive pointer type %s", ErrCheckpointTypeConflict, typ)
+		}
+		visited[typ] = struct{}{}
 		typ = typ.Elem()
 	}
-	return typ
+	return typ, nil
 }
 
 // checkpointGobName mirrors encoding/gob.Register, including its historical
