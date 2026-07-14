@@ -252,6 +252,8 @@ func validateRecord(record Record) error {
 		return fmt.Errorf("%w: fork source run and event sequence must be set together", ErrInvalidRecord)
 	case record.SourceEventSeq < 0:
 		return fmt.Errorf("%w: source event sequence must not be negative", ErrInvalidRecord)
+	case record.SourceRunID == "" && record.SourceRevisionID != "":
+		return fmt.Errorf("%w: source revision requires a source run", ErrInvalidRecord)
 	default:
 		return nil
 	}

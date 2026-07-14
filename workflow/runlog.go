@@ -103,6 +103,9 @@ func ListSessionRuns(ctx context.Context, log runlog.Log, request SessionRunsReq
 }
 
 func (summary *RunSummary) applyLifecycle(record runlog.Record) error {
+	if summary.terminal() {
+		return errInconsistentRunLifecycle
+	}
 	switch record.EventType {
 	case EventWorkflowStarted, EventWorkflowRetryStarted, EventWorkflowJumpStarted:
 		return summary.start()
@@ -119,7 +122,19 @@ func (summary *RunSummary) applyLifecycle(record runlog.Record) error {
 	case EventWorkflowTerminated:
 		return summary.end(CheckpointTerminated, record.Timestamp)
 	}
+	if summary.Status == "" {
+		return errInconsistentRunLifecycle
+	}
 	return nil
+}
+
+func (summary RunSummary) terminal() bool {
+	switch summary.Status {
+	case CheckpointCompleted, CheckpointFailed, CheckpointCanceled, CheckpointTerminated:
+		return true
+	default:
+		return false
+	}
 }
 
 func (summary *RunSummary) start() error {
@@ -257,6 +272,9 @@ func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Sna
 
 func (snapshot *Snapshot) projectTimeline(records []runlog.Record) error {
 	for index, record := range records {
+		if !validSourceLineage(record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID) {
+			return fmt.Errorf("%w: runlog record has invalid source lineage", ErrCheckpointMismatch)
+		}
 		if record.RunID != snapshot.RunMeta.RunID {
 			return fmt.Errorf("workflow: runlog returned record for run %q, want %q", record.RunID, snapshot.RunMeta.RunID)
 		}
@@ -365,6 +383,9 @@ func (projection *checkpointProjection) accept(records []CheckpointRecord) error
 }
 
 func (snapshot *Snapshot) acceptCheckpointIdentity(record CheckpointRecord) error {
+	if !validSourceLineage(record.SourceRunID, record.SourceEventSeq, record.SourceRevisionID) {
+		return fmt.Errorf("%w: snapshot checkpoint source lineage is invalid", ErrCheckpointMismatch)
+	}
 	if record.RunID != snapshot.RunMeta.RunID {
 		return fmt.Errorf("%w: snapshot checkpoint run %q does not match %q", ErrCheckpointMismatch, record.RunID, snapshot.RunMeta.RunID)
 	}

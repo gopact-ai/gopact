@@ -72,6 +72,14 @@ func TestMemoryLogAppendRejectsMissingSessionID(t *testing.T) {
 	}
 }
 
+func TestMemoryLogAppendRejectsSourceRevisionWithoutSource(t *testing.T) {
+	record := testRecord("run-1", 1, "revision without source")
+	record.SourceRevisionID = "source-revision"
+	if err := NewMemoryLog().Append(context.Background(), record); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("Append() error = %v, want ErrInvalidRecord", err)
+	}
+}
+
 func TestMemoryLogListPreservesGlobalOrderAndQueryBounds(t *testing.T) {
 	log := NewMemoryLog()
 	for _, record := range []Record{
