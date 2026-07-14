@@ -1,6 +1,7 @@
 name: ci
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -13,7 +14,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: reject private development documents
         shell: bash
         run: |
@@ -44,13 +45,15 @@ jobs:
             printf 'authoritative documents are still ignored:\n%s\n' "$ignored"
             exit 1
           }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.27.0-rc.2'
       - run: test -z "$(gofmt -l .)"
       - run: go mod tidy -diff
-      - run: go test -count=1 ./...
-      - run: go test -race -count=1 ./...
+      - name: Test API contracts and fault matrix
+        run: go test -count=1 ./...
+      - name: Race-test API contracts and fault matrix
+        run: go test -race -count=1 ./...
       - run: go vet ./...
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
       - run: govulncheck ./...

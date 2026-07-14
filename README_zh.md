@@ -46,6 +46,10 @@ go vet ./...
 
 项目使用聚焦的原生门禁进行验证：`gofmt`、`go mod tidy -diff`、`go test`、`go test -race`、`go vet` 与 `govulncheck`，不依赖聚合式第三方 lint 工具。
 
+## 发布状态
+
+Go 1.27 stable 发布前，RC 只能称为 production evaluation candidate。stable tag 必须先通过 Go 1.27 stable toolchain 门禁、core → ext → examples 协调源码 E2E、immutable tag clean-consumer 验证和 RC burn-in。当前源码 checkout 不代表 post-tag 验证已经通过。
+
 ## 生产执行
 
 未配置持久化选项时，Workflow 会在同一个内存 Store 中保留 checkpoint 和 RunLog 事件。该默认值适合测试和短生命周期本地程序；长驻服务应配置带明确保留策略的持久化 Store：

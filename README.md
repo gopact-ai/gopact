@@ -46,6 +46,10 @@ go vet ./...
 
 Validation uses focused native gates: `gofmt`, `go mod tidy -diff`, `go test`, `go test -race`, `go vet`, and `govulncheck`. No aggregate third-party linter is required.
 
+## Release status
+
+Before Go 1.27 stable, release candidates are production-evaluation candidates only. A stable tag requires the Go 1.27 stable toolchain gates, coordinated core → ext → examples source E2E, immutable-tag clean-consumer verification, and RC burn-in. No current source checkout implies that post-tag verification has passed.
+
 ## Production execution
 
 Without persistence options, a Workflow keeps checkpoints and RunLog events in one in-memory Store. That default is intended for tests and short-lived local programs; a long-running service should configure a durable Store with an explicit retention policy:
