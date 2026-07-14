@@ -1,4 +1,4 @@
-// Package agent defines the Agent domain protocol built on Workflow execution.
+// Package agent defines the minimal Agent domain protocol and its Workflow-backed facade.
 package agent
 
 import "github.com/gopact-ai/gopact"
@@ -30,7 +30,9 @@ type Chunk struct {
 	Parts []gopact.MessagePart
 }
 
-// Agent is the minimal public ADK Agent protocol.
+// Agent is the minimal public ADK Agent protocol. Direct implementations do not
+// acquire Workflow checkpoint, recovery, control, or history semantics; use a
+// WorkflowAgent when those runtime guarantees are required.
 type Agent interface {
 	gopact.Invokable[Request, Response]
 	Identity() Identity

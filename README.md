@@ -28,7 +28,9 @@ It contains only:
 
 Official providers, concrete Agents, and the SQLite adapter live in `gopact-ext`; runnable examples live in `gopact-examples`.
 
-`SessionID` is runtime correlation metadata for relating multiple Runs, not a Session container. Agent Context is the final `gopact.ModelRequest` explicitly built by business or concrete-Agent Workflow logic; core does not inject implicit conversation or semantic-memory state.
+The minimal `agent.Agent` interface remains directly implementable. Only Workflow-backed Agents receive the configured Workflow's checkpoint, recovery, control, and history semantics; direct implementations do not acquire those guarantees automatically.
+
+`SessionID` is runtime correlation metadata for relating multiple Runs, not a Session container or an authentication, authorization, or tenant-isolation credential. Applications must authorize before querying and isolate data with separate Stores, database namespaces, or an outer query wrapper. Agent Context is the final `gopact.ModelRequest` explicitly built by business or concrete-Agent Workflow logic; core does not inject implicit conversation or semantic-memory state.
 
 ## Requirements
 
@@ -73,7 +75,7 @@ Deployment scope is deliberate: `workflow.MemoryStore` is for tests and short-li
 
 A configured `workflow.Store` is the single authoritative persistence boundary and fails closed. One instance provides checkpoint persistence and history, RunLog append and query, plus atomic ownership fencing; the runtime does not accept separate checkpoint and journal authorities. Claim and lease renewal must be atomic, and fenced append must validate the current owner and claim under the same lock or database transaction as the journal write. The runtime passes a lease duration so distributed Stores can derive expiry from the database clock instead of trusting a host wall clock. Renewal or authoritative write failure stops the invocation, and lease loss cancels the node Context with `workflow.ErrCheckpointLeaseLost`.
 
-Observer telemetry remains separate from durable authority. Application `EventSink` handlers receive accepted events under their configured delivery policy, but they do not replace or participate in the Store's checkpoint, history, journal, or fencing contract. Node implementations must stop promptly when their Context is canceled.
+Observer telemetry remains separate from durable authority. Application `EventSink` handlers receive accepted events under their configured delivery policy, but they do not replace or participate in the Store's checkpoint, history, journal, or fencing contract. Domain logs, metrics, and traces are projected from Event/View data; infrastructure telemetry wraps the application-owned Store or adapter. Core adds no second telemetry hook surface or OpenTelemetry dependency. Plugins only register extensions during Compile and never own their resources; the creating application or adapter closes them. Node implementations must stop promptly when their Context is canceled.
 
 Workflow recovery is at-least-once. Journal-to-consumer event delivery is also at-least-once, so event consumers should deduplicate by stable event identity such as `(RunID, Sequence)` or `RevisionID`. Heartbeats prevent a healthy long-running node from being reclaimed solely because its original lease expired, but no checkpoint protocol can make an arbitrary external API exactly-once. Calls that send messages, charge money, mutate inventory, or invoke billable models must use an idempotency key stable across resume, such as `RunInfo.RunID + "/" + RunInfo.ActivationID`.
 

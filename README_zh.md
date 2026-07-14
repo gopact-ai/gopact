@@ -28,7 +28,9 @@
 
 官方 provider、concrete Agent 和 SQLite adapter 位于 `gopact-ext`，可运行示例位于 `gopact-examples`。
 
-`SessionID` 是关联多个 Run 的 runtime metadata，不是 Session 容器。Agent Context 是由业务或具体 Agent 的 Workflow 逻辑显式构造的最终 `gopact.ModelRequest`；core 不隐式注入会话或 semantic Memory 状态。
+最小 `agent.Agent` interface 仍可由用户直接实现。只有 Workflow-backed Agent 获得其所配置 Workflow 的 checkpoint、恢复、控制与历史语义；直接实现不会自动获得这些保证。
+
+`SessionID` 是关联多个 Run 的 runtime metadata，不是 Session 容器，也不是认证、授权或租户隔离凭据。应用必须在查询前完成授权，并通过独立 Store、数据库 namespace 或外层 query wrapper 隔离数据。Agent Context 是由业务或具体 Agent 的 Workflow 逻辑显式构造的最终 `gopact.ModelRequest`；core 不隐式注入会话或 semantic Memory 状态。
 
 ## 要求
 
@@ -73,7 +75,7 @@ out, err := wf.Invoke(ctx, input,
 
 配置后的 `workflow.Store` 是唯一的权威持久化边界，所有写入都 fail closed。同一个实例同时提供 checkpoint 持久化与历史、RunLog 追加与查询，以及原子 ownership fencing；runtime 不接受彼此分离的 checkpoint 和 journal authority。Claim 与续租必须原子执行，fenced append 必须在 journal 写入所使用的同一把锁或同一个数据库事务中校验当前 owner 和 claim。runtime 会传递租约时长，让分布式 Store 使用数据库时钟生成到期时间，而不是信任主机墙钟。续租或权威写入失败会终止本次调用，lease loss 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。
 
-Observer telemetry 与 durable authority 相互独立。应用的 `EventSink` 按自身配置的 delivery policy 接收已接受事件，但不会替代或参与 Store 的 checkpoint、history、journal 与 fencing contract。节点实现必须在 Context 被取消后及时停止。
+Observer telemetry 与 durable authority 相互独立。应用的 `EventSink` 按自身配置的 delivery policy 接收已接受事件，但不会替代或参与 Store 的 checkpoint、history、journal 与 fencing contract。领域日志、指标和 trace 从 Event/View 数据投影；基础设施 telemetry 包装应用持有的 Store 或 adapter。core 不增加第二套 telemetry hook surface 或 OpenTelemetry 依赖。Plugin 只在 Compile 时注册扩展，不拥有资源；资源由创建它的应用或 adapter 关闭。节点实现必须在 Context 被取消后及时停止。
 
 Workflow 恢复采用 at-least-once 语义，journal 到事件消费者的投递同样是 at-least-once；消费者应使用 `(RunID, Sequence)` 或 `RevisionID` 等稳定事件身份去重。Heartbeat 可以避免健康的长耗时节点仅因原租约过期而被接管，但 checkpoint 协议无法让任意外部 API 自动获得 exactly-once 语义。发送消息、扣款、修改库存或调用计费模型时，必须使用跨 Resume 稳定的幂等键，例如 `RunInfo.RunID + "/" + RunInfo.ActivationID`。
 

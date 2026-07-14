@@ -17,7 +17,8 @@ const (
 
 var errInconsistentRunLifecycle = errors.New("workflow: inconsistent run lifecycle")
 
-// SnapshotStore loads a read model for a run.
+// SnapshotStore loads a read model for a run. Run identifiers select data; they
+// do not authorize access, so callers must enforce authorization before Load.
 type SnapshotStore interface {
 	Load(context.Context, SnapshotRequest) (Snapshot, error)
 }
@@ -30,6 +31,7 @@ type SnapshotRequest struct {
 }
 
 // SessionRunsRequest identifies the session whose runs should be listed.
+// SessionID is correlation metadata, not an authorization credential.
 type SessionRunsRequest struct {
 	SessionID string
 	// MaxRecords defaults to 10,000 and may only lower that safety bound.
@@ -50,6 +52,7 @@ type RunSummary struct {
 }
 
 // ListSessionRuns groups a session's append-ordered records into run summaries.
+// Applications must authorize the query and isolate Store data before calling it.
 func ListSessionRuns(ctx context.Context, log runlog.Log, request SessionRunsRequest) ([]RunSummary, error) {
 	if request.SessionID == "" {
 		return nil, fmt.Errorf("%w: session id is required", runlog.ErrInvalidQuery)

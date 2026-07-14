@@ -750,6 +750,45 @@ func TestWorkflowChildRunIsolation(t *testing.T) {
 	}
 }
 
+func TestWorkflowChildRunInheritsContextCancellationAndDeadline(t *testing.T) {
+	started := make(chan struct{})
+	childErr := make(chan error, 1)
+	childDeadline := make(chan time.Time, 1)
+	wf := New[string, string]("parent")
+	child := wf.AddInvokable("child", gopact.InvokableFunc[string, string](func(ctx context.Context, input string, _ ...gopact.RunOption) (string, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return "", errors.New("child context has no deadline")
+		}
+		childDeadline <- deadline
+		close(started)
+		<-ctx.Done()
+		childErr <- ctx.Err()
+		return input, ctx.Err()
+	}))
+	wf.Entry(child)
+	wf.Exit(child)
+
+	deadline := time.Now().Add(time.Hour)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	_, err := wf.Invoke(ctx, "input", gopact.WithSessionID("session-parent"), gopact.WithRunID("parent-run"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Invoke() error = %v, want context.Canceled", err)
+	}
+	if err := <-childErr; !errors.Is(err, context.Canceled) {
+		t.Fatalf("child context error = %v, want context.Canceled", err)
+	}
+	if got := <-childDeadline; !got.Equal(deadline) {
+		t.Fatalf("child deadline = %v, want %v", got, deadline)
+	}
+}
+
 func TestWorkflowChildOptionsRejectMissingSession(t *testing.T) {
 	execution := workflowExecution[string, string]{runID: "parent-run", depth: 1}
 	config := gopact.ResolveRunOptions(execution.childOptions(context.Background(), activation{id: "child"}, 1, 1)...)

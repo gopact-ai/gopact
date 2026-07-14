@@ -7,6 +7,16 @@ import (
 	"github.com/gopact-ai/gopact"
 )
 
+var _ Agent = minimalTestAgent{}
+
+type minimalTestAgent struct{}
+
+func (minimalTestAgent) Identity() Identity { return Identity{Name: "minimal"} }
+
+func (minimalTestAgent) Invoke(context.Context, Request, ...gopact.RunOption) (Response, error) {
+	return Response{}, nil
+}
+
 func TestObserveToolOutcome(t *testing.T) {
 	t.Run("result", func(t *testing.T) {
 		refs := []gopact.ArtifactRef{{URI: "artifact://result"}}

@@ -10,7 +10,8 @@ import (
 	"github.com/gopact-ai/gopact/workflow"
 )
 
-// WorkflowAgent is an Agent domain facade over the Workflow runtime.
+// WorkflowAgent is an Agent domain facade whose execution semantics come from
+// its configured Workflow runtime.
 type WorkflowAgent struct {
 	identity Identity
 	workflow *workflow.Workflow[Request, Response]
