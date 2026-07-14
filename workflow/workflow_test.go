@@ -1569,6 +1569,7 @@ func TestWorkflowGuardRetryCreatesNewAttempts(t *testing.T) {
 
 	var starts []gopact.Event
 	var retries []gopact.Event
+	var terminals []gopact.Event
 	output, err := wf.Invoke(context.Background(), "in",
 		gopact.WithRunID("guard-retry-run"),
 		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
@@ -1577,6 +1578,9 @@ func TestWorkflowGuardRetryCreatesNewAttempts(t *testing.T) {
 				starts = append(starts, event)
 			case EventNodeRetrying:
 				retries = append(retries, event)
+				terminals = append(terminals, event)
+			case EventNodeCompleted, EventNodeFailed, EventNodeCanceled, EventNodeSkipped:
+				terminals = append(terminals, event)
 			}
 			return nil
 		}),
@@ -1595,9 +1599,13 @@ func TestWorkflowGuardRetryCreatesNewAttempts(t *testing.T) {
 	if retries[0].AttemptID != starts[0].AttemptID || retries[0].NodeExecutionVersion != 1 {
 		t.Fatalf("retry event = %+v, want first attempt terminal", retries[0])
 	}
+	if len(terminals) != 2 || terminals[0].AttemptID != starts[0].AttemptID ||
+		terminals[1].AttemptID != starts[1].AttemptID {
+		t.Fatalf("terminal events = %+v, want exactly one per attempt", terminals)
+	}
 }
 
-func TestWorkflowNodeAttemptEventsCaptureInputOutputAndContext(t *testing.T) {
+func TestWorkflowNodeAttemptEventsCaptureMetadata(t *testing.T) {
 	type request struct {
 		Text string `json:"text"`
 	}
@@ -1630,11 +1638,11 @@ func TestWorkflowNodeAttemptEventsCaptureInputOutputAndContext(t *testing.T) {
 	}
 	started := events[EventNodeStarted]
 	completed := events[EventNodeCompleted]
-	if string(started.Input.JSON) != `{"text":"hello"}` || string(started.WorkflowContext.JSON) != `{"text":"hello"}` {
-		t.Fatalf("started facts = %+v, want full input and workflow context", started)
+	if started.Status != "running" || started.ActivationPhase != ActivationRunning || started.ContextRevision != 1 {
+		t.Fatalf("started facts = %+v, want running metadata", started)
 	}
-	if completed.Output == nil || string(completed.Output.JSON) != `{"text":"hello!"}` {
-		t.Fatalf("completed facts = %+v, want full output", completed)
+	if completed.Status != "completed" || completed.ActivationPhase != ActivationCompleted || completed.Error != "" {
+		t.Fatalf("completed facts = %+v, want completed metadata", completed)
 	}
 }
 
@@ -1657,8 +1665,8 @@ func TestWorkflowNodeFailedEventCapturesErrorFact(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Invoke() error = %v, want %v", err, wantErr)
 	}
-	if failed.Error != wantErr.Error() {
-		t.Fatalf("failed fact error = %q, want %q", failed.Error, wantErr)
+	if failed.Error != "failed" || failed.Status != "failed" {
+		t.Fatalf("failed fact = %+v, want classified failure", failed)
 	}
 }
 
@@ -1699,8 +1707,7 @@ func TestWorkflowTypedContextCommitsBetweenNodes(t *testing.T) {
 	if err != nil || output != 1 {
 		t.Fatalf("Invoke() = %d, %v, want 1", output, err)
 	}
-	if len(starts) != 2 || starts[0].ContextRevision != 1 || starts[1].ContextRevision != 2 ||
-		string(starts[0].WorkflowContext.JSON) != `{"count":0}` || string(starts[1].WorkflowContext.JSON) != `{"count":1}` {
+	if len(starts) != 2 || starts[0].ContextRevision != 1 || starts[1].ContextRevision != 2 {
 		t.Fatalf("started contexts = %+v, want revisions 1 then 2", starts)
 	}
 }

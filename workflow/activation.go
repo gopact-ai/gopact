@@ -38,7 +38,6 @@ type activationRecord struct {
 	attempt              int
 	nodeExecutionVersion int64
 	origin               string
-	contextFact          NodeValue
 	contextRevision      int64
 	result               nodeRunResult
 	hasResult            bool
@@ -91,11 +90,6 @@ func (state *runState) startActivation(id string) error {
 	}
 	state.nodeVersions[record.activation.node]++
 	record.nodeExecutionVersion = state.nodeVersions[record.activation.node]
-	contextFact, err := snapshotNodeValue(state.workflowContext)
-	if err != nil {
-		return err
-	}
-	record.contextFact = contextFact
 	record.contextRevision = state.contextRevision
 	return nil
 }

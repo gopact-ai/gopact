@@ -2096,7 +2096,7 @@ func (execution *workflowExecution[I, O]) nodeContext(ctx context.Context, curre
 }
 
 func (execution *workflowExecution[I, O]) commitRetry(current activation, result nodeRunResult) error {
-	event, err := execution.state.nodeEvent(current.id, EventNodeRetrying, "", result)
+	event, err := execution.state.nodeEvent(current.id, EventNodeRetrying, "")
 	if err != nil {
 		return err
 	}

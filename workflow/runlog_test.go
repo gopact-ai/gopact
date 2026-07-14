@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -89,6 +90,30 @@ func TestSnapshotPagesCheckpointHistory(t *testing.T) {
 	}
 	if len(snapshot.Checkpoints) != 1 || snapshot.Checkpoints[0].Version != 257 || !snapshot.Checkpoints[0].Root {
 		t.Fatalf("snapshot checkpoints = %+v, want latest root checkpoint version 257", snapshot.Checkpoints)
+	}
+}
+
+func TestSnapshotDoesNotExposeCheckpointPayload(t *testing.T) {
+	const secret = "opaque-checkpoint-secret"
+	timeline := sessionRunRecord("run-1", 1, EventWorkflowStarted, time.Now().UTC())
+	checkpoint := CheckpointRecord{
+		ID: "checkpoint:run-1:1", SessionID: "session-1", RunID: "run-1",
+		WorkflowName: "example", TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion,
+		Version: 1, Status: CheckpointRunning, ConfirmedSequence: 1, Payload: []byte(secret),
+	}
+	snapshot, err := newTestRunLogSnapshotStore(
+		staticRunLog{records: []runlog.Record{timeline}},
+		staticCheckpointHistory{checkpoint},
+	).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if strings.Contains(string(encoded), secret) {
+		t.Fatalf("snapshot exposes checkpoint payload: %s", encoded)
 	}
 }
 

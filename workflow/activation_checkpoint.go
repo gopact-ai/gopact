@@ -11,7 +11,6 @@ type checkpointActivationState struct {
 	Attempt              int
 	NodeExecutionVersion int64
 	Origin               string
-	ContextFact          NodeValue
 	ContextRevision      int64
 	EffectiveInput       checkpointValue
 	HasInput             bool
@@ -49,8 +48,8 @@ func (record *activationRecord) checkpoint() checkpointActivationState {
 	return checkpointActivationState{
 		Activation: record.activation.checkpoint(), Phase: record.phase, Attempt: record.attempt,
 		NodeExecutionVersion: record.nodeExecutionVersion, Origin: record.origin,
-		ContextFact: record.contextFact, ContextRevision: record.contextRevision,
-		EffectiveInput: input, HasInput: record.result.hasInput, Result: result, HasResult: record.hasResult,
+		ContextRevision: record.contextRevision,
+		EffectiveInput:  input, HasInput: record.result.hasInput, Result: result, HasResult: record.hasResult,
 		Skipped: record.result.skipped, Cause: cause,
 	}
 }
@@ -81,7 +80,7 @@ func (encoded checkpointActivationState) runtime() *activationRecord {
 	return &activationRecord{
 		activation: encoded.Activation.runtime(), phase: encoded.Phase, attempt: encoded.Attempt,
 		nodeExecutionVersion: encoded.NodeExecutionVersion, origin: origin,
-		contextFact: encoded.ContextFact, contextRevision: encoded.ContextRevision,
+		contextRevision: encoded.ContextRevision,
 		result: nodeRunResult{
 			input: encoded.EffectiveInput.runtime(), hasInput: encoded.HasInput,
 			output: encoded.Result.runtime(), skipped: encoded.Skipped,
