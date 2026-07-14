@@ -1076,6 +1076,7 @@ type workflowExecution[I, O any] struct {
 	eventSinks     []gopact.EventSink
 	replaySinks    []gopact.EventSink
 	childSinks     []gopact.EventSink
+	journalSink    *gopact.EventSink
 	idGenerators   map[gopact.IDKind]gopact.IDGenerator
 	sequence       int64
 	eventCursor    int64
@@ -1300,8 +1301,9 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	}
 	replaySinks := applyEventSinkWrappers(configuredSinks, c.eventSinkWrappers)
 	eventSinks := replaySinks
+	var journalSink gopact.EventSink
 	if c.journal != nil {
-		var journalSink gopact.EventSink = runlog.NewSink(c.journal)
+		journalSink = runlog.NewSink(c.journal)
 		if associated {
 			journalSink = runlog.NewSink(c.journal).Associate(association)
 		}
@@ -1316,8 +1318,11 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		sessionID: sessionID, runID: runID, parentRunID: parentRunID,
 		ownerID: ownerID, depth: depth,
 		eventSinks: eventSinks, replaySinks: replaySinks,
-		childSinks: append([]gopact.EventSink(nil), configuredSinks...), idGenerators: cfg.IDGenerators(), step: 1, cancel: cancel,
+		childSinks: append([]gopact.EventSink(nil), cfg.EventSinks...), idGenerators: cfg.IDGenerators(), step: 1, cancel: cancel,
 		outputSink: sink, replayStatus: ReplayUnknown, executionEpoch: 1, controlOrigin: "natural",
+	}
+	if c.journal != nil {
+		execution.journalSink = &journalSink
 	}
 	defer execution.stopLiveIterators()
 	execution.ctx = context.WithValue(execution.ctx, eventEmitterContextKey{}, eventEmitter(execution.emitCustom))
@@ -1728,6 +1733,13 @@ func (execution *workflowExecution[I, O]) applyResumePayload(payload checkpointP
 	}
 	execution.controlOrigin = payload.ControlOrigin
 	execution.sourceRevision = payload.SourceRevisionID
+	execution.sourceRunID = payload.SourceRunID
+	execution.sourceEventSeq = payload.SourceEventSeq
+	if execution.journalSink != nil && execution.sourceRunID != "" {
+		*execution.journalSink = runlog.NewSink(execution.compiled.journal).Associate(runlog.Association{
+			SourceRunID: execution.sourceRunID, SourceEventSeq: execution.sourceEventSeq,
+		})
+	}
 	if len(payload.ResolvedInterrupts) > 0 {
 		resolved := make(map[string][]resumedInterrupt, len(payload.ResolvedInterrupts))
 		for _, item := range payload.ResolvedInterrupts {

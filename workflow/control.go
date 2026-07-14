@@ -45,7 +45,7 @@ func (wf *Workflow[I, O]) JumpTo[NI, NO any](ctx context.Context, target *Node[N
 	return compiled.JumpTo(ctx, target, request, input, opts...)
 }
 
-// JumpTo creates a new Activation for target in the same Run.
+// JumpTo creates a new Run from one failed Run revision.
 func (c *compiled[I, O]) JumpTo[NI, NO any](ctx context.Context, target *Node[NI, NO], request JumpRequest, input NI, opts ...gopact.RunOption) (O, error) {
 	var zero O
 	if c == nil {

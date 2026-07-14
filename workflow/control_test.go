@@ -145,72 +145,25 @@ func TestWorkflowControlRejectsSourceRunIDReuse(t *testing.T) {
 }
 
 func TestWorkflowTerminalResumeReturnsCheckpointConflict(t *testing.T) {
-	store := NewMemoryStore()
-	wf := New[string, string]("terminal-resume", WithStrictCheckpointer(store), WithStrictJournal(store))
-	node := wf.Node("node", func(context.Context, string) (string, error) {
-		return "", errors.New("failed")
-	})
-	wf.Entry(node)
-	wf.Exit(node)
-	if _, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("source-run")); err == nil {
-		t.Fatal("Invoke() error = nil, want source failure")
+	statuses := []CheckpointStatus{CheckpointCompleted, CheckpointFailed, CheckpointTerminated, CheckpointCanceled}
+	for _, status := range statuses {
+		t.Run(string(status), func(t *testing.T) {
+			wf, store, _ := createTerminalRun(t, status)
+			before := loadRunFacts(t, store, "source-run")
+			_, err := wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "source-run"}))
+			if !errors.Is(err, ErrCheckpointConflict) {
+				t.Fatalf("terminal Resume() error = %v, want ErrCheckpointConflict", err)
+			}
+			assertRunFactsUnchanged(t, store, "source-run", before)
+		})
 	}
-	before := loadRunFacts(t, store, "source-run")
-
-	_, err := wf.Invoke(t.Context(), "ignored", WithResume(ResumeRequest{RunID: "source-run"}))
-	if !errors.Is(err, ErrCheckpointConflict) {
-		t.Fatalf("terminal Resume() error = %v, want ErrCheckpointConflict", err)
-	}
-	assertRunFactsUnchanged(t, store, "source-run", before)
 }
 
 func TestWorkflowRetryAndJumpRejectNonFailedTerminalSource(t *testing.T) {
-	statuses := []struct {
-		name      string
-		terminate bool
-		cancel    bool
-	}{
-		{name: "completed"},
-		{name: "terminated", terminate: true},
-		{name: "canceled", cancel: true},
-	}
-	for _, tt := range statuses {
-		t.Run(tt.name, func(t *testing.T) {
-			store := NewMemoryStore()
-			wf := New[string, string]("control-terminal-"+tt.name, WithStrictCheckpointer(store), WithStrictJournal(store))
-			started := make(chan struct{})
-			node := wf.Node("node", func(ctx context.Context, input string) (string, error) {
-				if tt.terminate || tt.cancel {
-					close(started)
-					<-ctx.Done()
-					return "", ctx.Err()
-				}
-				return input, nil
-			})
-			wf.Entry(node)
-			wf.Exit(node)
-			if tt.terminate || tt.cancel {
-				done := make(chan error, 1)
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				go func() {
-					_, err := wf.Invoke(ctx, "input", gopact.WithRunID("source-run"))
-					done <- err
-				}()
-				<-started
-				if tt.terminate {
-					if err := wf.Terminate("source-run"); err != nil {
-						t.Fatal(err)
-					}
-				} else {
-					cancel()
-				}
-				if err := <-done; err == nil {
-					t.Fatal("terminated Invoke() error = nil")
-				}
-			} else if _, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("source-run")); err != nil {
-				t.Fatal(err)
-			}
+	statuses := []CheckpointStatus{CheckpointCompleted, CheckpointTerminated, CheckpointCanceled}
+	for _, status := range statuses {
+		t.Run(string(status), func(t *testing.T) {
+			wf, store, node := createTerminalRun(t, status)
 			source := nodeStartedRecord(t, store, "source-run")
 
 			_, retryErr := wf.Retry(t.Context(), RetryRequest{
@@ -227,6 +180,66 @@ func TestWorkflowRetryAndJumpRejectNonFailedTerminalSource(t *testing.T) {
 			}
 		})
 	}
+}
+
+func createTerminalRun(t *testing.T, status CheckpointStatus) (*Workflow[string, string], *MemoryStore, *Node[string, string]) {
+	t.Helper()
+	store := NewMemoryStore()
+	started := make(chan struct{})
+	wf := New[string, string]("terminal-"+string(status), WithStrictCheckpointer(store), WithStrictJournal(store))
+	node := wf.Node("node", func(ctx context.Context, input string) (string, error) {
+		switch status {
+		case CheckpointFailed:
+			return "", errors.New("failed")
+		case CheckpointTerminated, CheckpointCanceled:
+			return waitForTerminalCancellation(ctx, started)
+		default:
+			return input, nil
+		}
+	})
+	wf.Entry(node)
+	wf.Exit(node)
+	if status == CheckpointCompleted || status == CheckpointFailed {
+		_, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("source-run"))
+		if status == CheckpointCompleted && err != nil {
+			t.Fatal(err)
+		}
+		if status == CheckpointFailed && err == nil {
+			t.Fatal("Invoke() error = nil, want failure")
+		}
+	} else {
+		finishActiveTerminalRun(t, wf, started, status)
+	}
+	assertTerminalSourceUnchanged(t, store, "source-run", status)
+	return wf, store, node
+}
+
+func waitForTerminalCancellation(ctx context.Context, started chan<- struct{}) (string, error) {
+	close(started)
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func finishActiveTerminalRun(t *testing.T, wf *Workflow[string, string], started <-chan struct{}, status CheckpointStatus) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := wf.Invoke(ctx, "input", gopact.WithRunID("source-run"))
+		done <- err
+	}()
+	<-started
+	if status == CheckpointTerminated {
+		if err := wf.Terminate("source-run"); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		cancel()
+	}
+	if err := <-done; err == nil {
+		t.Fatal("terminal Invoke() error = nil")
+	}
+	cancel()
 }
 
 func nodeStartedRecord(t *testing.T, store *MemoryStore, runID string) runlog.Record {
