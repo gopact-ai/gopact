@@ -46,7 +46,7 @@ go vet ./...
 
 ## 生产执行
 
-未配置持久化选项时，Workflow 会在内存中保留 checkpoint 和 RunLog 事件。该默认值适合测试和短生命周期本地程序；长驻服务应配置带明确保留策略的持久化 Store：
+未配置持久化选项时，Workflow 会在同一个内存 Store 中保留 checkpoint 和 RunLog 事件。该默认值适合测试和短生命周期本地程序；长驻服务应配置带明确保留策略的持久化 Store：
 
 ```go
 wf := workflow.New[Input, Output](
@@ -71,9 +71,9 @@ out, err := wf.Invoke(ctx, input,
 
 部署边界是明确的：`workflow.MemoryStore` 仅用于测试和短生命周期本地进程；`stores/sqlite` 适用于单机，或安全共享同一个本地数据库文件的多进程。多主机部署必须使用支持原子 Claim 与 fencing 的分布式数据库 Store。
 
-配置后的 Store 是权威数据源，写入失败会直接终止 Run。Checkpointer 必须支持原子抢占和续租；runtime 会传递租约时长，让分布式 Store 在持有 ownership lock 时用数据库时钟生成到期时间，而不是信任主机墙钟。续租失败时，runtime 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。节点实现必须在 Context 被取消后及时停止。
+配置后的 `workflow.Store` 是唯一的权威持久化边界，所有写入都 fail closed。同一个实例同时提供 checkpoint 持久化与历史、RunLog 追加与查询，以及原子 ownership fencing；runtime 不接受彼此分离的 checkpoint 和 journal authority。Claim 与续租必须原子执行，fenced append 必须在 journal 写入所使用的同一把锁或同一个数据库事务中校验当前 owner 和 claim。runtime 会传递租约时长，让分布式 Store 使用数据库时钟生成到期时间，而不是信任主机墙钟。续租或权威写入失败会终止本次调用，lease loss 会用 `workflow.ErrCheckpointLeaseLost` 取消节点 Context。
 
-多实例持久化执行必须把同一个组合 Store 实例同时配置为 Checkpointer 和 Journal，并使用实现了 `runlog.FencedLog` 的 Store。这样 Store 可以在同一把锁或同一个数据库事务中校验当前 owner/claim 并追加 observed event，关闭 Claim 后旧 owner 继续物理写 journal 的窗口，同时避免每个 observed event 额外产生两份 checkpoint history。若 checkpoint 与 journal 是两个独立后端，runtime 会使用持久化 pending-event 进行恢复，但无法让跨后端的 owner 校验与物理 journal append 成为一个原子操作。
+Observer telemetry 与 durable authority 相互独立。应用的 `EventSink` 按自身配置的 delivery policy 接收已接受事件，但不会替代或参与 Store 的 checkpoint、history、journal 与 fencing contract。节点实现必须在 Context 被取消后及时停止。
 
 Workflow 恢复采用 at-least-once 语义，journal 到事件消费者的投递同样是 at-least-once；消费者应使用 `(RunID, Sequence)` 或 `RevisionID` 等稳定事件身份去重。Heartbeat 可以避免健康的长耗时节点仅因原租约过期而被接管，但 checkpoint 协议无法让任意外部 API 自动获得 exactly-once 语义。发送消息、扣款、修改库存或调用计费模型时，必须使用跨 Resume 稳定的幂等键，例如 `RunInfo.RunID + "/" + RunInfo.ActivationID`。
 

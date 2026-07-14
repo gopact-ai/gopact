@@ -219,22 +219,18 @@ func (wf *Workflow[I, O]) Snapshot(ctx context.Context, request SnapshotRequest)
 
 // RunLogSnapshotStore builds snapshots from a RunLog.
 type RunLogSnapshotStore struct {
-	log         runlog.Log
-	checkpoints CheckpointHistory
+	store Store
 }
 
 // NewRunLogSnapshotStore creates a snapshot store over one authoritative Store.
 func NewRunLogSnapshotStore(store Store) RunLogSnapshotStore {
-	return RunLogSnapshotStore{log: store, checkpoints: store}
+	return RunLogSnapshotStore{store: store}
 }
 
 // Load implements SnapshotStore.
 func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Snapshot, error) {
-	if s.log == nil {
-		return Snapshot{}, errors.New("workflow: runlog is nil")
-	}
-	if s.checkpoints == nil {
-		return Snapshot{}, errors.New("workflow: checkpoint history is nil")
+	if isNilStore(s.store) {
+		return Snapshot{}, errors.New("workflow: snapshot store is nil")
 	}
 	if req.RunID == "" {
 		return Snapshot{}, errors.New("workflow: snapshot run id is required")
@@ -244,7 +240,7 @@ func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Sna
 	if boundedDefault {
 		queryLimit = defaultHistoryRecordLimit + 1
 	}
-	records, err := s.log.List(ctx, runlog.Query{RunID: req.RunID, After: req.After, Limit: queryLimit})
+	records, err := s.store.List(ctx, runlog.Query{RunID: req.RunID, After: req.After, Limit: queryLimit})
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -260,7 +256,7 @@ func (s RunLogSnapshotStore) Load(ctx context.Context, req SnapshotRequest) (Sna
 	if err := snapshot.projectTimeline(records); err != nil {
 		return Snapshot{}, err
 	}
-	if err := snapshot.projectCheckpointHistory(ctx, s.checkpoints); err != nil {
+	if err := snapshot.projectCheckpointHistory(ctx, s.store); err != nil {
 		return Snapshot{}, err
 	}
 	return snapshot, nil

@@ -46,7 +46,7 @@ Validation uses focused native gates: `gofmt`, `go mod tidy -diff`, `go test`, `
 
 ## Production execution
 
-Without persistence options, a Workflow keeps checkpoints and RunLog events in memory. That default is intended for tests and short-lived local programs; a long-running service should configure durable stores with an explicit retention policy:
+Without persistence options, a Workflow keeps checkpoints and RunLog events in one in-memory Store. That default is intended for tests and short-lived local programs; a long-running service should configure a durable Store with an explicit retention policy:
 
 ```go
 wf := workflow.New[Input, Output](
@@ -71,9 +71,9 @@ The precedence is explicit ID > RunOption generator > Workflow generator > UUID 
 
 Deployment scope is deliberate: `workflow.MemoryStore` is for tests and short-lived local processes; `stores/sqlite` is for one machine or multiple processes that safely share the same local database file. Multi-host deployments need a distributed database Store that implements atomic Claim and fencing.
 
-Configured stores are authoritative and fail closed. A Checkpointer must claim and renew leases atomically; the runtime passes a lease duration so distributed stores can materialize expiry from the database clock while holding the ownership lock instead of trusting a host wall clock. The runtime cancels the node context with `workflow.ErrCheckpointLeaseLost` when renewal fails. Node implementations must stop promptly when their Context is canceled.
+A configured `workflow.Store` is the single authoritative persistence boundary and fails closed. One instance provides checkpoint persistence and history, RunLog append and query, plus atomic ownership fencing; the runtime does not accept separate checkpoint and journal authorities. Claim and lease renewal must be atomic, and fenced append must validate the current owner and claim under the same lock or database transaction as the journal write. The runtime passes a lease duration so distributed Stores can derive expiry from the database clock instead of trusting a host wall clock. Renewal or authoritative write failure stops the invocation, and lease loss cancels the node Context with `workflow.ErrCheckpointLeaseLost`.
 
-For multi-instance durable execution, configure the same combined store instance as both the Checkpointer and Journal, and use an implementation of `runlog.FencedLog`. This lets the store validate the current owner/claim and append observed events under one lock or database transaction, closing the post-claim journal-write window without creating two checkpoint-history versions per event. Separate checkpoint and journal backends use a durable pending-event recovery path, but cannot make ownership validation and the physical journal append atomic across those backends.
+Observer telemetry remains separate from durable authority. Application `EventSink` handlers receive accepted events under their configured delivery policy, but they do not replace or participate in the Store's checkpoint, history, journal, or fencing contract. Node implementations must stop promptly when their Context is canceled.
 
 Workflow recovery is at-least-once. Journal-to-consumer event delivery is also at-least-once, so event consumers should deduplicate by stable event identity such as `(RunID, Sequence)` or `RevisionID`. Heartbeats prevent a healthy long-running node from being reclaimed solely because its original lease expired, but no checkpoint protocol can make an arbitrary external API exactly-once. Calls that send messages, charge money, mutate inventory, or invoke billable models must use an idempotency key stable across resume, such as `RunInfo.RunID + "/" + RunInfo.ActivationID`.
 

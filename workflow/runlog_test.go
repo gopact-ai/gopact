@@ -5,11 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gopact-ai/gopact/runlog"
 )
+
+func TestRunLogSnapshotStoreRejectsNilStore(t *testing.T) {
+	for _, store := range []Store{nil, (*MemoryStore)(nil)} {
+		_, err := NewRunLogSnapshotStore(store).Load(t.Context(), SnapshotRequest{RunID: "run-1"})
+		if err == nil || !strings.Contains(err.Error(), "store is nil") {
+			t.Fatalf("Load() error = %v, want nil store error", err)
+		}
+	}
+}
 
 func TestListSessionRunsHistoryLimit(t *testing.T) {
 	log := &pagingRunLog{}

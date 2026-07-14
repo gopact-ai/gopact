@@ -26,7 +26,11 @@ func storeWithCheckpointerAndLog(checkpointer Checkpointer, log runlog.Log) Stor
 }
 
 func newTestRunLogSnapshotStore(log runlog.Log, history CheckpointHistory) RunLogSnapshotStore {
-	return RunLogSnapshotStore{log: log, checkpoints: history}
+	return NewRunLogSnapshotStore(&checkpointerStore{
+		Checkpointer: NewMemoryCheckpointer(),
+		history:      history,
+		log:          log,
+	})
 }
 
 func (store *checkpointerStore) ListCheckpoints(ctx context.Context, request CheckpointHistoryRequest) ([]CheckpointRecord, error) {
