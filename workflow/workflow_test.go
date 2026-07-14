@@ -2315,6 +2315,13 @@ func TestSnapshotForkRunsFromWorkflowInputPatch(t *testing.T) {
 	if len(records) == 0 || records[0].SourceRunID != "source-run" || records[0].SourceEventSeq != 1 || records[0].ParentRunID != "" {
 		t.Fatalf("fork records = %+v, want independent source association", records)
 	}
+	forkCheckpoint, err := store.Load(context.Background(), "fork-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forkCheckpoint.SourceRunID != "source-run" || forkCheckpoint.SourceEventSeq != 1 || forkCheckpoint.SourceRevisionID != "" {
+		t.Fatalf("fork checkpoint lineage = %q/%d/%q, want source-run/1 with no revision", forkCheckpoint.SourceRunID, forkCheckpoint.SourceEventSeq, forkCheckpoint.SourceRevisionID)
+	}
 }
 
 func TestSnapshotForkRejectsSourceMismatch(t *testing.T) {

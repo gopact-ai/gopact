@@ -21,7 +21,7 @@ var (
 	ErrRunActive = errors.New("workflow: run is already active")
 )
 
-// RetryRequest selects one historical node Attempt to retry in the same Run.
+// RetryRequest selects one historical node Attempt from a failed Run.
 type RetryRequest struct {
 	RunID                string
 	NodeID               string
@@ -35,7 +35,7 @@ type JumpRequest struct {
 	ContextPatch   any
 }
 
-// JumpTo creates a new Activation for target in the same Run.
+// JumpTo creates a new Run from one failed Run revision.
 func (wf *Workflow[I, O]) JumpTo[NI, NO any](ctx context.Context, target *Node[NI, NO], request JumpRequest, input NI, opts ...gopact.RunOption) (O, error) {
 	var zero O
 	compiled, err := wf.compile()
@@ -54,11 +54,11 @@ func (c *compiled[I, O]) JumpTo[NI, NO any](ctx context.Context, target *Node[NI
 	if target == nil || c.nodes[target.endpointName()] != target {
 		return zero, errors.New("workflow: jump target does not belong to this workflow")
 	}
-	if err := c.prepareJump(ctx, target.endpointName(), input, request); err != nil {
+	start, err := c.prepareJump(ctx, target.endpointName(), input, request)
+	if err != nil {
 		return zero, err
 	}
-	options := append([]gopact.RunOption(nil), opts...)
-	options = append(options, WithResume(ResumeRequest{RunID: request.RunID}))
+	options := c.controlOptions(opts, start)
 	var workflowInput I
 	return c.Invoke(ctx, workflowInput, options...)
 }
@@ -108,7 +108,7 @@ func (c *compiled[I, O]) unregisterRun(runID string) {
 	c.activeMu.Unlock()
 }
 
-// Retry retries one historical Activation without creating a new Run.
+// Retry creates a new Run from one historical Activation in a failed Run.
 func (wf *Workflow[I, O]) Retry(ctx context.Context, request RetryRequest, opts ...gopact.RunOption) (O, error) {
 	var zero O
 	compiled, err := wf.compile()
@@ -118,110 +118,115 @@ func (wf *Workflow[I, O]) Retry(ctx context.Context, request RetryRequest, opts 
 	return compiled.Retry(ctx, request, opts...)
 }
 
-// Retry retries one historical Activation without creating a new Run.
+// Retry creates a new Run from one historical Activation in a failed Run.
 func (c *compiled[I, O]) Retry(ctx context.Context, request RetryRequest, opts ...gopact.RunOption) (O, error) {
 	var zero O
 	if c == nil {
 		return zero, errNilCompiled
 	}
-	if err := c.prepareRetry(ctx, request); err != nil {
+	start, err := c.prepareRetry(ctx, request)
+	if err != nil {
 		return zero, err
 	}
-	options := append([]gopact.RunOption(nil), opts...)
-	options = append(options, WithResume(ResumeRequest{RunID: request.RunID}))
+	options := c.controlOptions(opts, start)
 	var input I
 	return c.Invoke(ctx, input, options...)
 }
 
-func (c *compiled[I, O]) prepareRetry(ctx context.Context, request RetryRequest) error {
-	if request.RunID == "" || request.NodeID == "" || request.NodeExecutionVersion <= 0 {
-		return errors.New("workflow: retry requires run id, node id, and positive node execution version")
+type controlStart struct {
+	payload     []byte
+	sessionID   string
+	association runlog.Association
+}
+
+type controlStartOption struct{ start controlStart }
+
+func (option controlStartOption) ApplyRunOption(config *gopact.RunConfig) {
+	if config.Extensions == nil {
+		config.Extensions = make(map[string]any)
 	}
-	controller, ok := c.checkpointer.(CheckpointController)
-	if !ok {
-		return errors.New("workflow: checkpointer does not support control")
+	config.Extensions[controlStartExtensionKey] = option.start
+	config.Extensions[sourceAssociationExtensionKey] = option.start.association
+}
+
+func (c *compiled[I, O]) controlOptions(options []gopact.RunOption, start controlStart) []gopact.RunOption {
+	result := append([]gopact.RunOption(nil), options...)
+	return append(result, gopact.WithSessionID(start.sessionID), controlStartOption{start: start})
+}
+
+func (c *compiled[I, O]) prepareRetry(ctx context.Context, request RetryRequest) (controlStart, error) {
+	if request.RunID == "" || request.NodeID == "" || request.NodeExecutionVersion <= 0 {
+		return controlStart{}, errors.New("workflow: retry requires run id, node id, and positive node execution version")
 	}
 	history, ok := c.checkpointer.(CheckpointHistory)
 	if !ok {
-		return errors.New("workflow: checkpointer does not provide checkpoint history")
+		return controlStart{}, errors.New("workflow: checkpointer does not provide checkpoint history")
 	}
 	source, err := c.retrySource(ctx, request)
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
 	sourceCheckpoint, ok, err := checkpointAtSequence(ctx, history, request.RunID, source.Sequence)
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
 	if !ok {
-		return fmt.Errorf("workflow: retry source revision %q has no stable checkpoint", source.RevisionID)
+		return controlStart{}, fmt.Errorf("workflow: retry source revision %q has no stable checkpoint", source.RevisionID)
 	}
 	head, err := c.checkpointer.Load(ctx, request.RunID)
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
-	if !checkpointTerminal(head.Status) {
-		return fmt.Errorf("workflow: retry requires a terminal run, current status %q", head.Status)
+	if head.Status != CheckpointFailed {
+		return controlStart{}, fmt.Errorf("workflow: retry requires a failed run, current status %q", head.Status)
 	}
 	payload, err := c.retryPayload(source, sourceCheckpoint, head)
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
-	next := head
-	next.Status = CheckpointRunning
-	next.Payload = payload
-	next.ConfirmedSequence = head.ConfirmedSequence
-	next.PendingSequence = 0
-	next.ReplayStatus = ReplayUnknown
-	next.UpdatedAt = time.Now()
-	return controller.Reopen(ctx, next, head.Version)
+	return controlStart{
+		payload: payload, sessionID: head.SessionID,
+		association: runlog.Association{SourceRunID: request.RunID, SourceEventSeq: source.Sequence},
+	}, nil
 }
 
-func (c *compiled[I, O]) prepareJump(ctx context.Context, target string, input any, request JumpRequest) error {
+func (c *compiled[I, O]) prepareJump(ctx context.Context, target string, input any, request JumpRequest) (controlStart, error) {
 	if request.RunID == "" || request.FromRevisionID == "" {
-		return errors.New("workflow: jump requires run id and source revision id")
-	}
-	controller, ok := c.checkpointer.(CheckpointController)
-	if !ok {
-		return errors.New("workflow: checkpointer does not support control")
+		return controlStart{}, errors.New("workflow: jump requires run id and source revision id")
 	}
 	history, ok := c.checkpointer.(CheckpointHistory)
 	if !ok {
-		return errors.New("workflow: checkpointer does not provide checkpoint history")
+		return controlStart{}, errors.New("workflow: checkpointer does not provide checkpoint history")
 	}
 	source, err := c.controlSource(ctx, request.RunID, request.FromRevisionID)
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
 	sourceCheckpoint, ok, err := checkpointAtSequence(ctx, history, request.RunID, source.Sequence)
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
 	if !ok {
-		return fmt.Errorf("workflow: jump source revision %q has no stable checkpoint", source.RevisionID)
+		return controlStart{}, fmt.Errorf("workflow: jump source revision %q has no stable checkpoint", source.RevisionID)
 	}
 	head, err := c.checkpointer.Load(ctx, request.RunID)
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
-	if !checkpointTerminal(head.Status) {
-		return fmt.Errorf("workflow: jump requires a terminal run, current status %q", head.Status)
+	if head.Status != CheckpointFailed {
+		return controlStart{}, fmt.Errorf("workflow: jump requires a failed run, current status %q", head.Status)
 	}
 	payload, err := c.jumpPayload(jumpPayloadRequest{
 		source: source, checkpoint: sourceCheckpoint, head: head,
 		target: target, input: input, contextPatch: request.ContextPatch,
 	})
 	if err != nil {
-		return err
+		return controlStart{}, err
 	}
-	next := head
-	next.Status = CheckpointRunning
-	next.Payload = payload
-	next.ConfirmedSequence = head.ConfirmedSequence
-	next.PendingSequence = 0
-	next.ReplayStatus = ReplayUnknown
-	next.UpdatedAt = time.Now()
-	return controller.Reopen(ctx, next, head.Version)
+	return controlStart{
+		payload: payload, sessionID: head.SessionID,
+		association: runlog.Association{SourceRunID: request.RunID, SourceEventSeq: source.Sequence},
+	}, nil
 }
 
 type jumpPayloadRequest struct {
@@ -263,23 +268,25 @@ func (c *compiled[I, O]) jumpPayload(request jumpPayloadRequest) ([]byte, error)
 	state.sourceSets = make(map[string]*sourceSet)
 	state.iterSources = make(map[string]*iterSource)
 	state.liveIters = make(map[string]*liveIterator)
-	epoch := max(int64(1), headPayload.ExecutionEpoch) + 1
+	resetControlAttempts(&state)
 	activation := c.enqueue(&state, enqueueRequest{
 		target: request.target, input: request.input,
-		correlation: CorrelationKey{ID: request.source.RunID, Epoch: int(epoch)},
+		correlation: CorrelationKey{ID: request.source.RunID, Epoch: initialCorrelationEpoch},
 	})
 	state.activations[activation.id].origin = "external_jump"
 	meta := headPayload.meta()
 	meta.OwnerID = ""
 	meta.LeaseExpiresAt = time.Time{}
-	meta.EventCursor = headPayload.EventCursor
+	meta.EventCursor = 0
 	meta.PendingEvent = nil
 	meta.PendingTerm = ""
 	meta.PendingInterrupts = nil
 	meta.ResolvedInterrupts = nil
-	meta.ExecutionEpoch = epoch
+	meta.ExecutionEpoch = 1
 	meta.ControlOrigin = "external_jump"
 	meta.SourceRevisionID = request.source.RevisionID
+	meta.SourceRunID = request.source.RunID
+	meta.SourceEventSeq = request.source.Sequence
 	return encodeCheckpointPayloadWithMeta[O](state, nil, 1, meta)
 }
 
@@ -422,19 +429,30 @@ func (c *compiled[I, O]) retryPayload(source runlog.Record, checkpoint, head Che
 	state.activations[nodeFacts.ActivationID] = record
 	state.queue = []activation{record.activation}
 	mergeRetryHead(&state, headState)
+	resetControlAttempts(&state)
 	state.contextRevision++
 	meta := headPayload.meta()
 	meta.OwnerID = ""
 	meta.LeaseExpiresAt = time.Time{}
-	meta.EventCursor = headPayload.EventCursor
+	meta.EventCursor = 0
 	meta.PendingEvent = nil
 	meta.PendingTerm = ""
 	meta.PendingInterrupts = nil
 	meta.ResolvedInterrupts = nil
-	meta.ExecutionEpoch = max(int64(1), headPayload.ExecutionEpoch) + 1
+	meta.ExecutionEpoch = 1
 	meta.ControlOrigin = "external_retry"
 	meta.SourceRevisionID = source.RevisionID
-	return encodeCheckpointPayloadWithMeta(state, sourcePayload.Outputs, sourcePayload.NextStep, meta)
+	meta.SourceRunID = source.RunID
+	meta.SourceEventSeq = source.Sequence
+	return encodeCheckpointPayloadWithMeta(state, sourcePayload.Outputs, 1, meta)
+}
+
+func resetControlAttempts(state *runState) {
+	state.nodeVersions = make(map[string]int64)
+	for _, record := range state.activations {
+		record.attempt = 0
+		record.nodeExecutionVersion = 0
+	}
 }
 
 type checkpointSearch struct {

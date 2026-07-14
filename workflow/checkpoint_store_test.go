@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -81,19 +82,6 @@ func TestMemoryCheckpointerRejectsChangedSessionID(t *testing.T) {
 				return store.Finish(ctx, record, record.Version)
 			},
 		},
-		{
-			name: "reopen",
-			act: func(ctx context.Context, store *MemoryCheckpointer, record CheckpointRecord) error {
-				record.Status = CheckpointCompleted
-				if err := store.Finish(ctx, record, record.Version); err != nil {
-					return err
-				}
-				record.Version++
-				record.Status = CheckpointRunning
-				record.SessionID = "session-2"
-				return store.Reopen(ctx, record, record.Version)
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -113,6 +101,47 @@ func TestMemoryCheckpointerRejectsChangedSessionID(t *testing.T) {
 				t.Fatalf("operation error = %v, want ErrCheckpointMismatch", err)
 			}
 		})
+	}
+}
+
+func TestMemoryCheckpointerTerminalRecordIsImmutable(t *testing.T) {
+	store := NewMemoryCheckpointer()
+	now := time.Now().UTC()
+	record := CheckpointRecord{
+		ID: "checkpoint:run-1", SessionID: "session-1", RunID: "run-1", WorkflowName: "example",
+		TopologyVersion: "topology-v1", SchemaVersion: checkpointSchemaVersion, Version: 1,
+		Status: CheckpointRunning, ReplayStatus: ReplayUnknown, Payload: []byte(`{"state":"ready"}`),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.Create(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	record.Status = CheckpointCompleted
+	if err := store.Finish(t.Context(), record, record.Version); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.Load(t.Context(), "run-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidate := before
+	candidate.Status = CheckpointRunning
+	if err := store.Save(t.Context(), candidate, candidate.Version); !errors.Is(err, ErrCheckpointConflict) {
+		t.Fatalf("Save() error = %v, want ErrCheckpointConflict", err)
+	}
+	candidate.OwnerID = "owner-2"
+	candidate.ClaimSequence++
+	candidate.LeaseDuration = time.Minute
+	if err := store.Claim(t.Context(), candidate, candidate.Version); !errors.Is(err, ErrCheckpointConflict) {
+		t.Fatalf("Claim() error = %v, want ErrCheckpointConflict", err)
+	}
+	after, err := store.Load(t.Context(), "run-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("terminal checkpoint changed\nafter:  %+v\nbefore: %+v", after, before)
 	}
 }
 

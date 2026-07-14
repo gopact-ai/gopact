@@ -453,6 +453,10 @@ type forkAssociationOption struct {
 }
 
 func (option forkAssociationOption) ApplyRunOption(config *gopact.RunConfig) {
+	if config.Extensions == nil {
+		config.Extensions = make(map[string]any)
+	}
+	config.Extensions[sourceAssociationExtensionKey] = option.association
 	for index, sink := range config.EventSinks {
 		if associating, ok := sink.(runlog.AssociatingSink); ok {
 			config.EventSinks[index] = associating.Associate(option.association)

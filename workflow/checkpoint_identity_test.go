@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gopact-ai/gopact"
-	"github.com/gopact-ai/gopact/runlog"
 )
 
 func TestWorkflowResumeRestoresCheckpointSessionID(t *testing.T) {
@@ -159,76 +158,6 @@ func TestWorkflowCheckpointedAgentContextSurvivesInterrupt(t *testing.T) {
 	}
 	if buildCalls != 1 {
 		t.Fatalf("build calls = %d, want 1", buildCalls)
-	}
-}
-
-func TestWorkflowRetryAndJumpCheckpointHistoryRetainSessionID(t *testing.T) {
-	tests := []struct {
-		name    string
-		control func(context.Context, *Workflow[string, string], *Node[string, string], runlog.Record) error
-	}{
-		{
-			name: "retry",
-			control: func(ctx context.Context, wf *Workflow[string, string], _ *Node[string, string], source runlog.Record) error {
-				_, err := wf.Retry(ctx, RetryRequest{
-					RunID: "run-1", NodeID: source.NodeID, NodeExecutionVersion: source.NodeExecutionVersion,
-				})
-				return err
-			},
-		},
-		{
-			name: "jump",
-			control: func(ctx context.Context, wf *Workflow[string, string], node *Node[string, string], source runlog.Record) error {
-				_, err := wf.JumpTo(ctx, node, JumpRequest{RunID: "run-1", FromRevisionID: source.RevisionID}, "jumped")
-				return err
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store := NewMemoryStore()
-			wf := New[string, string](
-				"control-session",
-				WithStrictCheckpointer(store),
-				WithStrictJournal(store),
-			)
-			node := wf.Node("node", func(_ context.Context, input string) (string, error) { return input, nil })
-			wf.Entry(node)
-			wf.Exit(node)
-			if _, err := wf.Invoke(context.Background(), "input",
-				gopact.WithRunID("run-1"), gopact.WithSessionID("session-1")); err != nil {
-				t.Fatalf("Invoke() error = %v", err)
-			}
-			records, err := store.List(context.Background(), runlog.Query{RunID: "run-1"})
-			if err != nil {
-				t.Fatalf("List() error = %v", err)
-			}
-			var source runlog.Record
-			for _, record := range records {
-				if record.EventType == EventNodeStarted {
-					source = record
-					break
-				}
-			}
-			if source.RevisionID == "" {
-				t.Fatal("node started source record not found")
-			}
-			if err := tt.control(context.Background(), wf, node, source); err != nil {
-				t.Fatalf("control error = %v", err)
-			}
-			history, err := store.ListCheckpoints(
-				context.Background(), CheckpointHistoryRequest{RunID: "run-1"},
-			)
-			if err != nil {
-				t.Fatalf("ListCheckpoints() error = %v", err)
-			}
-			for _, checkpoint := range history {
-				if checkpoint.SessionID != "session-1" || checkpoint.RunID != "run-1" {
-					t.Fatalf("checkpoint identity = %q/%q, want session-1/run-1", checkpoint.SessionID, checkpoint.RunID)
-				}
-			}
-		})
 	}
 }
 

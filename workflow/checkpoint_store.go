@@ -22,11 +22,10 @@ func NewMemoryStore() *MemoryStore {
 }
 
 var (
-	_ Checkpointer         = (*MemoryStore)(nil)
-	_ CheckpointHistory    = (*MemoryStore)(nil)
-	_ CheckpointController = (*MemoryStore)(nil)
-	_ runlog.Log           = (*MemoryStore)(nil)
-	_ runlog.FencedLog     = (*MemoryStore)(nil)
+	_ Checkpointer      = (*MemoryStore)(nil)
+	_ CheckpointHistory = (*MemoryStore)(nil)
+	_ runlog.Log        = (*MemoryStore)(nil)
+	_ runlog.FencedLog  = (*MemoryStore)(nil)
 )
 
 // AppendFenced validates the current workflow claim and appends one RunLog
@@ -199,39 +198,6 @@ func (store *MemoryCheckpointer) Finish(ctx context.Context, record CheckpointRe
 	return store.write(ctx, record, version, true)
 }
 
-// Reopen starts an explicit control epoch from one terminal run head.
-func (store *MemoryCheckpointer) Reopen(ctx context.Context, record CheckpointRecord, version int64) error {
-	if store == nil {
-		return errors.New("workflow: checkpointer is nil")
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if record.Version != version || record.Status != CheckpointRunning {
-		return fmt.Errorf("%w: invalid reopened checkpoint", ErrInvalidCheckpoint)
-	}
-	if err := validateCheckpointRecord(record); err != nil {
-		return err
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	current, exists := store.records[record.RunID]
-	if !exists {
-		return ErrCheckpointNotFound
-	}
-	if !checkpointTerminal(current.Status) || current.Version != version {
-		return fmt.Errorf("%w: checkpoint cannot reopen", ErrCheckpointConflict)
-	}
-	if !sameCheckpointIdentity(current, record) {
-		return ErrCheckpointMismatch
-	}
-	record = cloneCheckpointRecord(record)
-	record.Version = version + 1
-	store.records[record.RunID] = record
-	store.history[record.RunID] = append(store.history[record.RunID], cloneCheckpointRecord(record))
-	return nil
-}
-
 // ListCheckpoints returns immutable versions in ascending order.
 func (store *MemoryCheckpointer) ListCheckpoints(ctx context.Context, request CheckpointHistoryRequest) ([]CheckpointRecord, error) {
 	if store == nil {
@@ -342,6 +308,10 @@ func validateCheckpointRecord(record CheckpointRecord) error {
 	if record.ConfirmedSequence < 0 || record.PendingSequence < 0 {
 		return fmt.Errorf("%w: checkpoint sequence must not be negative", ErrInvalidCheckpoint)
 	}
+	if (record.SourceRunID == "") != (record.SourceEventSeq == 0) || record.SourceEventSeq < 0 ||
+		(record.SourceRunID == "" && record.SourceRevisionID != "") {
+		return fmt.Errorf("%w: checkpoint source lineage is incomplete", ErrInvalidCheckpoint)
+	}
 	if record.LeaseDuration < 0 {
 		return fmt.Errorf("%w: checkpoint lease duration must not be negative", ErrInvalidCheckpoint)
 	}
@@ -365,7 +335,9 @@ func leaseExpiry(now, expiresAt time.Time, duration time.Duration) time.Time {
 }
 
 func sameCheckpointIdentity(left, right CheckpointRecord) bool {
-	return left.ID == right.ID && left.SessionID == right.SessionID && left.RunID == right.RunID && left.WorkflowName == right.WorkflowName && left.TopologyVersion == right.TopologyVersion && left.SchemaVersion == right.SchemaVersion
+	return left.ID == right.ID && left.SessionID == right.SessionID && left.RunID == right.RunID &&
+		left.SourceRunID == right.SourceRunID && left.SourceEventSeq == right.SourceEventSeq && left.SourceRevisionID == right.SourceRevisionID &&
+		left.WorkflowName == right.WorkflowName && left.TopologyVersion == right.TopologyVersion && left.SchemaVersion == right.SchemaVersion
 }
 
 func cloneCheckpointRecord(record CheckpointRecord) CheckpointRecord {

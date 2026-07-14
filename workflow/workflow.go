@@ -43,6 +43,8 @@ var (
 
 const (
 	resumeExtensionKey                = "gopact.workflow.resume"
+	controlStartExtensionKey          = "gopact.workflow.control_start"
+	sourceAssociationExtensionKey     = "gopact.workflow.source_association"
 	defaultCheckpointLeaseDuration    = time.Minute
 	defaultCheckpointLeaseRenewEvery  = 20 * time.Second
 	defaultMaxSteps                   = 1024
@@ -279,6 +281,9 @@ type CheckpointRecord struct {
 	ID                string
 	SessionID         string
 	RunID             string
+	SourceRunID       string
+	SourceEventSeq    int64
+	SourceRevisionID  string
 	WorkflowName      string
 	TopologyVersion   string
 	SchemaVersion     int
@@ -341,11 +346,6 @@ type CheckpointHistoryRequest struct {
 // CheckpointHistory exposes immutable checkpoint versions to snapshot projectors.
 type CheckpointHistory interface {
 	ListCheckpoints(context.Context, CheckpointHistoryRequest) ([]CheckpointRecord, error)
-}
-
-// CheckpointController reopens one terminal checkpoint for an explicit control epoch.
-type CheckpointController interface {
-	Reopen(context.Context, CheckpointRecord, int64) error
 }
 
 // ResumeRequest identifies a workflow run checkpoint to resume.
@@ -570,7 +570,7 @@ func workflowResumeRequest(cfg gopact.RunConfig) (ResumeRequest, bool, error) {
 		return ResumeRequest{}, false, nil
 	}
 	for key := range cfg.Extensions {
-		if key != resumeExtensionKey {
+		if key != resumeExtensionKey && key != controlStartExtensionKey && key != sourceAssociationExtensionKey {
 			return ResumeRequest{}, false, fmt.Errorf("workflow: unknown run extension %q", key)
 		}
 	}
@@ -583,6 +583,37 @@ func workflowResumeRequest(cfg gopact.RunConfig) (ResumeRequest, bool, error) {
 		return ResumeRequest{}, false, errors.New("workflow: conflicting resume options")
 	}
 	return req, true, nil
+}
+
+func workflowSourceAssociation(cfg gopact.RunConfig) (runlog.Association, bool, error) {
+	if cfg.Extensions == nil {
+		return runlog.Association{}, false, nil
+	}
+	value, ok := cfg.Extensions[sourceAssociationExtensionKey]
+	if !ok {
+		return runlog.Association{}, false, nil
+	}
+	association, ok := value.(runlog.Association)
+	if !ok || association.SourceRunID == "" || association.SourceEventSeq <= 0 {
+		return runlog.Association{}, false, errors.New("workflow: invalid source association")
+	}
+	return association, true, nil
+}
+
+func workflowControlStart(cfg gopact.RunConfig) (controlStart, bool, error) {
+	if cfg.Extensions == nil {
+		return controlStart{}, false, nil
+	}
+	value, ok := cfg.Extensions[controlStartExtensionKey]
+	if !ok {
+		return controlStart{}, false, nil
+	}
+	start, ok := value.(controlStart)
+	if !ok || len(start.payload) == 0 || start.sessionID == "" || start.association.SourceRunID == "" ||
+		start.association.SourceEventSeq <= 0 {
+		return controlStart{}, false, errors.New("workflow: invalid control start")
+	}
+	return start, true, nil
 }
 
 // SettleAll waits for all selected branches.
@@ -1052,6 +1083,8 @@ type workflowExecution[I, O any] struct {
 	executionEpoch int64
 	controlOrigin  string
 	sourceRevision string
+	sourceRunID    string
+	sourceEventSeq int64
 	state          runState
 	outputs        []O
 	outputSink     outputSink[O]
@@ -1213,6 +1246,17 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	if err != nil {
 		return nil, err
 	}
+	control, controlled, err := workflowControlStart(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if resume && controlled {
+		return nil, errors.New("workflow: resume and control start are mutually exclusive")
+	}
+	association, associated, err := workflowSourceAssociation(cfg)
+	if err != nil {
+		return nil, err
+	}
 	if resume && resumeReq.RunID == "" {
 		return nil, errors.New("workflow: resume run id is required")
 	}
@@ -1229,6 +1273,9 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		if err != nil {
 			return nil, err
 		}
+	}
+	if associated && runID == association.SourceRunID {
+		return nil, errors.New("workflow: control cannot reuse source run id")
 	}
 	ownerID, err := generateID(c.idGenerator(cfg, IDKindOwner), IDKindOwner)
 	if err != nil {
@@ -1247,10 +1294,17 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	}
 	defer c.unregisterRun(runID)
 	defer cancel(nil)
-	replaySinks := applyEventSinkWrappers(cfg.EventSinks, c.eventSinkWrappers)
+	configuredSinks := cfg.EventSinks
+	if associated {
+		configuredSinks = associateEventSinks(configuredSinks, association)
+	}
+	replaySinks := applyEventSinkWrappers(configuredSinks, c.eventSinkWrappers)
 	eventSinks := replaySinks
 	if c.journal != nil {
-		journalSink := runlog.NewSink(c.journal)
+		var journalSink gopact.EventSink = runlog.NewSink(c.journal)
+		if associated {
+			journalSink = runlog.NewSink(c.journal).Associate(association)
+		}
 		eventSinks = append([]gopact.EventSink{
 			strictWorkflowEventSink{EventSink: gopact.EventSinkFunc(func(ctx context.Context, event gopact.Event) error {
 				return journalSink.Emit(context.WithoutCancel(ctx), event)
@@ -1262,12 +1316,12 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		sessionID: sessionID, runID: runID, parentRunID: parentRunID,
 		ownerID: ownerID, depth: depth,
 		eventSinks: eventSinks, replaySinks: replaySinks,
-		childSinks: append([]gopact.EventSink(nil), cfg.EventSinks...), idGenerators: cfg.IDGenerators(), step: 1, cancel: cancel,
+		childSinks: append([]gopact.EventSink(nil), configuredSinks...), idGenerators: cfg.IDGenerators(), step: 1, cancel: cancel,
 		outputSink: sink, replayStatus: ReplayUnknown, executionEpoch: 1, controlOrigin: "natural",
 	}
 	defer execution.stopLiveIterators()
 	execution.ctx = context.WithValue(execution.ctx, eventEmitterContextKey{}, eventEmitter(execution.emitCustom))
-	if !resume {
+	if !resume && !controlled {
 		workflowCtx := WorkflowContext[I, O]{ctx: execution.ctx, Input: input}
 		if err := runLifecycleHooks(c.beforeWorkflow, &workflowCtx); err != nil {
 			return nil, fmt.Errorf("workflow: before workflow: %w", err)
@@ -1275,7 +1329,7 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		execution.input = workflowCtx.Input
 	}
 	var contextValue any
-	if !resume {
+	if !resume && !controlled {
 		contextValue, err = c.initialContext(execution.input)
 		if err != nil {
 			return nil, err
@@ -1301,15 +1355,40 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 		contextRevision: 1,
 	}
 	execution.state.trackActivation(execution.state.queue[0])
+	if controlled {
+		payload, decodeErr := decodeCheckpointPayload[O](control.payload)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if identityErr := c.validateCheckpointIdentity(payload); identityErr != nil {
+			return nil, identityErr
+		}
+		execution.state = payload.state()
+		execution.outputs = append([]O(nil), payload.Outputs...)
+		execution.step = payload.NextStep
+		if execution.step <= 0 {
+			execution.step = 1
+		}
+		execution.controlOrigin = payload.ControlOrigin
+		execution.sourceRevision = payload.SourceRevisionID
+	}
+	if associated {
+		execution.sourceRunID = association.SourceRunID
+		execution.sourceEventSeq = association.SourceEventSeq
+	}
 	checkpoint, err := c.prepareCheckpoint(execution.ctx, checkpointPrepareRequest[O]{
-		SessionID: sessionID,
-		RunID:     runID,
-		OwnerID:   execution.ownerID,
-		Resume:    resumeReq,
-		IsResume:  resume,
-		State:     execution.state,
-		Outputs:   execution.outputs,
-		NextStep:  execution.step,
+		SessionID:        sessionID,
+		RunID:            runID,
+		OwnerID:          execution.ownerID,
+		Resume:           resumeReq,
+		IsResume:         resume,
+		State:            execution.state,
+		Outputs:          execution.outputs,
+		NextStep:         execution.step,
+		ControlOrigin:    execution.controlOrigin,
+		SourceRevisionID: execution.sourceRevision,
+		Association:      association,
+		Associated:       associated,
 	})
 	if err != nil {
 		return nil, err
@@ -1490,7 +1569,10 @@ func (execution *workflowExecution[I, O]) commitFencedObservedEvent(ctx context.
 	execution.sequence++
 	event = execution.runtimeEvent(event, execution.sequence)
 	appendCtx := eventSinkContext{Context: context.WithoutCancel(ctx)}
-	err := journal.AppendFenced(appendCtx, runlog.RecordFromEvent(event), runlog.Fence{
+	record := runlog.RecordFromEvent(event)
+	record.SourceRunID = execution.sourceRunID
+	record.SourceEventSeq = execution.sourceEventSeq
+	err := journal.AppendFenced(appendCtx, record, runlog.Fence{
 		OwnerID: execution.checkpoint.OwnerID, ClaimSequence: execution.checkpoint.ClaimSequence,
 	})
 	if errors.Is(err, ErrCheckpointLeaseLost) {
@@ -1791,7 +1873,7 @@ func resumedCheckpointResult(status CheckpointStatus) (bool, error) {
 	if status == CheckpointCompleted {
 		return true, nil
 	}
-	return false, fmt.Errorf("workflow: checkpoint status %q cannot resume", status)
+	return false, fmt.Errorf("%w: workflow checkpoint status %q cannot resume", ErrCheckpointConflict, status)
 }
 
 func (execution *workflowExecution[I, O]) startAttempt(resume bool) error {
@@ -2425,14 +2507,18 @@ func (policy SettlePolicy) threshold() (int, error) {
 }
 
 type checkpointPrepareRequest[O any] struct {
-	SessionID string
-	RunID     string
-	OwnerID   string
-	Resume    ResumeRequest
-	IsResume  bool
-	State     runState
-	Outputs   []O
-	NextStep  int
+	SessionID        string
+	RunID            string
+	OwnerID          string
+	Resume           ResumeRequest
+	IsResume         bool
+	State            runState
+	Outputs          []O
+	NextStep         int
+	ControlOrigin    string
+	SourceRevisionID string
+	Association      runlog.Association
+	Associated       bool
 }
 
 type checkpointWriteRequest[O any] struct {
@@ -2493,12 +2579,21 @@ func (c *compiled[I, O]) prepareCheckpoint(ctx context.Context, req checkpointPr
 	meta := c.checkpointMeta(checkpointPayloadMeta{
 		OwnerID: req.OwnerID, LeaseExpiresAt: now.Add(c.checkpointLeaseDuration), ClaimSequence: 1,
 	})
+	if req.Associated {
+		meta.SourceRunID = req.Association.SourceRunID
+		meta.SourceEventSeq = req.Association.SourceEventSeq
+	}
+	if req.SourceRevisionID != "" {
+		meta.ControlOrigin = req.ControlOrigin
+		meta.SourceRevisionID = req.SourceRevisionID
+	}
 	payload, err := encodeCheckpointPayloadWithMeta(req.State, req.Outputs, req.NextStep, meta)
 	if err != nil {
 		return CheckpointRecord{}, err
 	}
 	rec := CheckpointRecord{
 		ID: "checkpoint:" + req.RunID, SessionID: req.SessionID, RunID: req.RunID, WorkflowName: c.name,
+		SourceRunID: meta.SourceRunID, SourceEventSeq: meta.SourceEventSeq, SourceRevisionID: meta.SourceRevisionID,
 		TopologyVersion: c.topologyVersion, SchemaVersion: checkpointSchemaVersion,
 		Version: 1, Status: CheckpointRunning, Payload: payload, ReplayStatus: ReplayUnknown,
 		OwnerID: meta.OwnerID, LeaseExpiresAt: meta.LeaseExpiresAt,
@@ -2593,7 +2688,7 @@ func (c *compiled[I, O]) terminalResumeCheckpoint(record CheckpointRecord) (Chec
 	if payload.PendingEvent != nil {
 		return record, nil
 	}
-	return CheckpointRecord{}, fmt.Errorf("workflow: checkpoint status %q cannot resume", record.Status)
+	return CheckpointRecord{}, fmt.Errorf("%w: workflow checkpoint status %q cannot resume", ErrCheckpointConflict, record.Status)
 }
 
 func checkpointTerminal(status CheckpointStatus) bool {
@@ -2999,6 +3094,8 @@ type checkpointPayload[O any] struct {
 	ExecutionEpoch     int64
 	ControlOrigin      string
 	SourceRevisionID   string
+	SourceRunID        string
+	SourceEventSeq     int64
 }
 
 type checkpointPayloadMeta struct {
@@ -3016,6 +3113,8 @@ type checkpointPayloadMeta struct {
 	ExecutionEpoch     int64
 	ControlOrigin      string
 	SourceRevisionID   string
+	SourceRunID        string
+	SourceEventSeq     int64
 }
 
 type checkpointActivation struct {
@@ -3087,6 +3186,8 @@ func encodeCheckpointPayloadWithMeta[O any](state runState, outputs []O, nextSte
 		ExecutionEpoch:     meta.ExecutionEpoch,
 		ControlOrigin:      meta.ControlOrigin,
 		SourceRevisionID:   meta.SourceRevisionID,
+		SourceRunID:        meta.SourceRunID,
+		SourceEventSeq:     meta.SourceEventSeq,
 	}
 	if payload.HasContext {
 		payload.WorkflowContext.register()
@@ -3173,6 +3274,8 @@ func (p checkpointPayload[O]) meta() checkpointPayloadMeta {
 		ExecutionEpoch:     p.ExecutionEpoch,
 		ControlOrigin:      p.ControlOrigin,
 		SourceRevisionID:   p.SourceRevisionID,
+		SourceRunID:        p.SourceRunID,
+		SourceEventSeq:     p.SourceEventSeq,
 	}
 }
 
@@ -3389,6 +3492,16 @@ func applyEventSinkWrappers(sinks []gopact.EventSink, wrappers []EventSinkWrappe
 		out = append(out, wrapped)
 	}
 	return out
+}
+
+func associateEventSinks(sinks []gopact.EventSink, association runlog.Association) []gopact.EventSink {
+	associated := append([]gopact.EventSink(nil), sinks...)
+	for index, sink := range associated {
+		if target, ok := sink.(runlog.AssociatingSink); ok {
+			associated[index] = target.Associate(association)
+		}
+	}
+	return associated
 }
 
 type strictWorkflowEventSink struct {
