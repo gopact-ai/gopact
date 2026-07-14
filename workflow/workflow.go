@@ -37,6 +37,8 @@ var (
 	ErrCheckpointMismatch = errors.New("workflow: checkpoint identity mismatch")
 	// ErrCheckpointLeaseLost reports that another owner may execute the Run.
 	ErrCheckpointLeaseLost = errors.New("workflow: checkpoint lease lost")
+	// ErrCheckpointTypeConflict reports incompatible concrete checkpoint registrations.
+	ErrCheckpointTypeConflict = errors.New("workflow: checkpoint type conflict")
 	// ErrHistoryLimitExceeded reports a high-level history read that exceeded its configured bound.
 	ErrHistoryLimitExceeded = errors.New("workflow: history limit exceeded")
 )
@@ -513,6 +515,10 @@ func WithTopologyVersion(version string) BuildOption {
 // from the workflow topology, such as values stored inside interface fields or
 // iterator cursors. Each item may be a typed value or a reflect.Type. Because
 // encoding/gob treats T and *T as one base type, a workflow cannot register both.
+// The gob registry is process-global, so configure types during initialization
+// or workflow compilation. The standard registry supports concurrency, but an
+// application's direct gob registrations cannot be transacted with this batch;
+// callers must coordinate external registration with workflow compilation.
 func WithCheckpointTypes(values ...any) BuildOption {
 	return buildOptionFunc(func(cfg *buildConfig) {
 		for _, value := range values {

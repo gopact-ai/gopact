@@ -118,7 +118,7 @@ func TestWorkflowCheckpointProcessHelper(t *testing.T) {
 		wf.Entry(node)
 		wf.Exit(node)
 		_, err := wf.compile()
-		if err == nil || !strings.Contains(err.Error(), "register checkpoint type") || !strings.Contains(err.Error(), "duplicate types") {
+		if !errors.Is(err, ErrCheckpointTypeConflict) || !strings.Contains(err.Error(), "register checkpoint type") || !strings.Contains(err.Error(), "duplicate types") {
 			t.Fatalf("Compile() error = %v, want duplicate registration error", err)
 		}
 		return
@@ -129,9 +129,13 @@ func TestWorkflowCheckpointProcessHelper(t *testing.T) {
 		wf.Entry(node)
 		wf.Exit(node)
 		_, err := wf.compile()
-		if err == nil || !strings.Contains(err.Error(), "register checkpoint type") || !strings.Contains(err.Error(), "duplicate names") {
+		if !errors.Is(err, ErrCheckpointTypeConflict) || !strings.Contains(err.Error(), "base type") {
 			t.Fatalf("Compile() error = %v, want pointer/value conflict", err)
 		}
+		return
+	}
+	if strings.HasPrefix(mode, "batch-") {
+		runCheckpointTypeBatchProcess(t, mode)
 		return
 	}
 	if mode == "iterator-writer" || mode == "iterator-reader" {
@@ -380,6 +384,67 @@ func TestWorkflowCheckpointTypeRegistrationConflictReturnsError(t *testing.T) {
 
 func TestWorkflowCheckpointTypePointerAndValueConflictReturnsError(t *testing.T) {
 	runCheckpointProcess(t, "pointer-value-conflict", t.TempDir()+"/unused")
+}
+
+type checkpointBatchType struct{}
+
+func TestWorkflowCheckpointTypeBadBatchDoesNotPolluteChosenValue(t *testing.T) {
+	runCheckpointProcess(t, "batch-value", t.TempDir()+"/unused")
+}
+
+func TestWorkflowCheckpointTypeBadBatchDoesNotPolluteChosenPointer(t *testing.T) {
+	runCheckpointProcess(t, "batch-pointer", t.TempDir()+"/unused")
+}
+
+func TestWorkflowCheckpointTypeCompositeNameConflictDoesNotPollute(t *testing.T) {
+	runCheckpointProcess(t, "batch-composite", t.TempDir()+"/unused")
+}
+
+func TestWorkflowCheckpointTypeGobNameMatchesStandardLibrary(t *testing.T) {
+	value := reflect.TypeOf(checkpointBatchType{})
+	pointer := reflect.TypeOf((*checkpointBatchType)(nil))
+	doublePointer := reflect.PointerTo(pointer)
+	tests := []struct {
+		name string
+		typ  reflect.Type
+		want string
+	}{
+		{name: "named value", typ: value, want: value.PkgPath() + "." + value.Name()},
+		{name: "named pointer historical name", typ: pointer, want: pointer.String()},
+		{name: "multiple pointers", typ: doublePointer, want: doublePointer.String()},
+		{name: "unnamed composite", typ: reflect.SliceOf(value), want: reflect.SliceOf(value).String()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := checkpointGobName(test.typ); got != test.want {
+				t.Fatalf("checkpointGobName(%s) = %q, want %q", test.typ, got, test.want)
+			}
+		})
+	}
+}
+
+func runCheckpointTypeBatchProcess(t *testing.T, mode string) {
+	t.Helper()
+	value := reflect.TypeOf(checkpointBatchType{})
+	pointer := reflect.TypeOf((*checkpointBatchType)(nil))
+	bad, chosen := []reflect.Type{pointer, value}, value
+	if mode == "batch-pointer" {
+		bad, chosen = []reflect.Type{value, pointer}, pointer
+	}
+	if mode == "batch-composite" {
+		left := reflect.StructOf([]reflect.StructField{{Name: "hidden", PkgPath: "left/package", Type: reflect.TypeOf(0)}})
+		right := reflect.StructOf([]reflect.StructField{{Name: "hidden", PkgPath: "right/package", Type: reflect.TypeOf(0)}})
+		if left == right || left.String() != right.String() {
+			t.Fatalf("composite fixture types = %s and %s", left, right)
+		}
+		bad, chosen = []reflect.Type{left, right}, right
+	}
+	if err := registerWorkflowCheckpointTypes(bad); !errors.Is(err, ErrCheckpointTypeConflict) {
+		t.Fatalf("bad registration error = %v, want ErrCheckpointTypeConflict", err)
+	}
+	if err := registerWorkflowCheckpointTypes([]reflect.Type{chosen}); err != nil {
+		t.Fatalf("chosen registration error = %v, want clean registry", err)
+	}
 }
 
 type checkpointIteratorCursor struct {
