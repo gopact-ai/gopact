@@ -36,6 +36,28 @@ The minimal `agent.Agent` interface remains directly implementable. Only Workflo
 
 Go 1.27 or newer is required. This repository intentionally uses Go 1.27+ generic object methods in both Agent and workflow implementer APIs.
 
+## Optional model capabilities
+
+`Model` and `StreamingModel` remain the minimal text-generation protocols. Providers may additionally implement the independent `Embedder` and `ModelCatalog` interfaces, so applications can discover available models and create embeddings without depending on a provider package:
+
+```go
+catalog, ok := model.(gopact.ModelCatalog)
+if ok {
+	models, err := catalog.ListModels(ctx)
+	// Present models.Models instead of asking the user for an opaque model ID.
+}
+
+embedder, ok := model.(gopact.Embedder)
+if ok {
+	result, err := embedder.Embed(ctx, gopact.EmbeddingRequest{
+		Model: "text-embedding-3-small",
+		Input: []string{"gopact"},
+	})
+}
+```
+
+These capabilities are deliberately optional: a provider that exposes generation but no public embedding or model-catalog API does not need to emulate one. Provider-specific account quotas, subscription limits, media generation, uploads, and other runtime operations stay in the provider adapter rather than the core protocol.
+
 ## Quick Check
 
 ```bash

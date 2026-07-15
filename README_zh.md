@@ -36,6 +36,28 @@
 
 需要 Go 1.27 或更新版本。本仓库按 Go 1.27+ 设计，Agent 与 workflow 的实现者 API 都使用泛型对象方法。
 
+## 可选模型能力
+
+`Model` 与 `StreamingModel` 仍是最小文本生成协议。Provider 可以独立实现 `Embedder` 和 `ModelCatalog`，让应用无需依赖具体 provider 包即可发现可用模型与生成 embedding：
+
+```go
+catalog, ok := model.(gopact.ModelCatalog)
+if ok {
+	models, err := catalog.ListModels(ctx)
+	// 展示 models.Models，不再要求用户手填不透明的模型 ID。
+}
+
+embedder, ok := model.(gopact.Embedder)
+if ok {
+	result, err := embedder.Embed(ctx, gopact.EmbeddingRequest{
+		Model: "text-embedding-3-small",
+		Input: []string{"gopact"},
+	})
+}
+```
+
+这些能力有意保持可选：如果某个 provider 只公开生成能力，没有公开 embedding 或模型目录 API，就不需要模拟一套。账号配额、订阅限制、媒体生成、文件上传等 provider-specific runtime 操作仍留在 provider adapter，不进入 core 协议。
+
 ## 快速检查
 
 ```bash
