@@ -242,6 +242,29 @@ func (o ToolInterruptOutcome) ToolCallID() string { return o.CallID }
 // ToolName returns the invoked tool name.
 func (o ToolInterruptOutcome) ToolName() string { return o.Name }
 
+// ToolEventType identifies a tool call observation.
+type ToolEventType string
+
+// Tool call event types.
+const (
+	ToolEventCallStarted  ToolEventType = "call.started"
+	ToolEventCallFinished ToolEventType = "call.finished"
+)
+
+// ToolEvent is a live, observer-only view of one tool call boundary.
+// Call and Outcome are read-only for the duration of EmitToolEvent.
+type ToolEvent struct {
+	Type    ToolEventType
+	Call    ToolCall
+	Outcome ToolOutcome
+	Err     error
+}
+
+// ToolEventSink receives live tool call events.
+type ToolEventSink interface {
+	EmitToolEvent(context.Context, ToolEvent) error
+}
+
 // ToolChoice constrains model tool selection.
 type ToolChoice struct {
 	Mode string
@@ -467,6 +490,8 @@ type ModelEventType string
 
 // Model event types.
 const (
+	ModelEventCallStarted             ModelEventType = "call.started"
+	ModelEventCallFinished            ModelEventType = "call.finished"
 	ModelEventProviderAttemptStarted  ModelEventType = "provider.attempt_started"
 	ModelEventProviderAttemptFinished ModelEventType = "provider.attempt_finished"
 	ModelEventMessageDelta            ModelEventType = "message.delta"
@@ -478,7 +503,9 @@ const (
 	ModelEventIntent                  ModelEventType = "intent"
 )
 
-// ModelEvent is a bounded process event emitted during a model call.
+// ModelEvent is a live observation emitted during a model call. Request and
+// Response are read-only for the duration of EmitModelEvent. Provider process
+// fields remain bounded by the emitting adapter.
 type ModelEvent struct {
 	Type       ModelEventType
 	Source     string
@@ -486,4 +513,7 @@ type ModelEvent struct {
 	Summary    string
 	Payload    json.RawMessage
 	PayloadRef string
+	Request    *ModelRequest
+	Response   *ModelResponse
+	Err        error
 }
