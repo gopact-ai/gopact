@@ -1349,6 +1349,7 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	}
 	defer execution.stopLiveIterators()
 	execution.ctx = context.WithValue(execution.ctx, eventEmitterContextKey{}, eventEmitter(execution.emitCustom))
+	execution.ctx = context.WithValue(execution.ctx, componentEventEmitterContextKey{}, componentEventEmitter{sinks: cfg.EventSinks})
 	if !resume && !controlled {
 		workflowCtx := WorkflowContext[I, O]{ctx: execution.ctx, Input: input}
 		if err := runLifecycleHooks(c.beforeWorkflow, &workflowCtx); err != nil {
@@ -3601,7 +3602,8 @@ func (delivery eventDelivery) emit(ctx context.Context, sinks []gopact.EventSink
 type eventSinkContext struct{ context.Context }
 
 func (ctx eventSinkContext) Value(key any) any {
-	if _, internalEmitter := key.(eventEmitterContextKey); internalEmitter {
+	switch key.(type) {
+	case eventEmitterContextKey, componentEventEmitterContextKey:
 		return nil
 	}
 	return ctx.Context.Value(key)

@@ -266,6 +266,22 @@ type strictEventSink struct {
 
 func (strictEventSink) StrictEventDelivery() {}
 
+func (s strictEventSink) EmitModelEvent(ctx context.Context, event ModelEvent) error {
+	target, ok := s.EventSink.(ModelEventSink)
+	if !ok {
+		return nil
+	}
+	return target.EmitModelEvent(ctx, event)
+}
+
+func (s strictEventSink) EmitToolEvent(ctx context.Context, event ToolEvent) error {
+	target, ok := s.EventSink.(ToolEventSink)
+	if !ok {
+		return nil
+	}
+	return target.EmitToolEvent(ctx, event)
+}
+
 // IsStrictEventSink reports whether sink failures must stop execution.
 func IsStrictEventSink(sink EventSink) bool {
 	_, ok := sink.(interface{ StrictEventDelivery() })
