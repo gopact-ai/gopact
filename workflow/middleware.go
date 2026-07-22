@@ -84,26 +84,28 @@ func eraseNodeMiddleware[I, O any](name string, mw NodeMiddleware[I, O]) erasedN
 		}
 		middlewareCtx := NodeContext[I, O]{ctx: ctx, Input: typedInput}
 		called := false
-		err := mw(&middlewareCtx, func() error {
-			if called {
-				return fmt.Errorf("workflow: node middleware %q called next more than once", name)
-			}
-			called = true
-			output, err := next(ctx, middlewareCtx.Input, opts...)
-			if err != nil {
-				return err
-			}
-			typedOutput, ok := output.(O)
-			if !ok {
-				return fmt.Errorf(
-					"workflow: middleware %q output type mismatch: got %T, want %s",
-					name,
-					output,
-					typeOf[O](),
-				)
-			}
-			middlewareCtx.Output = typedOutput
-			return nil
+		err := invokeCallbackError(fmt.Sprintf("node middleware %q", name), func() error {
+			return mw(&middlewareCtx, func() error {
+				if called {
+					return fmt.Errorf("workflow: node middleware %q called next more than once", name)
+				}
+				called = true
+				output, err := next(ctx, middlewareCtx.Input, opts...)
+				if err != nil {
+					return err
+				}
+				typedOutput, ok := output.(O)
+				if !ok {
+					return fmt.Errorf(
+						"workflow: middleware %q output type mismatch: got %T, want %s",
+						name,
+						output,
+						typeOf[O](),
+					)
+				}
+				middlewareCtx.Output = typedOutput
+				return nil
+			})
 		})
 		if err != nil {
 			return nil, true, err
@@ -130,7 +132,9 @@ func eraseRouteMiddleware[I, O any](name string, mw RouteMiddleware[I, O]) erase
 			)
 		}
 		middlewareCtx := RouteContext[I, O]{ctx: ctx, NodeName: nodeName, Output: typedOutput, Dispatch: dispatch}
-		if err := mw(&middlewareCtx); err != nil {
+		if err := invokeCallbackError(fmt.Sprintf("route middleware %q", name), func() error {
+			return mw(&middlewareCtx)
+		}); err != nil {
 			return Dispatch{}, true, err
 		}
 		return middlewareCtx.Dispatch, true, nil
@@ -152,7 +156,9 @@ func eraseJoinMiddleware[I any](name string, mw JoinMiddleware[I]) erasedJoinMid
 			)
 		}
 		middlewareCtx := JoinContext[I]{ctx: ctx, NodeName: nodeName, Inputs: inputs, Input: typedInput}
-		if err := mw(&middlewareCtx); err != nil {
+		if err := invokeCallbackError(fmt.Sprintf("join middleware %q", name), func() error {
+			return mw(&middlewareCtx)
+		}); err != nil {
 			return nil, true, err
 		}
 		return middlewareCtx.Input, true, nil
