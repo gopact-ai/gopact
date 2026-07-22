@@ -19,14 +19,22 @@ type deadlineObservation struct {
 
 type deadlineBlockingStore struct {
 	*MemoryStore
-	appendEntered chan<- deadlineObservation
-	finishEntered chan<- deadlineObservation
-	release       <-chan struct{}
-	appendOnce    sync.Once
-	finishOnce    sync.Once
+	appendEntered       chan<- deadlineObservation
+	finishEntered       chan<- deadlineObservation
+	interruptEntered    chan<- deadlineObservation
+	leaseReleaseEntered chan<- deadlineObservation
+	appendErr           error
+	release             <-chan struct{}
+	appendOnce          sync.Once
+	finishOnce          sync.Once
+	interruptOnce       sync.Once
+	leaseReleaseOnce    sync.Once
 }
 
 func (store *deadlineBlockingStore) AppendFenced(ctx context.Context, record runlog.Record, fence runlog.Fence) error {
+	if store.appendErr != nil {
+		return store.appendErr
+	}
 	blocked := false
 	if store.appendEntered != nil {
 		store.appendOnce.Do(func() { blocked = true })
@@ -35,6 +43,22 @@ func (store *deadlineBlockingStore) AppendFenced(ctx context.Context, record run
 		return store.MemoryStore.AppendFenced(ctx, record, fence)
 	}
 	store.appendEntered <- observeDeadline(ctx)
+	return waitForDeadline(ctx, store.release)
+}
+
+func (store *deadlineBlockingStore) Save(ctx context.Context, record CheckpointRecord, version int64) error {
+	var entered chan<- deadlineObservation
+	switch {
+	case store.interruptEntered != nil && record.Status == CheckpointInterrupted:
+		store.interruptOnce.Do(func() { entered = store.interruptEntered })
+	case store.leaseReleaseEntered != nil && record.Status == CheckpointRunning &&
+		record.OwnerID == "" && record.LeaseExpiresAt.IsZero() && record.LeaseDuration == 0:
+		store.leaseReleaseOnce.Do(func() { entered = store.leaseReleaseEntered })
+	}
+	if entered == nil {
+		return store.MemoryStore.Save(ctx, record, version)
+	}
+	entered <- observeDeadline(ctx)
 	return waitForDeadline(ctx, store.release)
 }
 
@@ -167,6 +191,82 @@ func TestWorkflowTerminalFinishHasLeaseBoundDeadlineAndCanResume(t *testing.T) {
 	})
 }
 
+func TestWorkflowInterruptPersistenceHasLeaseBoundDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			leaseDuration = time.Minute
+			renewEvery    = 20 * time.Second
+			writeTimeout  = leaseDuration - renewEvery
+		)
+		entered := make(chan deadlineObservation, 1)
+		release := make(chan struct{})
+		store := &deadlineBlockingStore{
+			MemoryStore: NewMemoryStore(), interruptEntered: entered, release: release,
+		}
+		wf := finalizationInterruptWorkflow(store, leaseDuration, renewEvery)
+		done := make(chan error, 1)
+		go func() {
+			_, err := wf.Invoke(context.Background(), "input", gopact.WithRunID("bounded-interrupt"))
+			done <- err
+		}()
+
+		observation := <-entered
+		if !observation.ok {
+			close(release)
+			synctest.Wait()
+			<-done
+			t.Fatal("interrupt Save() context has no deadline")
+		}
+		if observation.remaining != writeTimeout {
+			t.Fatalf("interrupt Save() deadline = %s, want %s", observation.remaining, writeTimeout)
+		}
+		time.Sleep(writeTimeout)
+		synctest.Wait()
+		if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Invoke() error = %v, want context deadline exceeded", err)
+		}
+	})
+}
+
+func TestWorkflowLeaseReleaseHasLeaseBoundDeadlineAfterSinkFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			leaseDuration = time.Minute
+			renewEvery    = 20 * time.Second
+			writeTimeout  = leaseDuration - renewEvery
+		)
+		sinkErr := errors.New("workflow test: sink unavailable")
+		entered := make(chan deadlineObservation, 1)
+		release := make(chan struct{})
+		store := &deadlineBlockingStore{
+			MemoryStore: NewMemoryStore(), leaseReleaseEntered: entered,
+			appendErr: sinkErr, release: release,
+		}
+		wf := finalizationTimeoutWorkflow(store, leaseDuration, renewEvery)
+		done := make(chan error, 1)
+		go func() {
+			_, err := wf.Invoke(context.Background(), "input", gopact.WithRunID("bounded-release"))
+			done <- err
+		}()
+
+		observation := <-entered
+		if !observation.ok {
+			close(release)
+			synctest.Wait()
+			<-done
+			t.Fatal("lease release Save() context has no deadline")
+		}
+		if observation.remaining != writeTimeout {
+			t.Fatalf("lease release Save() deadline = %s, want %s", observation.remaining, writeTimeout)
+		}
+		time.Sleep(writeTimeout)
+		synctest.Wait()
+		if err := <-done; !errors.Is(err, sinkErr) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Invoke() error = %v, want sink and context deadline errors", err)
+		}
+	})
+}
+
 func finalizationTimeoutWorkflow(store Store, leaseTTL, renewEvery time.Duration) *Workflow[string, string] {
 	wf := New[string, string](
 		"finalization-timeout",
@@ -174,6 +274,23 @@ func finalizationTimeoutWorkflow(store Store, leaseTTL, renewEvery time.Duration
 		WithCheckpointLease(leaseTTL, renewEvery),
 	)
 	node := wf.Node("node", func(_ context.Context, input string) (string, error) { return input, nil })
+	wf.Entry(node)
+	wf.Exit(node)
+	return wf
+}
+
+func finalizationInterruptWorkflow(store Store, leaseTTL, renewEvery time.Duration) *Workflow[string, string] {
+	wf := New[string, string](
+		"finalization-interrupt",
+		WithStore(store),
+		WithCheckpointLease(leaseTTL, renewEvery),
+	)
+	node := wf.Node("node", func(_ context.Context, input string) (string, error) { return input, nil })
+	node.Guard(BeforeRun("approval", GuardFunc[string, string](
+		func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+			return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval"}}, nil
+		},
+	)))
 	wf.Entry(node)
 	wf.Exit(node)
 	return wf
