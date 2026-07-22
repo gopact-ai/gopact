@@ -3,6 +3,8 @@ package workflow
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gopact-ai/gopact"
@@ -46,6 +48,22 @@ func TestWorkflowResumeRetriesRunningActivationWithNextAttempt(t *testing.T) {
 		t.Fatalf("activation record = %+v, want running attempt 1 at node version 1", record)
 	}
 	expireRecordingLease(t, store, "activation-resume")
+	runningCheckpoint := store.records["activation-resume"]
+	_, err = compiled.Invoke(context.Background(), 1, WithResume(ResumeRequest{
+		RunID: "activation-resume",
+		Resolutions: []InterruptResolution{{
+			InterruptID: "unexpected", PayloadRef: "artifact://unexpected",
+		}},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "unexpected") {
+		t.Fatalf("resume with resolution error = %v, want unexpected resolution", err)
+	}
+	if bodyRuns != 0 {
+		t.Fatalf("body runs after invalid resume = %d, want 0", bodyRuns)
+	}
+	if current := store.records["activation-resume"]; !reflect.DeepEqual(current, runningCheckpoint) {
+		t.Fatalf("checkpoint after invalid resume = %+v, want unchanged running checkpoint", current)
+	}
 	output, err := compiled.Invoke(context.Background(), 1, WithResume(ResumeRequest{RunID: "activation-resume"}))
 	if err != nil || output != 1 {
 		t.Fatalf("resumed Invoke() = %d, %v, want 1", output, err)

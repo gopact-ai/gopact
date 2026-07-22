@@ -359,7 +359,9 @@ type Store interface {
 type ResumeRequest struct {
 	RunID        string
 	CheckpointID string
-	Resolutions  []InterruptResolution
+	// Resolutions must contain each pending interrupt exactly once when resuming
+	// an interrupted checkpoint, and must otherwise be empty.
+	Resolutions []InterruptResolution
 }
 
 // InterruptResolution supplies a workflow-owned interrupt resolution by ref.
@@ -2838,6 +2840,12 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 	}
 	if err := c.validateCheckpointIdentity(payload); err != nil {
 		return CheckpointRecord{}, err
+	}
+	if rec.Status != CheckpointInterrupted && len(req.Resolutions) > 0 {
+		return CheckpointRecord{}, fmt.Errorf(
+			"workflow: interrupt resolutions are unexpected for checkpoint status %q",
+			rec.Status,
+		)
 	}
 	now := time.Now()
 	claimSequence := rec.ClaimSequence
