@@ -195,7 +195,7 @@ func (execution *workflowExecution[I, O]) executeBatch(batch []batchActivation) 
 func (execution *workflowExecution[I, O]) runActivation(ctx context.Context, item batchActivation) (result nodeRunResult, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = callbackPanicError(fmt.Sprintf("node %q", item.activation.node), recovered)
+			err = callbackPanicError("node", item.activation.node, recovered)
 		}
 	}()
 	nodeCtx, txn := execution.nodeContext(ctx, item.activation, item.step)

@@ -84,7 +84,7 @@ func eraseNodeMiddleware[I, O any](name string, mw NodeMiddleware[I, O]) erasedN
 		}
 		middlewareCtx := NodeContext[I, O]{ctx: ctx, Input: typedInput}
 		called := false
-		err := invokeCallbackError(fmt.Sprintf("node middleware %q", name), func() error {
+		err := invokeCallbackError("node middleware", name, func() error {
 			return mw(&middlewareCtx, func() error {
 				if called {
 					return fmt.Errorf("workflow: node middleware %q called next more than once", name)
@@ -132,7 +132,7 @@ func eraseRouteMiddleware[I, O any](name string, mw RouteMiddleware[I, O]) erase
 			)
 		}
 		middlewareCtx := RouteContext[I, O]{ctx: ctx, NodeName: nodeName, Output: typedOutput, Dispatch: dispatch}
-		if err := invokeCallbackError(fmt.Sprintf("route middleware %q", name), func() error {
+		if err := invokeCallbackError("route middleware", name, func() error {
 			return mw(&middlewareCtx)
 		}); err != nil {
 			return Dispatch{}, true, err
@@ -156,7 +156,7 @@ func eraseJoinMiddleware[I any](name string, mw JoinMiddleware[I]) erasedJoinMid
 			)
 		}
 		middlewareCtx := JoinContext[I]{ctx: ctx, NodeName: nodeName, Inputs: inputs, Input: typedInput}
-		if err := invokeCallbackError(fmt.Sprintf("join middleware %q", name), func() error {
+		if err := invokeCallbackError("join middleware", name, func() error {
 			return mw(&middlewareCtx)
 		}); err != nil {
 			return nil, true, err

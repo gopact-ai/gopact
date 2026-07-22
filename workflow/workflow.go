@@ -1473,7 +1473,7 @@ func (c *compiled[I, O]) initialContext(input I) (any, error) {
 	if c.contextInit == nil {
 		return input, nil
 	}
-	return invokeCallback("context initializer", func() (any, error) {
+	return invokeCallback("context initializer", "", func() (any, error) {
 		return c.contextInit(input)
 	})
 }
@@ -3507,7 +3507,7 @@ func (n *Node[I, O]) joinAny(ctx context.Context, inputs Inputs) (any, error) {
 	if n.join == nil {
 		return inputs, nil
 	}
-	return invokeCallback("join callback", func() (I, error) {
+	return invokeCallback("join callback", "", func() (I, error) {
 		return n.join(ctx, inputs)
 	})
 }
@@ -3520,7 +3520,7 @@ func (n *Node[I, O]) routeAny(ctx context.Context, output any) (Dispatch, error)
 	if !ok {
 		return Dispatch{}, fmt.Errorf("output type mismatch: got %T, want %s", output, typeOf[O]())
 	}
-	return invokeCallback("route callback", func() (Dispatch, error) {
+	return invokeCallback("route callback", "", func() (Dispatch, error) {
 		return n.route(ctx, typed)
 	})
 }
