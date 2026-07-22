@@ -207,8 +207,8 @@ func requireAgentEvents(t *testing.T, identity agent.Identity, runID string, eve
 
 func requireRootAgentEvent(t *testing.T, identity agent.Identity, runID string, index int, event gopact.Event) {
 	t.Helper()
-	workflowBacked := event.DefinitionID == identity.Name && event.Source != ""
-	if event.SessionID != conformanceSessionID || event.ParentRunID != "" || !workflowBacked {
+	hasWorkflowEnvelope := event.DefinitionID == identity.Name && event.Source != ""
+	if event.SessionID != conformanceSessionID || event.ParentRunID != "" || !hasWorkflowEnvelope {
 		t.Fatalf("event[%d] = %+v, want accurate root envelope", index, event)
 	}
 }
