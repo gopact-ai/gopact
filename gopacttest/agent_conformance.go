@@ -47,7 +47,7 @@ func RequireWorkflowAgentConformance(t *testing.T, testCase AgentConformanceCase
 	requireAgentConformance(t, testCase, true)
 }
 
-func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, workflowBacked bool) {
+func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, withWorkflow bool) {
 	t.Helper()
 	if isNilConformanceValue(testCase.Agent) {
 		t.Fatal("agent is nil")
@@ -71,7 +71,7 @@ func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, workfl
 		gopact.WithSessionID(conformanceSessionID),
 		gopact.WithRunID("conformance-lifecycle"),
 	}
-	if workflowBacked {
+	if withWorkflow {
 		options = append(options, gopact.WithEventHandler(func(_ context.Context, event gopact.Event) error {
 			eventsMu.Lock()
 			defer eventsMu.Unlock()
@@ -89,7 +89,7 @@ func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, workfl
 	if !reflect.DeepEqual(request, requestBefore) {
 		t.Fatalf("Invoke() mutated request: before=%+v after=%+v", requestBefore, request)
 	}
-	if workflowBacked {
+	if withWorkflow {
 		eventsMu.Lock()
 		eventSnapshot := append([]gopact.Event(nil), events...)
 		eventsMu.Unlock()
@@ -103,7 +103,7 @@ func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, workfl
 		t.Fatalf("canceled Invoke() error = %v, want context.Canceled", err)
 	}
 
-	if workflowBacked {
+	if withWorkflow {
 		if _, err := testCase.Agent.Invoke(
 			context.Background(),
 			cloneAgentRequest(testCase.Request),

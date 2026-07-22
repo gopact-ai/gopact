@@ -53,11 +53,7 @@ type directEchoAgent struct{ identity agent.Identity }
 
 func (target directEchoAgent) Identity() agent.Identity { return target.identity }
 
-func (target directEchoAgent) Invoke(
-	ctx context.Context,
-	request agent.Request,
-	_ ...gopact.RunOption,
-) (agent.Response, error) {
+func (directEchoAgent) Invoke(ctx context.Context, request agent.Request, _ ...gopact.RunOption) (agent.Response, error) {
 	if err := ctx.Err(); err != nil {
 		return agent.Response{}, err
 	}
