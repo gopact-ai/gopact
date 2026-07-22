@@ -128,7 +128,7 @@ func (hook LifecycleHook[C]) emit(ctx context.Context, eventType string) error {
 	if ctx == nil {
 		return nil
 	}
-	return Emit(ctx, gopact.Event{Type: eventType, Summary: hook.Name})
+	return emitRuntimeEvent(ctx, gopact.Event{Type: eventType, Summary: hook.Name})
 }
 
 func lifecycleContext(ctx any) context.Context {
