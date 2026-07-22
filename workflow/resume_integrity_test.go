@@ -124,6 +124,28 @@ func TestResolvePendingInterruptsRejectsCorruptPendingIDs(t *testing.T) {
 	}
 }
 
+func TestWorkflowRejectsNodeInterruptWithoutIDBeforePersisting(t *testing.T) {
+	store := NewMemoryStore()
+	wf := New[string, string]("invalid-node-interrupt", WithStore(store))
+	plan := testNode(wf, "plan", func(context.Context, string) (string, error) {
+		return "", InterruptError{Request: InterruptRequest{}}
+	})
+	wf.Entry(plan)
+	wf.Exit(plan)
+
+	_, err := wf.Invoke(context.Background(), "input", gopact.WithRunID("invalid-node-interrupt"))
+	if err == nil || !strings.Contains(err.Error(), "interrupt id is required") {
+		t.Fatalf("Invoke() error = %v, want interrupt id error", err)
+	}
+	checkpoint, loadErr := store.Load(context.Background(), "invalid-node-interrupt")
+	if loadErr != nil {
+		t.Fatalf("Load() error = %v", loadErr)
+	}
+	if checkpoint.Status == CheckpointInterrupted {
+		t.Fatalf("checkpoint status = %q, must not persist invalid interrupt", checkpoint.Status)
+	}
+}
+
 func TestValidateResolvedInterruptReplay(t *testing.T) {
 	resolved := []checkpointInterruptResolution{
 		{InterruptID: "first", PayloadRef: "artifact://first"},

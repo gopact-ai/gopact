@@ -2239,6 +2239,9 @@ func (execution *workflowExecution[I, O]) finishInterrupt(state runState, waits 
 	seen := make(map[string]struct{}, len(requests))
 	events := make([]gopact.Event, 0, len(requests)+1)
 	for _, interrupt := range requests {
+		if interrupt.ID == "" {
+			return errors.New("workflow: interrupt id is required")
+		}
 		if _, ok := seen[interrupt.ID]; ok {
 			return fmt.Errorf("workflow: duplicate pending interrupt id %q", interrupt.ID)
 		}
