@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gopact-ai/gopact"
@@ -45,6 +46,89 @@ func TestWorkflowCallbackPanicsFailRun(t *testing.T) {
 				t.Fatalf("finished checkpoints = %+v, want final status %q", store.finished, CheckpointFailed)
 			}
 		})
+	}
+}
+
+func TestNodeMiddlewareCannotSwallowDownstreamPanic(t *testing.T) {
+	store := &recordingCheckpointer{}
+	cause := errors.New("node body panic")
+	wf := New[int, int](
+		"middleware-panic",
+		WithStore(storeWithCheckpointer(store)),
+		WithPlugins(eventTypePlugin{
+			name: "middleware-panic",
+			register: func(registry *Registry) error {
+				if err := registry.RegisterNodeMiddleware[int, int](
+					"outer-fallback",
+					func(ctx *NodeContext[int, int], next NodeNext[int, int]) error {
+						if err := next(); err != nil {
+							ctx.Output = 42
+							return nil
+						}
+						return nil
+					},
+				); err != nil {
+					return err
+				}
+				return registry.RegisterNodeMiddleware[int, int](
+					"inner",
+					func(_ *NodeContext[int, int], next NodeNext[int, int]) error {
+						return next()
+					},
+				)
+			},
+		}),
+	)
+	plan := testNode(wf, "plan", func(context.Context, int) (int, error) {
+		panic(cause)
+	})
+	wf.Entry(plan)
+	wf.Exit(plan)
+	compiled, err := wf.compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	var events []string
+
+	err, recovered := invokeCallbackPanicWorkflow(compiled, func(event gopact.Event) {
+		events = append(events, event.Type)
+	})
+
+	if recovered != nil {
+		t.Fatalf("Invoke() panic = %v, want error", recovered)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("Invoke() error = %v, want panic cause %v", err, cause)
+	}
+	if len(events) == 0 || events[len(events)-1] != EventWorkflowFailed {
+		t.Fatalf("events = %v, want final %q", events, EventWorkflowFailed)
+	}
+	if len(store.finished) == 0 || store.finished[len(store.finished)-1].Status != CheckpointFailed {
+		t.Fatalf("finished checkpoints = %+v, want final status %q", store.finished, CheckpointFailed)
+	}
+}
+
+func TestWorkflowNonErrorCallbackPanicFailsRun(t *testing.T) {
+	store := &recordingCheckpointer{}
+	const cause = "route panic value"
+	compiled := compileCallbackPanicWorkflow(t, store, "route", cause)
+	var events []string
+
+	err, recovered := invokeCallbackPanicWorkflow(compiled, func(event gopact.Event) {
+		events = append(events, event.Type)
+	})
+
+	if recovered != nil {
+		t.Fatalf("Invoke() panic = %v, want error", recovered)
+	}
+	if err == nil || !strings.Contains(err.Error(), cause) {
+		t.Fatalf("Invoke() error = %v, want panic value %q", err, cause)
+	}
+	if len(events) == 0 || events[len(events)-1] != EventWorkflowFailed {
+		t.Fatalf("events = %v, want final %q", events, EventWorkflowFailed)
+	}
+	if len(store.finished) == 0 || store.finished[len(store.finished)-1].Status != CheckpointFailed {
+		t.Fatalf("finished checkpoints = %+v, want final status %q", store.finished, CheckpointFailed)
 	}
 }
 
@@ -96,7 +180,7 @@ func TestWorkflowStartupCallbackPanicsReturnErrorsWithoutTerminalFact(t *testing
 	}
 }
 
-func compileCallbackPanicWorkflow(t *testing.T, store *recordingCheckpointer, target string, cause error) *compiled[int, int] {
+func compileCallbackPanicWorkflow(t *testing.T, store *recordingCheckpointer, target string, cause any) *compiled[int, int] {
 	t.Helper()
 	panicAt := func(name string) {
 		if target == name {

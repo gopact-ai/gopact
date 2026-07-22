@@ -84,28 +84,26 @@ func eraseNodeMiddleware[I, O any](name string, mw NodeMiddleware[I, O]) erasedN
 		}
 		middlewareCtx := NodeContext[I, O]{ctx: ctx, Input: typedInput}
 		called := false
-		err := invokeCallbackError("node middleware", name, func() error {
-			return mw(&middlewareCtx, func() error {
-				if called {
-					return fmt.Errorf("workflow: node middleware %q called next more than once", name)
-				}
-				called = true
-				output, err := next(ctx, middlewareCtx.Input, opts...)
-				if err != nil {
-					return err
-				}
-				typedOutput, ok := output.(O)
-				if !ok {
-					return fmt.Errorf(
-						"workflow: middleware %q output type mismatch: got %T, want %s",
-						name,
-						output,
-						typeOf[O](),
-					)
-				}
-				middlewareCtx.Output = typedOutput
-				return nil
-			})
+		err := mw(&middlewareCtx, func() error {
+			if called {
+				return fmt.Errorf("workflow: node middleware %q called next more than once", name)
+			}
+			called = true
+			output, err := next(ctx, middlewareCtx.Input, opts...)
+			if err != nil {
+				return err
+			}
+			typedOutput, ok := output.(O)
+			if !ok {
+				return fmt.Errorf(
+					"workflow: middleware %q output type mismatch: got %T, want %s",
+					name,
+					output,
+					typeOf[O](),
+				)
+			}
+			middlewareCtx.Output = typedOutput
+			return nil
 		})
 		if err != nil {
 			return nil, true, err
