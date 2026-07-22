@@ -22,7 +22,6 @@ It contains only:
 - `agent` Identity/Request/Response, typed observations, tool contracts, and immutable directories;
 - `workflow` as the sole execution runtime, with typed nodes/routes/joins, hooks/middleware, guards, checkpoints, history, and same-Run control;
 - `runlog` append/query/sink contracts and an in-memory implementation;
-- `provider` model registry/routing helpers and basic provider normalization;
 - `gopacttest` reusable protocol conformance helpers for models, minimal Agents, and Workflow-backed Agents.
 
 Official providers, concrete Agents, and the SQLite adapter live in `gopact-ext`; runnable examples live in `gopact-examples`.

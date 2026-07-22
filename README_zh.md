@@ -22,7 +22,6 @@
 - `agent`：Agent Identity/Request/Response、typed Observation、Tool contract 和 immutable Directory；
 - `workflow`：唯一执行 runtime，提供 typed node/route/join、hook/middleware、guard、checkpoint、history 与同 Run control；
 - `runlog`：append/query/sink contract 与内存实现；
-- `provider`：provider registry/router/fallback 和 basic provider normalization；
 - `gopacttest`：跨仓可复用的 Model、minimal Agent 与 Workflow-backed Agent 协议 conformance helper。
 
 官方 provider、concrete Agent 和 SQLite adapter 位于 `gopact-ext`，可运行示例位于 `gopact-examples`。
