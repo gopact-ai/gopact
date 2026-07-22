@@ -23,11 +23,13 @@ It contains only:
 - `workflow` as the sole execution runtime, with typed nodes/routes/joins, hooks/middleware, guards, checkpoints, history, and same-Run control;
 - `runlog` append/query/sink contracts and an in-memory implementation;
 - `provider` model registry/routing helpers and basic provider normalization;
-- `gopacttest` reusable model and Agent conformance helpers.
+- `gopacttest` reusable protocol conformance helpers for models, minimal Agents, and Workflow-backed Agents.
 
 Official providers, concrete Agents, and the SQLite adapter live in `gopact-ext`; runnable examples live in `gopact-examples`.
 
 The minimal `agent.Agent` interface remains directly implementable. Only Workflow-backed Agents receive the configured Workflow's checkpoint, recovery, control, and history semantics; direct implementations do not acquire those guarantees automatically.
+
+Use `gopacttest.RequireAgentConformance` for the shared direct/Workflow-backed Agent protocol. Use `gopacttest.RequireWorkflowAgentConformance` when an implementation promises Workflow lifecycle, lineage, and run-extension semantics. The response callback is a deterministic test assertion for the supplied fixture; task-quality evaluation and release acceptance remain application responsibilities, not runtime APIs.
 
 `SessionID` is runtime correlation metadata for relating multiple Runs, not a Session container or an authentication, authorization, or tenant-isolation credential. Applications must authorize before querying and isolate data with separate Stores, database namespaces, or an outer query wrapper. Agent Context is the final `gopact.ModelRequest` explicitly built by business or concrete-Agent Workflow logic; core does not inject implicit conversation or semantic-memory state.
 

@@ -23,11 +23,13 @@
 - `workflow`：唯一执行 runtime，提供 typed node/route/join、hook/middleware、guard、checkpoint、history 与同 Run control；
 - `runlog`：append/query/sink contract 与内存实现；
 - `provider`：provider registry/router/fallback 和 basic provider normalization；
-- `gopacttest`：跨仓可复用的 Model 与 Agent conformance helper。
+- `gopacttest`：跨仓可复用的 Model、minimal Agent 与 Workflow-backed Agent 协议 conformance helper。
 
 官方 provider、concrete Agent 和 SQLite adapter 位于 `gopact-ext`，可运行示例位于 `gopact-examples`。
 
 最小 `agent.Agent` interface 仍可由用户直接实现。只有 Workflow-backed Agent 获得其所配置 Workflow 的 checkpoint、恢复、控制与历史语义；直接实现不会自动获得这些保证。
+
+共享的 direct/Workflow-backed Agent 协议使用 `gopacttest.RequireAgentConformance`；实现承诺 Workflow lifecycle、lineage 与 run-extension 语义时，使用 `gopacttest.RequireWorkflowAgentConformance`。response callback 只是针对给定 fixture 的确定性测试断言；任务质量评估与 release acceptance 仍由 application 负责，不是 runtime API。
 
 `SessionID` 是关联多个 Run 的 runtime metadata，不是 Session 容器，也不是认证、授权或租户隔离凭据。应用必须在查询前完成授权，并通过独立 Store、数据库 namespace 或外层 query wrapper 隔离数据。Agent Context 是由业务或具体 Agent 的 Workflow 逻辑显式构造的最终 `gopact.ModelRequest`；core 不隐式注入会话或 semantic Memory 状态。
 

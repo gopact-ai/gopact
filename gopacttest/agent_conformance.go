@@ -1,4 +1,5 @@
-// Package gopacttest provides reusable conformance helpers for gopact extensions.
+// Package gopacttest provides reusable protocol conformance helpers for gopact implementations.
+// Application task-quality evaluation remains outside the runtime and this package.
 package gopacttest
 
 import (
@@ -24,6 +25,7 @@ const (
 )
 
 // AgentConformanceCase configures reusable public Agent contract checks.
+// Validate is a deterministic test assertion for Request, not a task-quality evaluator.
 type AgentConformanceCase struct {
 	Agent           agent.Agent
 	Request         agent.Request
@@ -31,8 +33,21 @@ type AgentConformanceCase struct {
 	ConcurrentCalls int
 }
 
-// RequireAgentConformance verifies the shared ADK Agent contract.
+// RequireAgentConformance verifies the minimal ADK Agent contract shared by
+// direct and Workflow-backed implementations.
 func RequireAgentConformance(t *testing.T, testCase AgentConformanceCase) {
+	t.Helper()
+	requireAgentConformance(t, testCase, false)
+}
+
+// RequireWorkflowAgentConformance verifies the minimal Agent contract plus
+// Workflow lifecycle, lineage, and run-extension semantics.
+func RequireWorkflowAgentConformance(t *testing.T, testCase AgentConformanceCase) {
+	t.Helper()
+	requireAgentConformance(t, testCase, true)
+}
+
+func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, workflowBacked bool) {
 	t.Helper()
 	if isNilConformanceValue(testCase.Agent) {
 		t.Fatal("agent is nil")
@@ -52,18 +67,19 @@ func RequireAgentConformance(t *testing.T, testCase AgentConformanceCase) {
 	requestBefore := cloneAgentRequest(request)
 	var events []gopact.Event
 	var eventsMu sync.Mutex
-	response, err := testCase.Agent.Invoke(
-		context.Background(),
-		request,
+	options := []gopact.RunOption{
 		gopact.WithSessionID(conformanceSessionID),
 		gopact.WithRunID("conformance-lifecycle"),
-		gopact.WithEventHandler(func(_ context.Context, event gopact.Event) error {
+	}
+	if workflowBacked {
+		options = append(options, gopact.WithEventHandler(func(_ context.Context, event gopact.Event) error {
 			eventsMu.Lock()
 			defer eventsMu.Unlock()
 			events = append(events, event)
 			return nil
-		}),
-	)
+		}))
+	}
+	response, err := testCase.Agent.Invoke(context.Background(), request, options...)
 	if err != nil {
 		t.Fatalf("Invoke() error = %v", err)
 	}
@@ -73,10 +89,12 @@ func RequireAgentConformance(t *testing.T, testCase AgentConformanceCase) {
 	if !reflect.DeepEqual(request, requestBefore) {
 		t.Fatalf("Invoke() mutated request: before=%+v after=%+v", requestBefore, request)
 	}
-	eventsMu.Lock()
-	eventSnapshot := append([]gopact.Event(nil), events...)
-	eventsMu.Unlock()
-	requireAgentEvents(t, identity, "conformance-lifecycle", eventSnapshot)
+	if workflowBacked {
+		eventsMu.Lock()
+		eventSnapshot := append([]gopact.Event(nil), events...)
+		eventsMu.Unlock()
+		requireAgentEvents(t, identity, "conformance-lifecycle", eventSnapshot)
+	}
 
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -85,12 +103,14 @@ func RequireAgentConformance(t *testing.T, testCase AgentConformanceCase) {
 		t.Fatalf("canceled Invoke() error = %v, want context.Canceled", err)
 	}
 
-	if _, err := testCase.Agent.Invoke(
-		context.Background(),
-		cloneAgentRequest(testCase.Request),
-		conformanceUnknownRunOption{},
-	); err == nil {
-		t.Fatal("Invoke() accepted an unknown run extension")
+	if workflowBacked {
+		if _, err := testCase.Agent.Invoke(
+			context.Background(),
+			cloneAgentRequest(testCase.Request),
+			conformanceUnknownRunOption{},
+		); err == nil {
+			t.Fatal("Invoke() accepted an unknown run extension")
+		}
 	}
 
 	concurrentCalls := testCase.ConcurrentCalls
