@@ -1,9 +1,14 @@
 package workflow
 
 import (
+	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gopact-ai/gopact"
 )
 
 func TestResolvePendingInterruptsRequiresExactUniqueSet(t *testing.T) {
@@ -116,5 +121,193 @@ func TestResolvePendingInterruptsRejectsCorruptPendingIDs(t *testing.T) {
 				t.Fatalf("resolvePendingInterrupts() error = %v, want ErrInvalidCheckpoint", err)
 			}
 		})
+	}
+}
+
+func TestValidateResolvedInterruptReplay(t *testing.T) {
+	resolved := []checkpointInterruptResolution{
+		{InterruptID: "first", PayloadRef: "artifact://first"},
+		{InterruptID: "second", PayloadRef: "artifact://second"},
+	}
+	tests := []struct {
+		name    string
+		replay  []InterruptResolution
+		wantErr string
+	}{
+		{name: "omitted"},
+		{
+			name: "exact in arbitrary order",
+			replay: []InterruptResolution{
+				{InterruptID: "second", PayloadRef: "artifact://second"},
+				{InterruptID: "first", PayloadRef: "artifact://first"},
+			},
+		},
+		{
+			name:    "missing",
+			replay:  []InterruptResolution{{InterruptID: "first", PayloadRef: "artifact://first"}},
+			wantErr: `interrupt resolution "second" is required`,
+		},
+		{
+			name: "duplicate",
+			replay: []InterruptResolution{
+				{InterruptID: "first", PayloadRef: "artifact://first"},
+				{InterruptID: "first", PayloadRef: "artifact://first"},
+			},
+			wantErr: `duplicate interrupt resolution "first"`,
+		},
+		{
+			name: "extra",
+			replay: []InterruptResolution{
+				{InterruptID: "first", PayloadRef: "artifact://first"},
+				{InterruptID: "second", PayloadRef: "artifact://second"},
+				{InterruptID: "extra", PayloadRef: "artifact://extra"},
+			},
+			wantErr: `interrupt resolution "extra" is unexpected`,
+		},
+		{
+			name: "empty id",
+			replay: []InterruptResolution{
+				{PayloadRef: "artifact://first"},
+				{InterruptID: "second", PayloadRef: "artifact://second"},
+			},
+			wantErr: "interrupt resolution id is required",
+		},
+		{
+			name: "empty payload ref",
+			replay: []InterruptResolution{
+				{InterruptID: "first"},
+				{InterruptID: "second", PayloadRef: "artifact://second"},
+			},
+			wantErr: `interrupt resolution "first" payload ref is required`,
+		},
+		{
+			name: "payload ref mismatch",
+			replay: []InterruptResolution{
+				{InterruptID: "first", PayloadRef: "artifact://other"},
+				{InterruptID: "second", PayloadRef: "artifact://second"},
+			},
+			wantErr: `interrupt resolution "first" payload ref does not match checkpoint`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateResolvedInterruptReplay(resolved, test.replay)
+			if test.wantErr == "" && err != nil {
+				t.Fatalf("validateResolvedInterruptReplay() error = %v", err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("validateResolvedInterruptReplay() error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateResolvedInterruptReplayRejectsCorruptCheckpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		resolved []checkpointInterruptResolution
+	}{
+		{name: "empty id", resolved: []checkpointInterruptResolution{{PayloadRef: "artifact://first"}}},
+		{name: "empty payload ref", resolved: []checkpointInterruptResolution{{InterruptID: "first"}}},
+		{
+			name: "duplicate id",
+			resolved: []checkpointInterruptResolution{
+				{InterruptID: "first", PayloadRef: "artifact://first"},
+				{InterruptID: "first", PayloadRef: "artifact://other"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateResolvedInterruptReplay(test.resolved, nil); !errors.Is(err, ErrInvalidCheckpoint) {
+				t.Fatalf("validateResolvedInterruptReplay() error = %v, want ErrInvalidCheckpoint", err)
+			}
+		})
+	}
+}
+
+func TestWorkflowRunningResumeAcceptsOnlyExactResolutionReplay(t *testing.T) {
+	store := &recordingCheckpointer{}
+	guardCalls := 0
+	bodyRuns := 0
+	wf := New[string, string]("resolution-replay", WithStore(storeWithCheckpointer(store)))
+	plan := testNode(wf, "plan", func(_ context.Context, input string) (string, error) {
+		bodyRuns++
+		return input + "!", nil
+	})
+	plan.Guard(BeforeRun("approval", GuardFunc[string, string](
+		func(context.Context, GuardContext[string, string]) (GuardDecision[string, string], error) {
+			guardCalls++
+			return GuardInterrupt[string, string]{Request: InterruptRequest{ID: "approval"}}, nil
+		},
+	)))
+	wf.Entry(plan)
+	wf.Exit(plan)
+	compiled, err := wf.compile()
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	_, err = compiled.Invoke(context.Background(), "input", gopact.WithRunID("resolution-replay"))
+	var interrupt InterruptError
+	if !errors.As(err, &interrupt) {
+		t.Fatalf("Invoke() error = %v, want InterruptError", err)
+	}
+	resolution := InterruptResolution{InterruptID: "approval", PayloadRef: "artifact://approved"}
+	sinkErr := errors.New("checkpoint loaded sink failed")
+	_, err = compiled.Invoke(
+		context.Background(),
+		"ignored",
+		WithResume(ResumeRequest{RunID: "resolution-replay", Resolutions: []InterruptResolution{resolution}}),
+		gopact.WithStrictEventHandler(func(_ context.Context, event gopact.Event) error {
+			if event.Type == EventCheckpointLoaded {
+				return sinkErr
+			}
+			return nil
+		}),
+	)
+	if !errors.Is(err, sinkErr) {
+		t.Fatalf("first resume error = %v, want sink failure", err)
+	}
+	if guardCalls != 1 || bodyRuns != 0 {
+		t.Fatalf("calls after first resume = guard %d body %d, want 1/0", guardCalls, bodyRuns)
+	}
+	runningCheckpoint := store.records["resolution-replay"]
+	if runningCheckpoint.Status != CheckpointRunning {
+		t.Fatalf("checkpoint status = %q, want %q", runningCheckpoint.Status, CheckpointRunning)
+	}
+	runningPayload, err := decodeCheckpointPayload[string](runningCheckpoint.Payload)
+	if err != nil {
+		t.Fatalf("decode running checkpoint payload error = %v", err)
+	}
+	runningMeta := runningPayload.meta()
+	runningMeta.LeaseExpiresAt = time.Now().Add(-time.Second)
+	runningCheckpoint.LeaseExpiresAt = runningMeta.LeaseExpiresAt
+	runningCheckpoint.Payload, err = encodeCheckpointPayloadWithMeta(
+		runningPayload.state(), runningPayload.Outputs, runningPayload.NextStep, runningMeta,
+	)
+	if err != nil {
+		t.Fatalf("encode expired running checkpoint payload error = %v", err)
+	}
+	store.records["resolution-replay"] = runningCheckpoint
+	_, err = compiled.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{
+		RunID: "resolution-replay",
+		Resolutions: []InterruptResolution{{
+			InterruptID: "approval", PayloadRef: "artifact://conflicting",
+		}},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "payload ref") {
+		t.Fatalf("conflicting replay error = %v, want payload ref mismatch", err)
+	}
+	if current := store.records["resolution-replay"]; !reflect.DeepEqual(current, runningCheckpoint) {
+		t.Fatalf("checkpoint after conflicting replay = %+v, want unchanged running checkpoint", current)
+	}
+	got, err := compiled.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{
+		RunID: "resolution-replay", Resolutions: []InterruptResolution{resolution},
+	}))
+	if err != nil || got != "input!" {
+		t.Fatalf("exact replay Invoke() = %q, %v, want input!", got, err)
+	}
+	if guardCalls != 1 || bodyRuns != 1 {
+		t.Fatalf("final calls = guard %d body %d, want 1/1", guardCalls, bodyRuns)
 	}
 }
