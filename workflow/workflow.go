@@ -2876,16 +2876,40 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 
 func resolvePendingInterrupts(pending []checkpointInterrupt, resolutions []InterruptResolution) ([]checkpointInterruptResolution, error) {
 	if len(pending) == 0 {
-		return nil, errors.New("workflow: interrupted checkpoint is missing interrupt state")
+		return nil, fmt.Errorf("%w: interrupted checkpoint is missing interrupt state", ErrInvalidCheckpoint)
 	}
-	resolved := make([]checkpointInterruptResolution, 0, len(pending))
+	pendingIDs := make(map[string]struct{}, len(pending))
 	for _, interrupt := range pending {
-		resolution, ok := findInterruptResolution(resolutions, interrupt.Request.ID)
-		if !ok {
-			return nil, fmt.Errorf("workflow: interrupt resolution %q is required", interrupt.Request.ID)
+		interruptID := interrupt.Request.ID
+		if interruptID == "" {
+			return nil, fmt.Errorf("%w: pending interrupt id is required", ErrInvalidCheckpoint)
+		}
+		if _, duplicate := pendingIDs[interruptID]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate pending interrupt id %q", ErrInvalidCheckpoint, interruptID)
+		}
+		pendingIDs[interruptID] = struct{}{}
+	}
+	resolutionsByID := make(map[string]InterruptResolution, len(resolutions))
+	for _, resolution := range resolutions {
+		if resolution.InterruptID == "" {
+			return nil, errors.New("workflow: interrupt resolution id is required")
+		}
+		if _, duplicate := resolutionsByID[resolution.InterruptID]; duplicate {
+			return nil, fmt.Errorf("workflow: duplicate interrupt resolution %q", resolution.InterruptID)
+		}
+		if _, expected := pendingIDs[resolution.InterruptID]; !expected {
+			return nil, fmt.Errorf("workflow: interrupt resolution %q is unexpected", resolution.InterruptID)
 		}
 		if resolution.PayloadRef == "" {
 			return nil, fmt.Errorf("workflow: interrupt resolution %q payload ref is required", resolution.InterruptID)
+		}
+		resolutionsByID[resolution.InterruptID] = resolution
+	}
+	resolved := make([]checkpointInterruptResolution, 0, len(pending))
+	for _, interrupt := range pending {
+		resolution, ok := resolutionsByID[interrupt.Request.ID]
+		if !ok {
+			return nil, fmt.Errorf("workflow: interrupt resolution %q is required", interrupt.Request.ID)
 		}
 		resolved = append(resolved, checkpointInterruptResolution{
 			InterruptID: resolution.InterruptID, PayloadRef: resolution.PayloadRef,
@@ -2896,15 +2920,6 @@ func resolvePendingInterrupts(pending []checkpointInterrupt, resolutions []Inter
 		})
 	}
 	return resolved, nil
-}
-
-func findInterruptResolution(resolutions []InterruptResolution, interruptID string) (InterruptResolution, bool) {
-	for _, resolution := range resolutions {
-		if resolution.InterruptID == interruptID {
-			return resolution, true
-		}
-	}
-	return InterruptResolution{}, false
 }
 
 func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWriteRequest[O]) (CheckpointRecord, error) {

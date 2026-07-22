@@ -2786,7 +2786,8 @@ func TestWorkflowParallelInvokableInterruptsResumeWithoutReplayingCompletedBranc
 	first := interruptingChild("first-child", "approval-first", &firstRuns)
 	second := interruptingChild("second-child", "approval-second", &secondRuns)
 
-	parent := New[string, string]("parallel-parent", WithMaxParallelism(3))
+	store := NewMemoryStore()
+	parent := New[string, string]("parallel-parent", WithMaxParallelism(3), WithStore(store))
 	plan := testNode(parent, "plan", func(_ context.Context, input string) (string, error) { return input, nil })
 	completedNode := parent.AddInvokable("completed", completed)
 	firstNode := parent.AddInvokable("first", first)
@@ -2832,6 +2833,20 @@ func TestWorkflowParallelInvokableInterruptsResumeWithoutReplayingCompletedBranc
 	if completedRuns != 1 || firstRuns != 0 || secondRuns != 0 {
 		t.Fatalf("runs before resume = %d/%d/%d, want 1/0/0", completedRuns, firstRuns, secondRuns)
 	}
+	interruptedCheckpoint, err := store.Load(context.Background(), "parallel-parent-run")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	assertInterruptedUnchanged := func(stage string) {
+		t.Helper()
+		checkpoint, loadErr := store.Load(context.Background(), "parallel-parent-run")
+		if loadErr != nil {
+			t.Fatalf("Load() after %s error = %v", stage, loadErr)
+		}
+		if !reflect.DeepEqual(checkpoint, interruptedCheckpoint) {
+			t.Fatalf("checkpoint after %s = %+v, want unchanged interrupted checkpoint", stage, checkpoint)
+		}
+	}
 	_, err = parent.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{
 		RunID: "parallel-parent-run",
 		Resolutions: []InterruptResolution{
@@ -2844,6 +2859,37 @@ func TestWorkflowParallelInvokableInterruptsResumeWithoutReplayingCompletedBranc
 	if completedRuns != 1 || firstRuns != 0 || secondRuns != 0 {
 		t.Fatalf("runs after partial resume = %d/%d/%d, want 1/0/0", completedRuns, firstRuns, secondRuns)
 	}
+	assertInterruptedUnchanged("partial resume")
+	_, err = parent.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{
+		RunID: "parallel-parent-run",
+		Resolutions: []InterruptResolution{
+			{InterruptID: "approval-first", PayloadRef: "artifact://first-approved"},
+			{InterruptID: "approval-first", PayloadRef: "artifact://conflicting-approval"},
+			{InterruptID: "approval-second", PayloadRef: "artifact://second-approved"},
+		},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("duplicate resume error = %v, want duplicate resolution", err)
+	}
+	if completedRuns != 1 || firstRuns != 0 || secondRuns != 0 {
+		t.Fatalf("runs after duplicate resume = %d/%d/%d, want 1/0/0", completedRuns, firstRuns, secondRuns)
+	}
+	assertInterruptedUnchanged("duplicate resume")
+	_, err = parent.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{
+		RunID: "parallel-parent-run",
+		Resolutions: []InterruptResolution{
+			{InterruptID: "approval-first", PayloadRef: "artifact://first-approved"},
+			{InterruptID: "approval-second", PayloadRef: "artifact://second-approved"},
+			{InterruptID: "approval-extra", PayloadRef: "artifact://extra-approved"},
+		},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "unexpected") {
+		t.Fatalf("extra resume error = %v, want unexpected resolution", err)
+	}
+	if completedRuns != 1 || firstRuns != 0 || secondRuns != 0 {
+		t.Fatalf("runs after extra resume = %d/%d/%d, want 1/0/0", completedRuns, firstRuns, secondRuns)
+	}
+	assertInterruptedUnchanged("extra resume")
 
 	got, err := parent.Invoke(context.Background(), "ignored", WithResume(ResumeRequest{
 		RunID: "parallel-parent-run",
@@ -2860,6 +2906,25 @@ func TestWorkflowParallelInvokableInterruptsResumeWithoutReplayingCompletedBranc
 	}
 	if completedRuns != 1 || firstRuns != 1 || secondRuns != 1 {
 		t.Fatalf("runs after resume = %d/%d/%d, want 1/1/1", completedRuns, firstRuns, secondRuns)
+	}
+	checkpoint, err := store.Load(context.Background(), "parallel-parent-run")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	payload, err := decodeCheckpointPayload[string](checkpoint.Payload)
+	if err != nil {
+		t.Fatalf("decodeCheckpointPayload() error = %v", err)
+	}
+	associations := make(map[string]string, len(payload.ResolvedInterrupts))
+	for _, resolution := range payload.ResolvedInterrupts {
+		associations[resolution.InterruptID] = resolution.PayloadRef
+	}
+	wantAssociations := map[string]string{
+		"approval-first":  "artifact://first-approved",
+		"approval-second": "artifact://second-approved",
+	}
+	if len(payload.ResolvedInterrupts) != len(wantAssociations) || !reflect.DeepEqual(associations, wantAssociations) {
+		t.Fatalf("resolved interrupt associations = %v, want %v", associations, wantAssociations)
 	}
 }
 
