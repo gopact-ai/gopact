@@ -1204,11 +1204,23 @@ func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Conte
 	return cause
 }
 
-func (execution *workflowExecution[I, O]) finalizationContext() context.Context {
-	if execution.leaseCtx != nil {
-		return execution.leaseCtx
+func (execution *workflowExecution[I, O]) finalizationContext() (context.Context, context.CancelFunc) {
+	parent := execution.leaseCtx
+	if parent == nil {
+		parent = context.WithoutCancel(execution.ctx)
 	}
-	return context.WithoutCancel(execution.ctx)
+	return context.WithTimeout(parent, execution.compiled.authorityWriteTimeout())
+}
+
+func (execution *workflowExecution[I, O]) detachedAuthorityContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), execution.compiled.authorityWriteTimeout())
+}
+
+func (c *compiled[I, O]) authorityWriteTimeout() time.Duration {
+	if c == nil || c.checkpointLeaseDuration <= c.checkpointLeaseRenewEvery {
+		return defaultCheckpointLeaseDuration - defaultCheckpointLeaseRenewEvery
+	}
+	return c.checkpointLeaseDuration - c.checkpointLeaseRenewEvery
 }
 
 func (execution *workflowExecution[I, O]) stopCheckpointLeaseHeartbeat() error {
@@ -1504,7 +1516,9 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 	record.LeaseExpiresAt = time.Time{}
 	record.LeaseDuration = 0
 	record.UpdatedAt = time.Now()
-	if err := execution.compiled.store.Save(context.WithoutCancel(execution.ctx), record, record.Version); err != nil {
+	storeCtx, cancel := execution.finalizationContext()
+	defer cancel()
+	if err := execution.compiled.store.Save(storeCtx, record, record.Version); err != nil {
 		return err
 	}
 	record.Version++
@@ -1567,11 +1581,13 @@ func (execution *workflowExecution[I, O]) commitObservedEventLocked(ctx context.
 }
 
 func (execution *workflowExecution[I, O]) appendFencedEvent(ctx context.Context, event gopact.Event) error {
-	return execution.appendFencedEventWithObserver(ctx, ctx, event)
+	storeCtx, cancel := execution.detachedAuthorityContext(ctx)
+	defer cancel()
+	return execution.appendFencedEventWithObserver(storeCtx, ctx, event)
 }
 
 func (execution *workflowExecution[I, O]) appendFencedEventWithObserver(storeCtx, observerCtx context.Context, event gopact.Event) error {
-	appendCtx := eventSinkContext{Context: context.WithoutCancel(storeCtx)}
+	appendCtx := eventSinkContext{Context: storeCtx}
 	record := runlog.RecordFromEvent(event)
 	record.SourceRunID = execution.sourceRunID
 	record.SourceEventSeq = execution.sourceEventSeq
@@ -1594,7 +1610,9 @@ func (execution *workflowExecution[I, O]) appendFencedEventWithObserver(storeCtx
 }
 
 func (execution *workflowExecution[I, O]) emitLocked(ctx context.Context, event gopact.Event) error {
-	return execution.emitLockedWithContexts(ctx, ctx, event)
+	storeCtx, cancel := execution.detachedAuthorityContext(ctx)
+	defer cancel()
+	return execution.emitLockedWithContexts(storeCtx, ctx, event)
 }
 
 func (execution *workflowExecution[I, O]) emitLockedWithContexts(storeCtx, observerCtx context.Context, event gopact.Event) error {
@@ -1609,7 +1627,7 @@ func (execution *workflowExecution[I, O]) emitLockedWithContexts(storeCtx, obser
 	record := runlog.RecordFromEvent(event)
 	record.SourceRunID = execution.sourceRunID
 	record.SourceEventSeq = execution.sourceEventSeq
-	if err := execution.compiled.store.Append(context.WithoutCancel(storeCtx), record); err != nil {
+	if err := execution.compiled.store.Append(storeCtx, record); err != nil {
 		return execution.recordSinkFailure(err)
 	}
 	delivery := eventDelivery{event: event}
@@ -1835,8 +1853,11 @@ func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm Chec
 		)
 	}
 	pending = execution.runtimeEvent(pending, pending.Sequence)
-	if err := execution.emitLockedWithContexts(execution.finalizationContext(), execution.ctx, pending); err != nil {
-		return err
+	storeCtx, cancel := execution.finalizationContext()
+	emitErr := execution.emitLockedWithContexts(storeCtx, execution.ctx, pending)
+	cancel()
+	if emitErr != nil {
+		return emitErr
 	}
 	if execution.interruptProgress != nil && execution.interruptProgress.Next < len(execution.interruptProgress.Events) &&
 		execution.interruptProgress.Events[execution.interruptProgress.Next].Sequence == pending.Sequence {
@@ -1850,8 +1871,11 @@ func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm Chec
 		if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
 			return err
 		}
-		if err := execution.compiled.finishCheckpoint(execution.finalizationContext(), terminal, execution.writeRequest(execution.step, nil)); err != nil {
-			return err
+		storeCtx, cancel := execution.finalizationContext()
+		finishErr := execution.compiled.finishCheckpoint(storeCtx, terminal, execution.writeRequest(execution.step, nil))
+		cancel()
+		if finishErr != nil {
+			return finishErr
 		}
 		execution.checkpoint.Status = terminal
 		return nil
@@ -2270,7 +2294,9 @@ func (execution *workflowExecution[I, O]) continueInterruptBatch() error {
 	progress := execution.interruptProgress
 	execution.interruptProgress = nil
 	request := execution.writeRequest(execution.step, nil)
-	saved, err := execution.compiled.interruptCheckpoint(execution.finalizationContext(), request, execution.interrupts)
+	storeCtx, cancel := execution.finalizationContext()
+	saved, err := execution.compiled.interruptCheckpoint(storeCtx, request, execution.interrupts)
+	cancel()
 	if err != nil {
 		execution.interruptProgress = progress
 		return err
@@ -2286,16 +2312,23 @@ func (execution *workflowExecution[I, O]) commitInterruptBatchEvent(event gopact
 		return execution.sinkFailure
 	}
 	request := execution.writeRequest(execution.step, &event)
-	saved, err := execution.compiled.saveCheckpoint(execution.finalizationContext(), request)
+	storeCtx, cancel := execution.finalizationContext()
+	saved, err := execution.compiled.saveCheckpoint(storeCtx, request)
+	cancel()
 	if err != nil {
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitLockedWithContexts(execution.finalizationContext(), execution.ctx, event); err != nil {
-		return err
+	storeCtx, cancel = execution.finalizationContext()
+	emitErr := execution.emitLockedWithContexts(storeCtx, execution.ctx, event)
+	cancel()
+	if emitErr != nil {
+		return emitErr
 	}
 	execution.interruptProgress.Next++
-	saved, err = execution.compiled.saveCheckpoint(execution.finalizationContext(), execution.writeRequest(execution.step, nil))
+	storeCtx, cancel = execution.finalizationContext()
+	saved, err = execution.compiled.saveCheckpoint(storeCtx, execution.writeRequest(execution.step, nil))
+	cancel()
 	if err != nil {
 		return err
 	}
@@ -2426,7 +2459,7 @@ func (execution *workflowExecution[I, O]) cancelRun(cause error) error {
 }
 
 func (execution *workflowExecution[I, O]) commitTerminalError(status CheckpointStatus, event gopact.Event, cause error) error {
-	if err := execution.commitTerminalEvent(execution.finalizationContext(), status, event); err != nil {
+	if err := execution.commitTerminalEvent(status, event); err != nil {
 		return err
 	}
 	return cause
@@ -2437,10 +2470,10 @@ func (execution *workflowExecution[I, O]) finish() error {
 }
 
 func (execution *workflowExecution[I, O]) commitTerminal(status CheckpointStatus, event gopact.Event) error {
-	return execution.commitTerminalEvent(execution.finalizationContext(), status, event)
+	return execution.commitTerminalEvent(status, event)
 }
 
-func (execution *workflowExecution[I, O]) commitTerminalEvent(storeCtx context.Context, status CheckpointStatus, event gopact.Event) error {
+func (execution *workflowExecution[I, O]) commitTerminalEvent(status CheckpointStatus, event gopact.Event) error {
 	execution.eventMu.Lock()
 	defer execution.eventMu.Unlock()
 	if execution.checkpoint.ID == "" {
@@ -2452,18 +2485,25 @@ func (execution *workflowExecution[I, O]) commitTerminalEvent(storeCtx context.C
 	pending := execution.runtimeEvent(event, execution.sequence+1)
 	request := execution.writeRequest(execution.step, &pending)
 	request.PendingTerm = status
+	storeCtx, cancel := execution.finalizationContext()
 	saved, err := execution.compiled.saveCheckpoint(storeCtx, request)
+	cancel()
 	if err != nil {
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitLockedWithContexts(storeCtx, execution.ctx, pending); err != nil {
-		return err
+	storeCtx, cancel = execution.finalizationContext()
+	emitErr := execution.emitLockedWithContexts(storeCtx, execution.ctx, pending)
+	cancel()
+	if emitErr != nil {
+		return emitErr
 	}
 	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
 		return err
 	}
-	return execution.compiled.finishCheckpoint(execution.finalizationContext(), status, execution.writeRequest(execution.step, nil))
+	finishCtx, cancel := execution.finalizationContext()
+	defer cancel()
+	return execution.compiled.finishCheckpoint(finishCtx, status, execution.writeRequest(execution.step, nil))
 }
 
 func (c *compiled[I, O]) scheduleNext(ctx context.Context, state *runState, source activation, output any, dispatch Dispatch) error {
