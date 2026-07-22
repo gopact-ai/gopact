@@ -113,7 +113,7 @@ func NewBasicProvider(defaults gopact.ModelRequest, invoke InvokeFunc) *BasicPro
 // NewRequest materializes a request from provider defaults.
 func (p *BasicProvider) NewRequest(messages ...gopact.Message) gopact.ModelRequest {
 	req := p.defaultRequest
-	req.Messages = append([]gopact.Message(nil), messages...)
+	req.Messages = cloneMessages(messages)
 	req.Tools = append([]gopact.ToolSpec(nil), p.defaultRequest.Tools...)
 	req.Modalities = append([]gopact.Modality(nil), p.defaultRequest.Modalities...)
 	req.Stop = append([]string(nil), p.defaultRequest.Stop...)
@@ -131,6 +131,17 @@ func (p *BasicProvider) NewRequest(messages ...gopact.Message) gopact.ModelReque
 		}
 	}
 	return req
+}
+
+func cloneMessages(messages []gopact.Message) []gopact.Message {
+	if messages == nil {
+		return nil
+	}
+	cloned := make([]gopact.Message, len(messages))
+	for index, message := range messages {
+		cloned[index] = message.Clone()
+	}
+	return cloned
 }
 
 // Invoke calls the configured provider function.

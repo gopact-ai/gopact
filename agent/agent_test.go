@@ -32,6 +32,7 @@ func TestObserveToolOutcome(t *testing.T) {
 		if got.ID != "call-1" || got.Kind != ObservationToolResult ||
 			got.Source.Kind != ObservationSourceToolOutcome || got.Source.ID != "call-1" ||
 			got.Subject.ToolCallID != "call-1" || got.Subject.ToolName != "search" ||
+			got.Message.ToolCallID != "call-1" ||
 			len(got.Refs) != 1 || got.Refs[0].URI != "artifact://result" {
 			t.Fatalf("observation = %+v, want typed tool result", got)
 		}

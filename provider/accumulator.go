@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -111,11 +112,13 @@ func (a *ModelAccumulator) Response() (gopact.ModelResponse, error) {
 		return gopact.ModelResponse{}, errors.New("provider: accumulator is released")
 	}
 	var intent gopact.ModelIntent = gopact.FinalIntent{}
+	message := gopact.Message{Role: gopact.MessageRoleAssistant, Parts: append([]gopact.MessagePart(nil), a.parts...)}
 	if len(a.toolCalls) > 0 {
-		intent = gopact.ToolCallIntent{Calls: normalizeToolCalls(a.toolCalls)}
+		message.ToolCalls = normalizeToolCalls(a.toolCalls)
+		intent = gopact.ToolCallIntent{}
 	}
 	return gopact.ModelResponse{
-		Message: gopact.Message{Role: gopact.MessageRoleAssistant, Parts: append([]gopact.MessagePart(nil), a.parts...)},
+		Message: message,
 		Intent:  intent,
 	}, nil
 }
@@ -123,6 +126,7 @@ func (a *ModelAccumulator) Response() (gopact.ModelResponse, error) {
 func normalizeToolCalls(source []gopact.ToolCall) []gopact.ToolCall {
 	calls := append([]gopact.ToolCall(nil), source...)
 	for index := range calls {
+		calls[index].Arguments = append(json.RawMessage(nil), calls[index].Arguments...)
 		if calls[index].ID == "" {
 			calls[index].ID = fmt.Sprintf("call-%d", index+1)
 		}
@@ -232,6 +236,7 @@ func (s protocolSink) AddToolCall(call gopact.ToolCall) error {
 	if s.source != "" {
 		call.SourceRef = s.source
 	}
+	call.Arguments = append(json.RawMessage(nil), call.Arguments...)
 	s.acc.toolCalls = append(s.acc.toolCalls, call)
 	return nil
 }

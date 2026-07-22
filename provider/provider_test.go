@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/gopact-ai/gopact"
@@ -92,10 +93,11 @@ func TestModelAccumulatorPipelineRejectsClaimConflict(t *testing.T) {
 func TestProtocolSinkBuildsToolCallIntent(t *testing.T) {
 	acc := NewBasicProvider(gopact.ModelRequest{}, nil).NewAccumulator(context.Background(), gopact.ModelRequest{})
 	defer acc.Release()
+	arguments := json.RawMessage(`{"query":"gopact"}`)
 	pipeline, err := acc.NewProtocolPipeline([]gopact.OutputProtocol{
 		testProtocol{name: "tool", newDecoder: func(sink gopact.ProtocolSink) gopact.OutputDecoder {
 			return testDecoderFunc(func(frame gopact.OutputFrame) error {
-				return sink.AddToolCall(gopact.ToolCall{Name: frame.Text})
+				return sink.AddToolCall(gopact.ToolCall{Name: frame.Text, Arguments: arguments})
 			})
 		}},
 	})
@@ -105,16 +107,31 @@ func TestProtocolSinkBuildsToolCallIntent(t *testing.T) {
 	if err := pipeline.Write(gopact.OutputFrame{Channel: gopact.OutputChannelToolCall, Text: "search"}); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
+	arguments[0] = '['
 	resp, err := acc.Response()
 	if err != nil {
 		t.Fatalf("Response() error = %v", err)
 	}
-	intent, ok := resp.Intent.(gopact.ToolCallIntent)
-	if !ok || len(intent.Calls) != 1 || intent.Calls[0].Name != "search" {
-		t.Fatalf("intent = %+v, want one search tool call", resp.Intent)
+	_, ok := resp.Intent.(gopact.ToolCallIntent)
+	if !ok {
+		t.Fatalf("intent = %T, want ToolCallIntent", resp.Intent)
 	}
-	if intent.Calls[0].ID != "call-1" || intent.Calls[0].SourceRef != "provider.protocol.tool" {
-		t.Fatalf("tool call = %+v, want deterministic id and source", intent.Calls[0])
+	if len(resp.Message.ToolCalls) != 1 || resp.Message.ToolCalls[0].Name != "search" {
+		t.Fatalf("message = %+v, want one search tool call", resp.Message)
+	}
+	if resp.Message.ToolCalls[0].ID != "call-1" || resp.Message.ToolCalls[0].SourceRef != "provider.protocol.tool" {
+		t.Fatalf("tool call = %+v, want deterministic id and source", resp.Message.ToolCalls[0])
+	}
+	if string(resp.Message.ToolCalls[0].Arguments) != `{"query":"gopact"}` {
+		t.Fatalf("tool arguments = %s, want accumulator-owned copy", resp.Message.ToolCalls[0].Arguments)
+	}
+	resp.Message.ToolCalls[0].Arguments[0] = '['
+	again, err := acc.Response()
+	if err != nil {
+		t.Fatalf("second Response() error = %v", err)
+	}
+	if string(again.Message.ToolCalls[0].Arguments) != `{"query":"gopact"}` {
+		t.Fatalf("second response arguments = %s, want caller-isolated copy", again.Message.ToolCalls[0].Arguments)
 	}
 }
 

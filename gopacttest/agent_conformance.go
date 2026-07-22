@@ -245,14 +245,7 @@ func cloneConformanceMessages(messages []gopact.Message) []gopact.Message {
 }
 
 func cloneConformanceMessage(message gopact.Message) gopact.Message {
-	message.Parts = append([]gopact.MessagePart(nil), message.Parts...)
-	for index := range message.Parts {
-		if message.Parts[index].Ref != nil {
-			ref := *message.Parts[index].Ref
-			message.Parts[index].Ref = &ref
-		}
-	}
-	return message
+	return message.Clone()
 }
 
 func isNilConformanceValue(value any) bool {
