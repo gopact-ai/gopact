@@ -158,8 +158,8 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 			t.Fatalf("conflicting Append() error = %v, want ErrConflict", err)
 		}
 		records, err := store.List(t.Context(), runlog.Query{RunID: record.RunID})
-		if err != nil || len(records) != 1 {
-			t.Fatalf("List() = %+v, %v, want one record", records, err)
+		if err != nil || len(records) != 1 || records[0].Summary != record.Summary {
+			t.Fatalf("List() = %+v, %v, want one unchanged record", records, err)
 		}
 	})
 
@@ -207,6 +207,10 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 		if err := store.AppendFenced(t.Context(), expiredRecord, expiredFence); !errors.Is(err, workflow.ErrCheckpointLeaseLost) {
 			t.Fatalf("AppendFenced(expired fence) error = %v, want ErrCheckpointLeaseLost", err)
 		}
+		expiredRecords, err := store.List(t.Context(), runlog.Query{RunID: expired.RunID})
+		if err != nil || len(expiredRecords) != 0 {
+			t.Fatalf("List(expired fence) = %+v, %v, want no record", expiredRecords, err)
+		}
 
 		current.Status = workflow.CheckpointCompleted
 		current.OwnerID = ""
@@ -218,8 +222,8 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 			t.Fatalf("AppendFenced(after Finish) error = %v, want ErrCheckpointLeaseLost", err)
 		}
 		records, err := store.List(t.Context(), runlog.Query{RunID: current.RunID})
-		if err != nil || len(records) != 1 {
-			t.Fatalf("List() = %+v, %v, want one fenced record", records, err)
+		if err != nil || len(records) != 1 || records[0].Summary != record.Summary {
+			t.Fatalf("List() = %+v, %v, want one unchanged fenced record", records, err)
 		}
 	})
 }
