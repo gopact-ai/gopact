@@ -197,6 +197,17 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 			}
 		}
 
+		expired := storeConformanceCheckpoint("store-conformance-expired-log")
+		expired.LeaseExpiresAt = time.Now().UTC().Add(-time.Hour)
+		if err := store.Create(t.Context(), expired); err != nil {
+			t.Fatalf("Create(expired fence) error = %v", err)
+		}
+		expiredRecord := storeConformanceRunLogRecord(expired.RunID, 1)
+		expiredFence := runlog.Fence{OwnerID: expired.OwnerID, ClaimSequence: expired.ClaimSequence}
+		if err := store.AppendFenced(t.Context(), expiredRecord, expiredFence); !errors.Is(err, workflow.ErrCheckpointLeaseLost) {
+			t.Fatalf("AppendFenced(expired fence) error = %v, want ErrCheckpointLeaseLost", err)
+		}
+
 		current.Status = workflow.CheckpointCompleted
 		current.OwnerID = ""
 		current.LeaseExpiresAt = time.Time{}
