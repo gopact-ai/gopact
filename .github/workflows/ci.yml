@@ -37,7 +37,7 @@ jobs:
       - run: govulncheck ./...
 
   source-compatibility:
-    uses: gopact-ai/gopact-examples/.github/workflows/source-compatibility.yml@main
+    uses: gopact-ai/gopact-examples/.github/workflows/source-compatibility.yml@8765cfb5ae0036e4cdef1016b8c161fa4467880b
     with:
       core_ref: ${{ github.sha }}
       ext_ref: main
