@@ -6,7 +6,7 @@
 
 `gopact` 是 Agent-first、Workflow-native 的 Go ADK core。
 
-> **仅支持 Go 1.27+。** 本项目围绕泛型方法构建，也借此庆祝我们眼中 Go 近十年来最具影响力的语言演进之一。Go 1.27 正式发布前，本项目需要开发版工具链，应视为预览而非稳定版本。
+> **仅支持 Go 1.27+。** 本项目围绕泛型方法构建，也借此庆祝我们眼中 Go 近十年来最具影响力的语言演进之一。
 
 ## 选择入口
 
@@ -70,7 +70,7 @@ go vet ./...
 
 ## 发布状态
 
-Go 1.27 stable 发布前，RC 只能称为 production evaluation candidate。stable tag 必须先通过 Go 1.27 stable toolchain 门禁、core → ext → examples 协调源码 E2E、immutable tag clean-consumer 验证和 RC burn-in。当前源码 checkout 不代表 post-tag 验证已经通过。
+stable tag 必须先通过 Go 1.27 toolchain 门禁、core → ext → examples 协调源码 E2E 和 immutable tag clean-consumer 验证。仅有源码 checkout 不代表 post-tag 验证已经通过。
 
 ## 生产执行
 

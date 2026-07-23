@@ -6,7 +6,7 @@ Chinese documentation: [README_zh.md](README_zh.md)
 
 `gopact` is an Agent-first, Workflow-native Go ADK core.
 
-> **Go 1.27+ only.** This project is built around generic methods and celebrates what we see as one of Go's most consequential language changes of the past decade. Until Go 1.27 is officially released, it requires a development toolchain and should be treated as a preview, not a stable release.
+> **Go 1.27+ only.** This project is built around generic methods and celebrates what we see as one of Go's most consequential language changes of the past decade.
 
 ## Choose your path
 
@@ -70,7 +70,7 @@ Validation uses focused native gates: `gofmt`, `go mod tidy -diff`, `go test`, `
 
 ## Release status
 
-Before Go 1.27 stable, release candidates are production-evaluation candidates only. A stable tag requires the Go 1.27 stable toolchain gates, coordinated core → ext → examples source E2E, immutable-tag clean-consumer verification, and RC burn-in. No current source checkout implies that post-tag verification has passed.
+A stable tag requires the Go 1.27 toolchain gates, coordinated core → ext → examples source E2E, and immutable-tag clean-consumer verification. A source checkout alone does not imply that post-tag verification has passed.
 
 ## Production execution
 
