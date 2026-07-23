@@ -175,7 +175,9 @@ type ToolResult struct {
 	DataRef      string
 	ArtifactRefs []ArtifactRef
 	EffectRefs   []ArtifactRef
-	Preview      string
+	// Preview is short model-visible text. Put larger content behind DataRef,
+	// ArtifactRefs, or EffectRefs.
+	Preview string
 }
 
 // ToolRejection describes a business, policy, or permission rejection.

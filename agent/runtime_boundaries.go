@@ -23,7 +23,8 @@ type InvokableTool interface {
 	gopact.Invokable[gopact.ToolCall, gopact.ToolOutcome]
 }
 
-// DirectTool executes without a child Workflow boundary.
+// DirectTool executes in-process without a child Workflow boundary. It has no
+// independent checkpoint, retry, or isolation; callers own those guarantees.
 type DirectTool interface {
 	Tool
 	ToolExecutor
