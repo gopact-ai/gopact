@@ -1,7 +1,12 @@
 // Package agent defines the minimal Agent domain protocol and its Workflow-backed facade.
 package agent
 
-import "github.com/gopact-ai/gopact"
+import (
+	"maps"
+	"slices"
+
+	"github.com/gopact-ai/gopact"
+)
 
 // Identity is immutable Agent identity used by directories, events, and checkpoints.
 type Identity struct {
@@ -17,11 +22,27 @@ type Request struct {
 	Metadata  map[string]string
 }
 
+// Clone returns an independent copy of the request-owned mutable values.
+func (request Request) Clone() Request {
+	request.Messages = cloneMessages(request.Messages)
+	request.Artifacts = slices.Clone(request.Artifacts)
+	request.Metadata = maps.Clone(request.Metadata)
+	return request
+}
+
 // Response is the final provider-neutral output shared by public ADK Agents.
 type Response struct {
 	Message   gopact.Message
 	Artifacts []gopact.ArtifactRef
 	Metadata  map[string]string
+}
+
+// Clone returns an independent copy of the response-owned mutable values.
+func (response Response) Clone() Response {
+	response.Message = response.Message.Clone()
+	response.Artifacts = slices.Clone(response.Artifacts)
+	response.Metadata = maps.Clone(response.Metadata)
+	return response
 }
 
 // Chunk is one user-visible streaming Agent output item.

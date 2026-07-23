@@ -46,10 +46,7 @@ func (target *WorkflowAgent) Invoke(ctx context.Context, request Request, option
 	if target == nil || target.workflow == nil {
 		return Response{}, errors.New("agent: workflow agent is nil")
 	}
-	request.Messages = cloneMessages(request.Messages)
-	request.Artifacts = cloneRefs(request.Artifacts)
-	request.Metadata = cloneStringMap(request.Metadata)
-	return target.workflow.Invoke(ctx, request, options...)
+	return target.workflow.Invoke(ctx, request.Clone(), options...)
 }
 
 // InvokeStream streams each committed Workflow response as one Agent chunk.
@@ -59,10 +56,7 @@ func (target *WorkflowAgent) InvokeStream(ctx context.Context, request Request, 
 			yield(Chunk{}, errors.New("agent: workflow agent is nil"))
 			return
 		}
-		request.Messages = cloneMessages(request.Messages)
-		request.Artifacts = cloneRefs(request.Artifacts)
-		request.Metadata = cloneStringMap(request.Metadata)
-		for response, err := range target.workflow.InvokeStream(ctx, request, options...) {
+		for response, err := range target.workflow.InvokeStream(ctx, request.Clone(), options...) {
 			if err != nil {
 				yield(Chunk{}, err)
 				return

@@ -63,8 +63,8 @@ func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, withWo
 		t.Fatalf("Identity() changed from %+v to %+v", identity, next)
 	}
 
-	request := cloneAgentRequest(testCase.Request)
-	requestBefore := cloneAgentRequest(request)
+	request := testCase.Request.Clone()
+	requestBefore := request.Clone()
 	var events []gopact.Event
 	var eventsMu sync.Mutex
 	options := []gopact.RunOption{
@@ -98,7 +98,7 @@ func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, withWo
 
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := testCase.Agent.Invoke(canceled, cloneAgentRequest(testCase.Request),
+	if _, err := testCase.Agent.Invoke(canceled, testCase.Request.Clone(),
 		gopact.WithRunID("conformance-canceled")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Invoke() error = %v, want context.Canceled", err)
 	}
@@ -106,7 +106,7 @@ func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, withWo
 	if withWorkflow {
 		if _, err := testCase.Agent.Invoke(
 			context.Background(),
-			cloneAgentRequest(testCase.Request),
+			testCase.Request.Clone(),
 			conformanceUnknownRunOption{},
 		); err == nil {
 			t.Fatal("Invoke() accepted an unknown run extension")
@@ -131,7 +131,7 @@ func requireAgentConformance(t *testing.T, testCase AgentConformanceCase, withWo
 		go func() {
 			response, err := testCase.Agent.Invoke(
 				ctx,
-				cloneAgentRequest(testCase.Request),
+				testCase.Request.Clone(),
 				gopact.WithRunID(fmt.Sprintf("conformance-concurrent-%d", index)),
 			)
 			results <- invocationResult{response: response, err: err}
@@ -238,34 +238,6 @@ func (conformanceUnknownRunOption) ApplyRunOption(config *gopact.RunConfig) {
 		config.Extensions = make(map[string]any)
 	}
 	config.Extensions["gopacttest.unknown"] = true
-}
-
-func cloneAgentRequest(request agent.Request) agent.Request {
-	request.Messages = cloneConformanceMessages(request.Messages)
-	request.Artifacts = append([]gopact.ArtifactRef(nil), request.Artifacts...)
-	if request.Metadata != nil {
-		metadata := make(map[string]string, len(request.Metadata))
-		for key, value := range request.Metadata {
-			metadata[key] = value
-		}
-		request.Metadata = metadata
-	}
-	return request
-}
-
-func cloneConformanceMessages(messages []gopact.Message) []gopact.Message {
-	if messages == nil {
-		return nil
-	}
-	cloned := make([]gopact.Message, len(messages))
-	for index, message := range messages {
-		cloned[index] = cloneConformanceMessage(message)
-	}
-	return cloned
-}
-
-func cloneConformanceMessage(message gopact.Message) gopact.Message {
-	return message.Clone()
 }
 
 func isNilConformanceValue(value any) bool {

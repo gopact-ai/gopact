@@ -1,6 +1,10 @@
 package agent
 
-import "github.com/gopact-ai/gopact"
+import (
+	"slices"
+
+	"github.com/gopact-ai/gopact"
+)
 
 func cloneMessages(values []gopact.Message) []gopact.Message {
 	if values == nil {
@@ -18,7 +22,7 @@ func cloneMessage(value gopact.Message) gopact.Message {
 }
 
 func cloneRefs(values []gopact.ArtifactRef) []gopact.ArtifactRef {
-	return append([]gopact.ArtifactRef(nil), values...)
+	return slices.Clone(values)
 }
 
 func cloneRetryHint(value *gopact.RetryHint) *gopact.RetryHint {
@@ -27,15 +31,4 @@ func cloneRetryHint(value *gopact.RetryHint) *gopact.RetryHint {
 	}
 	clone := *value
 	return &clone
-}
-
-func cloneStringMap(value map[string]string) map[string]string {
-	if value == nil {
-		return nil
-	}
-	clone := make(map[string]string, len(value))
-	for key, item := range value {
-		clone[key] = item
-	}
-	return clone
 }

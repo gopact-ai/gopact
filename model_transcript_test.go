@@ -27,3 +27,18 @@ func TestMessageCloneIsolatesCanonicalToolTranscriptFacts(t *testing.T) {
 		t.Fatalf("clone mutated original message: %+v", original)
 	}
 }
+
+func TestMessageClonePreservesOwnedContainerNilness(t *testing.T) {
+	empty := Message{
+		Parts:     []MessagePart{},
+		ToolCalls: []ToolCall{{Arguments: json.RawMessage{}}},
+	}.Clone()
+	if empty.Parts == nil || empty.ToolCalls == nil || empty.ToolCalls[0].Arguments == nil {
+		t.Fatalf("clone collapsed non-nil empty containers: %+v", empty)
+	}
+
+	nilMessage := (Message{}).Clone()
+	if nilMessage.Parts != nil || nilMessage.ToolCalls != nil {
+		t.Fatalf("clone allocated nil containers: %+v", nilMessage)
+	}
+}
