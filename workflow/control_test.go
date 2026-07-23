@@ -58,6 +58,113 @@ func TestWorkflowRetryCreatesNewRunFromFailedSource(t *testing.T) {
 	}
 }
 
+func TestWorkflowRetryResumesLinearDownstreamNode(t *testing.T) {
+	store := NewMemoryStore()
+	firstCalls, secondCalls := 0, 0
+	wf := New[string, string]("retry-linear-downstream", WithStore(store))
+	first := wf.Node("first", func(_ context.Context, input string) (string, error) {
+		firstCalls++
+		return input + "-first", nil
+	})
+	second := wf.Node("second", func(_ context.Context, input string) (string, error) {
+		secondCalls++
+		if secondCalls == 1 {
+			return "", errors.New("failed once")
+		}
+		return input + "-second", nil
+	})
+	wf.Entry(first)
+	wf.Edge(first, second)
+	wf.Exit(second)
+
+	if _, err := wf.Invoke(
+		t.Context(),
+		"input",
+		gopact.WithSessionID("session-1"),
+		gopact.WithRunID("source-run"),
+	); err == nil {
+		t.Fatal("Invoke() error = nil, want source failure")
+	}
+	source := nodeStartedRecordForNode(t, store, "source-run", "second")
+
+	got, err := wf.Retry(t.Context(), RetryRequest{
+		RunID: "source-run", NodeID: source.NodeID, NodeExecutionVersion: source.NodeExecutionVersion,
+	}, gopact.WithRunID("retry-run"))
+	if err != nil {
+		t.Fatalf("Retry() error = %v", err)
+	}
+	if got != "input-first-second" {
+		t.Fatalf("Retry() = %q, want input-first-second", got)
+	}
+	if firstCalls != 1 || secondCalls != 2 {
+		t.Fatalf("node calls = first:%d second:%d, want first:1 second:2", firstCalls, secondCalls)
+	}
+	assertControlLineage(t, store, "retry-run", "session-1", source)
+}
+
+func TestWorkflowRetryRejectsDownstreamNodeWithPendingSibling(t *testing.T) {
+	store := NewMemoryStore()
+	a2Calls, b2Calls := 0, 0
+	wf := New[string, string]("retry-pending-sibling", WithStore(store))
+	entry := wf.Node("entry", func(_ context.Context, input string) (string, error) { return input, nil })
+	a := wf.Node("a", func(_ context.Context, input string) (string, error) { return input + "-a", nil })
+	b := wf.Node("b", func(_ context.Context, input string) (string, error) { return input + "-b", nil })
+	a2 := wf.Node("a2", func(_ context.Context, input string) (string, error) {
+		a2Calls++
+		if a2Calls == 1 {
+			return "", errors.New("failed once")
+		}
+		return input + "-a2", nil
+	})
+	b2 := wf.Node("b2", func(_ context.Context, input string) (string, error) {
+		b2Calls++
+		return input + "-b2", nil
+	})
+	wf.Entry(entry)
+	wf.Edge(entry, a)
+	wf.Edge(entry, b)
+	wf.Edge(a, a2)
+	wf.Edge(b, b2)
+	wf.Exit(a2)
+
+	if _, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("source-run")); err == nil {
+		t.Fatal("Invoke() error = nil, want source failure")
+	}
+	source := nodeStartedRecordForNode(t, store, "source-run", "a2")
+	if _, err := wf.Retry(t.Context(), RetryRequest{
+		RunID: "source-run", NodeID: source.NodeID, NodeExecutionVersion: source.NodeExecutionVersion,
+	}, gopact.WithRunID("retry-run")); err == nil {
+		t.Fatal("Retry() error = nil, want pending sibling rejection")
+	}
+	if a2Calls != 1 || b2Calls != 0 {
+		t.Fatalf("node calls = a2:%d b2:%d, want a2:1 b2:0", a2Calls, b2Calls)
+	}
+}
+
+func TestWorkflowRetryRejectsFanOutBranch(t *testing.T) {
+	store := NewMemoryStore()
+	wf := New[string, string]("retry-fan-out", WithStore(store))
+	entry := wf.Node("entry", func(_ context.Context, input string) (string, error) { return input, nil })
+	first := wf.Node("first", func(context.Context, string) (string, error) {
+		return "", errors.New("failed")
+	})
+	second := wf.Node("second", func(_ context.Context, input string) (string, error) { return input, nil })
+	wf.Entry(entry)
+	wf.Edge(entry, first)
+	wf.Edge(entry, second)
+	wf.Exit(first)
+
+	if _, err := wf.Invoke(t.Context(), "input", gopact.WithRunID("source-run")); err == nil {
+		t.Fatal("Invoke() error = nil, want source failure")
+	}
+	source := nodeStartedRecordForNode(t, store, "source-run", "first")
+	if _, err := wf.Retry(t.Context(), RetryRequest{
+		RunID: "source-run", NodeID: source.NodeID, NodeExecutionVersion: source.NodeExecutionVersion,
+	}); err == nil {
+		t.Fatal("Retry() error = nil, want fan-out rejection")
+	}
+}
+
 func TestWorkflowJumpToCreatesNewRunFromFailedSource(t *testing.T) {
 	store := NewMemoryStore()
 	wf := New[string, string]("jump-new-run", WithStore(store))
@@ -325,6 +432,21 @@ func nodeStartedRecord(t *testing.T, store *MemoryStore, runID string) runlog.Re
 		}
 	}
 	t.Fatalf("node started record for %q not found", runID)
+	return runlog.Record{}
+}
+
+func nodeStartedRecordForNode(t *testing.T, store *MemoryStore, runID, nodeID string) runlog.Record {
+	t.Helper()
+	records, err := store.List(t.Context(), runlog.Query{RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.EventType == EventNodeStarted && record.NodeID == nodeID {
+			return record
+		}
+	}
+	t.Fatalf("node %q started record for %q not found", nodeID, runID)
 	return runlog.Record{}
 }
 

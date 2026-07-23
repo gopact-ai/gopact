@@ -410,7 +410,8 @@ func (c *compiled[I, O]) retryPayload(source runlog.Record, checkpoint, head Che
 	if record == nil || record.activation.node != source.NodeID {
 		return nil, errors.New("workflow: retry source activation is missing")
 	}
-	if record.activation.sourceSet != "" {
+	if sourceSet := record.activation.sourceSet; sourceSet != "" &&
+		(!state.singleBranchSourceSet(sourceSet) || !isolatedRetrySource(state, record.activation)) {
 		return nil, errors.New("workflow: retry of a fan-out branch is not supported")
 	}
 	record.phase = activationReady
@@ -439,6 +440,31 @@ func (c *compiled[I, O]) retryPayload(source runlog.Record, checkpoint, head Che
 	meta.SourceRunID = source.RunID
 	meta.SourceEventSeq = source.Sequence
 	return encodeCheckpointPayloadWithMeta(state, sourcePayload.Outputs, 1, meta)
+}
+
+func isolatedRetrySource(state runState, source activation) bool {
+	if len(state.queue) != 1 || state.queue[0].id != source.id || state.hasOpenIterSource() {
+		return false
+	}
+	for id, record := range state.activations {
+		if id == source.id {
+			continue
+		}
+		if record == nil {
+			return false
+		}
+		switch record.phase {
+		case activationCompleted, activationFailed, activationCanceled, activationSkipped:
+		default:
+			return false
+		}
+	}
+	for id, set := range state.sourceSets {
+		if id != source.sourceSet && (set == nil || !set.settled) {
+			return false
+		}
+	}
+	return true
 }
 
 func resetControlAttempts(state *runState) {
