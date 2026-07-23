@@ -77,7 +77,7 @@ func (catalog *Catalog) AddInvokable[I, O any](identity Identity, target gopact.
 			if err != nil {
 				return Response{}, err
 			}
-			input, err := adapter.Input(ctx, cloneRequest(request))
+			input, err := adapter.Input(ctx, request.Clone())
 			if err != nil {
 				return Response{}, fmt.Errorf("agent: adapt %q input: %w", identity.Name, err)
 			}
@@ -89,7 +89,7 @@ func (catalog *Catalog) AddInvokable[I, O any](identity Identity, target gopact.
 			if err != nil {
 				return Response{}, fmt.Errorf("agent: adapt %q output: %w", identity.Name, err)
 			}
-			return cloneResponse(response), nil
+			return response.Clone(), nil
 		},
 	}
 	return catalog.add(binding)
@@ -197,8 +197,8 @@ func (agent *directoryAgent) Invoke(ctx context.Context, request Request, option
 	if agent == nil || agent.invoke == nil {
 		return Response{}, errors.New("agent: directory binding is nil")
 	}
-	response, err := agent.invoke(ctx, cloneRequest(request), options...)
-	return cloneResponse(response), err
+	response, err := agent.invoke(ctx, request.Clone(), options...)
+	return response.Clone(), err
 }
 
 func validateCatalogIdentity(identity Identity) error {
@@ -206,20 +206,6 @@ func validateCatalogIdentity(identity Identity) error {
 		return fmt.Errorf("%w: name, description, and version are required", ErrInvalidIdentity)
 	}
 	return nil
-}
-
-func cloneRequest(request Request) Request {
-	request.Messages = cloneMessages(request.Messages)
-	request.Artifacts = cloneRefs(request.Artifacts)
-	request.Metadata = cloneStringMap(request.Metadata)
-	return request
-}
-
-func cloneResponse(response Response) Response {
-	response.Message = cloneMessage(response.Message)
-	response.Artifacts = cloneRefs(response.Artifacts)
-	response.Metadata = cloneStringMap(response.Metadata)
-	return response
 }
 
 func isNilValue(value any) bool {

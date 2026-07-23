@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"iter"
+	"slices"
 )
 
 // Model is the provider-neutral model protocol.
@@ -88,20 +89,16 @@ type Message struct {
 
 // Clone returns a deep copy of the message-owned slices and references.
 func (m Message) Clone() Message {
-	m.Parts = append([]MessagePart(nil), m.Parts...)
+	m.Parts = slices.Clone(m.Parts)
 	for index := range m.Parts {
 		if m.Parts[index].Ref != nil {
 			ref := *m.Parts[index].Ref
 			m.Parts[index].Ref = &ref
 		}
 	}
-	if m.ToolCalls != nil {
-		calls := make([]ToolCall, len(m.ToolCalls))
-		for index, call := range m.ToolCalls {
-			call.Arguments = append(json.RawMessage(nil), call.Arguments...)
-			calls[index] = call
-		}
-		m.ToolCalls = calls
+	m.ToolCalls = slices.Clone(m.ToolCalls)
+	for index := range m.ToolCalls {
+		m.ToolCalls[index].Arguments = slices.Clone(m.ToolCalls[index].Arguments)
 	}
 	return m
 }
@@ -175,7 +172,9 @@ type ToolResult struct {
 	DataRef      string
 	ArtifactRefs []ArtifactRef
 	EffectRefs   []ArtifactRef
-	Preview      string
+	// Preview is short model-visible text. Put larger content behind DataRef,
+	// ArtifactRefs, or EffectRefs.
+	Preview string
 }
 
 // ToolRejection describes a business, policy, or permission rejection.
