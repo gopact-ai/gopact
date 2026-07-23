@@ -167,11 +167,15 @@ type toolObservationRequest struct {
 
 func (request toolObservationRequest) build() Observation {
 	return Observation{
-		ID:        request.callID,
-		Kind:      request.kind,
-		Source:    ObservationSource{Kind: ObservationSourceToolOutcome, ID: request.callID},
-		Subject:   ObservationSubject{ToolCallID: request.callID, ToolName: request.name},
-		Message:   feedbackMessage(gopact.MessageRoleTool, request.text),
+		ID:      request.callID,
+		Kind:    request.kind,
+		Source:  ObservationSource{Kind: ObservationSourceToolOutcome, ID: request.callID},
+		Subject: ObservationSubject{ToolCallID: request.callID, ToolName: request.name},
+		Message: gopact.Message{
+			Role:       gopact.MessageRoleTool,
+			Parts:      []gopact.MessagePart{{Type: gopact.MessagePartTypeText, Text: request.text}},
+			ToolCallID: request.callID,
+		},
 		Summary:   boundedSummary(request.text),
 		Refs:      boundedRefs(request.refs),
 		RetryHint: cloneRetryHint(request.retry),

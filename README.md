@@ -6,7 +6,7 @@ Chinese documentation: [README_zh.md](README_zh.md)
 
 `gopact` is an Agent-first, Workflow-native Go ADK core.
 
-> **Go 1.27+ only.** This project is built around generic methods and celebrates what we see as one of Go's most consequential language changes of the past decade. Until Go 1.27 is officially released, it requires a development toolchain and should be treated as a preview, not a stable release.
+> **Go 1.27+ only.** This project is built around generic methods and celebrates what we see as one of Go's most consequential language changes of the past decade.
 
 ## Choose your path
 
@@ -22,12 +22,13 @@ It contains only:
 - `agent` Identity/Request/Response, typed observations, tool contracts, and immutable directories;
 - `workflow` as the sole execution runtime, with typed nodes/routes/joins, hooks/middleware, guards, checkpoints, history, and same-Run control;
 - `runlog` append/query/sink contracts and an in-memory implementation;
-- `provider` model registry/routing helpers and basic provider normalization;
-- `gopacttest` reusable model and Agent conformance helpers.
+- `gopacttest` reusable protocol conformance helpers for models, minimal Agents, and Workflow-backed Agents.
 
 Official providers, concrete Agents, and the SQLite adapter live in `gopact-ext`; runnable examples live in `gopact-examples`.
 
 The minimal `agent.Agent` interface remains directly implementable. Only Workflow-backed Agents receive the configured Workflow's checkpoint, recovery, control, and history semantics; direct implementations do not acquire those guarantees automatically.
+
+Use `gopacttest.RequireAgentConformance` for the shared direct/Workflow-backed Agent protocol. Use `gopacttest.RequireWorkflowAgentConformance` when an implementation promises Workflow lifecycle, lineage, and run-extension semantics. The response callback is a deterministic test assertion for the supplied fixture; task-quality evaluation and release acceptance remain application responsibilities, not runtime APIs.
 
 `SessionID` is runtime correlation metadata for relating multiple Runs, not a Session container or an authentication, authorization, or tenant-isolation credential. Applications must authorize before querying and isolate data with separate Stores, database namespaces, or an outer query wrapper. Agent Context is the final `gopact.ModelRequest` explicitly built by business or concrete-Agent Workflow logic; core does not inject implicit conversation or semantic-memory state.
 
@@ -69,7 +70,7 @@ Validation uses focused native gates: `gofmt`, `go mod tidy -diff`, `go test`, `
 
 ## Release status
 
-Before Go 1.27 stable, release candidates are production-evaluation candidates only. A stable tag requires the Go 1.27 stable toolchain gates, coordinated core → ext → examples source E2E, immutable-tag clean-consumer verification, and RC burn-in. No current source checkout implies that post-tag verification has passed.
+A stable tag requires the Go 1.27 toolchain gates, coordinated core → ext → examples source E2E, and immutable-tag clean-consumer verification. A source checkout alone does not imply that post-tag verification has passed.
 
 ## Production execution
 

@@ -115,7 +115,9 @@ func (hook LifecycleHook[C]) run(ctx *C) error {
 	if err := hook.emit(eventCtx, EventLifecycleHookStarted); err != nil {
 		return err
 	}
-	if err := hook.Fn(ctx); err != nil {
+	if err := invokeCallbackError("lifecycle hook", hook.Name, func() error {
+		return hook.Fn(ctx)
+	}); err != nil {
 		if emitErr := hook.emit(eventCtx, EventLifecycleHookFailed); emitErr != nil {
 			return emitErr
 		}
@@ -128,7 +130,7 @@ func (hook LifecycleHook[C]) emit(ctx context.Context, eventType string) error {
 	if ctx == nil {
 		return nil
 	}
-	return Emit(ctx, gopact.Event{Type: eventType, Summary: hook.Name})
+	return emitRuntimeEvent(ctx, gopact.Event{Type: eventType, Summary: hook.Name})
 }
 
 func lifecycleContext(ctx any) context.Context {

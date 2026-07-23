@@ -6,7 +6,7 @@
 
 `gopact` 是 Agent-first、Workflow-native 的 Go ADK core。
 
-> **仅支持 Go 1.27+。** 本项目围绕泛型方法构建，也借此庆祝我们眼中 Go 近十年来最具影响力的语言演进之一。Go 1.27 正式发布前，本项目需要开发版工具链，应视为预览而非稳定版本。
+> **仅支持 Go 1.27+。** 本项目围绕泛型方法构建，也借此庆祝我们眼中 Go 近十年来最具影响力的语言演进之一。
 
 ## 选择入口
 
@@ -22,12 +22,13 @@
 - `agent`：Agent Identity/Request/Response、typed Observation、Tool contract 和 immutable Directory；
 - `workflow`：唯一执行 runtime，提供 typed node/route/join、hook/middleware、guard、checkpoint、history 与同 Run control；
 - `runlog`：append/query/sink contract 与内存实现；
-- `provider`：provider registry/router/fallback 和 basic provider normalization；
-- `gopacttest`：跨仓可复用的 Model 与 Agent conformance helper。
+- `gopacttest`：跨仓可复用的 Model、minimal Agent 与 Workflow-backed Agent 协议 conformance helper。
 
 官方 provider、concrete Agent 和 SQLite adapter 位于 `gopact-ext`，可运行示例位于 `gopact-examples`。
 
 最小 `agent.Agent` interface 仍可由用户直接实现。只有 Workflow-backed Agent 获得其所配置 Workflow 的 checkpoint、恢复、控制与历史语义；直接实现不会自动获得这些保证。
+
+共享的 direct/Workflow-backed Agent 协议使用 `gopacttest.RequireAgentConformance`；实现承诺 Workflow lifecycle、lineage 与 run-extension 语义时，使用 `gopacttest.RequireWorkflowAgentConformance`。response callback 只是针对给定 fixture 的确定性测试断言；任务质量评估与 release acceptance 仍由 application 负责，不是 runtime API。
 
 `SessionID` 是关联多个 Run 的 runtime metadata，不是 Session 容器，也不是认证、授权或租户隔离凭据。应用必须在查询前完成授权，并通过独立 Store、数据库 namespace 或外层 query wrapper 隔离数据。Agent Context 是由业务或具体 Agent 的 Workflow 逻辑显式构造的最终 `gopact.ModelRequest`；core 不隐式注入会话或 semantic Memory 状态。
 
@@ -69,7 +70,7 @@ go vet ./...
 
 ## 发布状态
 
-Go 1.27 stable 发布前，RC 只能称为 production evaluation candidate。stable tag 必须先通过 Go 1.27 stable toolchain 门禁、core → ext → examples 协调源码 E2E、immutable tag clean-consumer 验证和 RC burn-in。当前源码 checkout 不代表 post-tag 验证已经通过。
+stable tag 必须先通过 Go 1.27 toolchain 门禁、core → ext → examples 协调源码 E2E 和 immutable tag clean-consumer 验证。仅有源码 checkout 不代表 post-tag 验证已经通过。
 
 ## 生产执行
 

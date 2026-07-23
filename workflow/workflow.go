@@ -63,6 +63,7 @@ const (
 type resumeOptionConflict struct{}
 type workflowRunOptionFunc func(*gopact.RunConfig)
 type eventEmitterContextKey struct{}
+type runtimeEventEmitterContextKey struct{}
 type eventEmitter func(context.Context, gopact.Event) error
 type childOptionsFactoryContextKey struct{}
 type childOptionsFactory func() []gopact.RunOption
@@ -72,7 +73,8 @@ func (f workflowRunOptionFunc) ApplyRunOption(cfg *gopact.RunConfig) {
 	f(cfg)
 }
 
-// Emit emits a workflow-scoped custom event on the current run.
+// Emit emits a workflow-scoped custom event on the current run. Runtime-owned
+// event types are reserved and rejected.
 func Emit(ctx context.Context, event gopact.Event) error {
 	if event.DefinitionID != "" || event.DefinitionVersion != "" || event.SessionID != "" ||
 		event.RunID != "" || event.NodeID != "" || event.ActivationID != "" || event.AttemptID != "" ||
@@ -89,9 +91,20 @@ func Emit(ctx context.Context, event gopact.Event) error {
 	return emit(ctx, event)
 }
 
+func emitRuntimeEvent(ctx context.Context, event gopact.Event) error {
+	emit, ok := ctx.Value(runtimeEventEmitterContextKey{}).(eventEmitter)
+	if !ok {
+		return errors.New("workflow: runtime event emitter is not available")
+	}
+	return emit(ctx, event)
+}
+
 func validateCustomEvent(types map[string]EventTypeValidator, event gopact.Event) error {
 	if event.Type == "" {
 		return errors.New("workflow: event type is required")
+	}
+	if isRuntimeEventType(event.Type) {
+		return fmt.Errorf("workflow: event type %q is reserved for the runtime", event.Type)
 	}
 	if len(event.Payload) > maxWorkflowEventPayloadBytes {
 		return errors.New("workflow: event payload is too large")
@@ -136,6 +149,40 @@ const (
 	EventLifecycleHookCompleted = "lifecycle.hook_completed"
 	EventLifecycleHookFailed    = "lifecycle.hook_failed"
 )
+
+func isRuntimeEventType(eventType string) bool {
+	switch eventType {
+	case EventWorkflowStarted,
+		EventWorkflowResumed,
+		EventWorkflowRetryStarted,
+		EventWorkflowJumpStarted,
+		EventWorkflowCompleted,
+		EventWorkflowFailed,
+		EventWorkflowCanceled,
+		EventWorkflowTerminated,
+		EventWorkflowInterrupted,
+		EventNodeStarted,
+		EventNodeRetrying,
+		EventNodeCompleted,
+		EventNodeCanceled,
+		EventNodeSuperseded,
+		EventNodeOutputCommitted,
+		EventNodeSkipped,
+		EventNodeFailed,
+		EventGuardRejected,
+		EventGuardInterrupted,
+		EventCheckpointLoaded,
+		EventLifecycleHookStarted,
+		EventLifecycleHookCompleted,
+		EventLifecycleHookFailed,
+		EventIterItemPulled,
+		EventIterClosed,
+		EventIterFailed:
+		return true
+	default:
+		return false
+	}
+}
 
 // Workflow is a typed workflow builder.
 type Workflow[I, O any] struct {
@@ -359,7 +406,10 @@ type Store interface {
 type ResumeRequest struct {
 	RunID        string
 	CheckpointID string
-	Resolutions  []InterruptResolution
+	// Resolutions must contain each pending interrupt exactly once when resuming
+	// an interrupted checkpoint. A running-checkpoint retry may omit them or
+	// replay the exact durable interrupt ID-to-payload-ref associations.
+	Resolutions []InterruptResolution
 }
 
 // InterruptResolution supplies a workflow-owned interrupt resolution by ref.
@@ -1204,11 +1254,23 @@ func (execution *workflowExecution[I, O]) renewCheckpointLease(ctx context.Conte
 	return cause
 }
 
-func (execution *workflowExecution[I, O]) finalizationContext() context.Context {
-	if execution.leaseCtx != nil {
-		return execution.leaseCtx
+func (execution *workflowExecution[I, O]) finalizationContext() (context.Context, context.CancelFunc) {
+	parent := execution.leaseCtx
+	if parent == nil {
+		parent = context.WithoutCancel(execution.ctx)
 	}
-	return context.WithoutCancel(execution.ctx)
+	return context.WithTimeout(parent, execution.compiled.authorityWriteTimeout())
+}
+
+func (execution *workflowExecution[I, O]) detachedAuthorityContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), execution.compiled.authorityWriteTimeout())
+}
+
+func (c *compiled[I, O]) authorityWriteTimeout() time.Duration {
+	if c == nil || c.checkpointLeaseDuration <= c.checkpointLeaseRenewEvery {
+		return defaultCheckpointLeaseDuration - defaultCheckpointLeaseRenewEvery
+	}
+	return c.checkpointLeaseDuration - c.checkpointLeaseRenewEvery
 }
 
 func (execution *workflowExecution[I, O]) stopCheckpointLeaseHeartbeat() error {
@@ -1349,6 +1411,7 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	}
 	defer execution.stopLiveIterators()
 	execution.ctx = context.WithValue(execution.ctx, eventEmitterContextKey{}, eventEmitter(execution.emitCustom))
+	execution.ctx = context.WithValue(execution.ctx, runtimeEventEmitterContextKey{}, eventEmitter(execution.emit))
 	execution.ctx = context.WithValue(execution.ctx, componentEventEmitterContextKey{}, componentEventEmitter{sinks: cfg.EventSinks})
 	if !resume && !controlled {
 		workflowCtx := WorkflowContext[I, O]{ctx: execution.ctx, Input: input}
@@ -1473,7 +1536,9 @@ func (c *compiled[I, O]) initialContext(input I) (any, error) {
 	if c.contextInit == nil {
 		return input, nil
 	}
-	return c.contextInit(input)
+	return invokeCallback("context initializer", "", func() (any, error) {
+		return c.contextInit(input)
+	})
 }
 
 func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
@@ -1504,7 +1569,9 @@ func (execution *workflowExecution[I, O]) releaseCheckpointLease() error {
 	record.LeaseExpiresAt = time.Time{}
 	record.LeaseDuration = 0
 	record.UpdatedAt = time.Now()
-	if err := execution.compiled.store.Save(context.WithoutCancel(execution.ctx), record, record.Version); err != nil {
+	storeCtx, cancel := execution.finalizationContext()
+	defer cancel()
+	if err := execution.compiled.store.Save(storeCtx, record, record.Version); err != nil {
 		return err
 	}
 	record.Version++
@@ -1567,11 +1634,13 @@ func (execution *workflowExecution[I, O]) commitObservedEventLocked(ctx context.
 }
 
 func (execution *workflowExecution[I, O]) appendFencedEvent(ctx context.Context, event gopact.Event) error {
-	return execution.appendFencedEventWithObserver(ctx, ctx, event)
+	storeCtx, cancel := execution.detachedAuthorityContext(ctx)
+	defer cancel()
+	return execution.appendFencedEventWithObserver(storeCtx, ctx, event)
 }
 
 func (execution *workflowExecution[I, O]) appendFencedEventWithObserver(storeCtx, observerCtx context.Context, event gopact.Event) error {
-	appendCtx := eventSinkContext{Context: context.WithoutCancel(storeCtx)}
+	appendCtx := eventSinkContext{Context: storeCtx}
 	record := runlog.RecordFromEvent(event)
 	record.SourceRunID = execution.sourceRunID
 	record.SourceEventSeq = execution.sourceEventSeq
@@ -1594,7 +1663,9 @@ func (execution *workflowExecution[I, O]) appendFencedEventWithObserver(storeCtx
 }
 
 func (execution *workflowExecution[I, O]) emitLocked(ctx context.Context, event gopact.Event) error {
-	return execution.emitLockedWithContexts(ctx, ctx, event)
+	storeCtx, cancel := execution.detachedAuthorityContext(ctx)
+	defer cancel()
+	return execution.emitLockedWithContexts(storeCtx, ctx, event)
 }
 
 func (execution *workflowExecution[I, O]) emitLockedWithContexts(storeCtx, observerCtx context.Context, event gopact.Event) error {
@@ -1609,7 +1680,7 @@ func (execution *workflowExecution[I, O]) emitLockedWithContexts(storeCtx, obser
 	record := runlog.RecordFromEvent(event)
 	record.SourceRunID = execution.sourceRunID
 	record.SourceEventSeq = execution.sourceEventSeq
-	if err := execution.compiled.store.Append(context.WithoutCancel(storeCtx), record); err != nil {
+	if err := execution.compiled.store.Append(storeCtx, record); err != nil {
 		return execution.recordSinkFailure(err)
 	}
 	delivery := eventDelivery{event: event}
@@ -1835,8 +1906,11 @@ func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm Chec
 		)
 	}
 	pending = execution.runtimeEvent(pending, pending.Sequence)
-	if err := execution.emitLockedWithContexts(execution.finalizationContext(), execution.ctx, pending); err != nil {
-		return err
+	storeCtx, cancel := execution.finalizationContext()
+	emitErr := execution.emitLockedWithContexts(storeCtx, execution.ctx, pending)
+	cancel()
+	if emitErr != nil {
+		return emitErr
 	}
 	if execution.interruptProgress != nil && execution.interruptProgress.Next < len(execution.interruptProgress.Events) &&
 		execution.interruptProgress.Events[execution.interruptProgress.Next].Sequence == pending.Sequence {
@@ -1850,8 +1924,11 @@ func (execution *workflowExecution[I, O]) replayPending(status, pendingTerm Chec
 		if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
 			return err
 		}
-		if err := execution.compiled.finishCheckpoint(execution.finalizationContext(), terminal, execution.writeRequest(execution.step, nil)); err != nil {
-			return err
+		storeCtx, cancel := execution.finalizationContext()
+		finishErr := execution.compiled.finishCheckpoint(storeCtx, terminal, execution.writeRequest(execution.step, nil))
+		cancel()
+		if finishErr != nil {
+			return finishErr
 		}
 		execution.checkpoint.Status = terminal
 		return nil
@@ -2236,6 +2313,9 @@ func (execution *workflowExecution[I, O]) finishInterrupt(state runState, waits 
 	seen := make(map[string]struct{}, len(requests))
 	events := make([]gopact.Event, 0, len(requests)+1)
 	for _, interrupt := range requests {
+		if interrupt.ID == "" {
+			return errors.New("workflow: interrupt id is required")
+		}
 		if _, ok := seen[interrupt.ID]; ok {
 			return fmt.Errorf("workflow: duplicate pending interrupt id %q", interrupt.ID)
 		}
@@ -2270,7 +2350,9 @@ func (execution *workflowExecution[I, O]) continueInterruptBatch() error {
 	progress := execution.interruptProgress
 	execution.interruptProgress = nil
 	request := execution.writeRequest(execution.step, nil)
-	saved, err := execution.compiled.interruptCheckpoint(execution.finalizationContext(), request, execution.interrupts)
+	storeCtx, cancel := execution.finalizationContext()
+	saved, err := execution.compiled.interruptCheckpoint(storeCtx, request, execution.interrupts)
+	cancel()
 	if err != nil {
 		execution.interruptProgress = progress
 		return err
@@ -2286,16 +2368,23 @@ func (execution *workflowExecution[I, O]) commitInterruptBatchEvent(event gopact
 		return execution.sinkFailure
 	}
 	request := execution.writeRequest(execution.step, &event)
-	saved, err := execution.compiled.saveCheckpoint(execution.finalizationContext(), request)
+	storeCtx, cancel := execution.finalizationContext()
+	saved, err := execution.compiled.saveCheckpoint(storeCtx, request)
+	cancel()
 	if err != nil {
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitLockedWithContexts(execution.finalizationContext(), execution.ctx, event); err != nil {
-		return err
+	storeCtx, cancel = execution.finalizationContext()
+	emitErr := execution.emitLockedWithContexts(storeCtx, execution.ctx, event)
+	cancel()
+	if emitErr != nil {
+		return emitErr
 	}
 	execution.interruptProgress.Next++
-	saved, err = execution.compiled.saveCheckpoint(execution.finalizationContext(), execution.writeRequest(execution.step, nil))
+	storeCtx, cancel = execution.finalizationContext()
+	saved, err = execution.compiled.saveCheckpoint(storeCtx, execution.writeRequest(execution.step, nil))
+	cancel()
 	if err != nil {
 		return err
 	}
@@ -2426,7 +2515,7 @@ func (execution *workflowExecution[I, O]) cancelRun(cause error) error {
 }
 
 func (execution *workflowExecution[I, O]) commitTerminalError(status CheckpointStatus, event gopact.Event, cause error) error {
-	if err := execution.commitTerminalEvent(execution.finalizationContext(), status, event); err != nil {
+	if err := execution.commitTerminalEvent(status, event); err != nil {
 		return err
 	}
 	return cause
@@ -2437,10 +2526,10 @@ func (execution *workflowExecution[I, O]) finish() error {
 }
 
 func (execution *workflowExecution[I, O]) commitTerminal(status CheckpointStatus, event gopact.Event) error {
-	return execution.commitTerminalEvent(execution.finalizationContext(), status, event)
+	return execution.commitTerminalEvent(status, event)
 }
 
-func (execution *workflowExecution[I, O]) commitTerminalEvent(storeCtx context.Context, status CheckpointStatus, event gopact.Event) error {
+func (execution *workflowExecution[I, O]) commitTerminalEvent(status CheckpointStatus, event gopact.Event) error {
 	execution.eventMu.Lock()
 	defer execution.eventMu.Unlock()
 	if execution.checkpoint.ID == "" {
@@ -2452,18 +2541,25 @@ func (execution *workflowExecution[I, O]) commitTerminalEvent(storeCtx context.C
 	pending := execution.runtimeEvent(event, execution.sequence+1)
 	request := execution.writeRequest(execution.step, &pending)
 	request.PendingTerm = status
+	storeCtx, cancel := execution.finalizationContext()
 	saved, err := execution.compiled.saveCheckpoint(storeCtx, request)
+	cancel()
 	if err != nil {
 		return err
 	}
 	execution.checkpoint = saved
-	if err := execution.emitLockedWithContexts(storeCtx, execution.ctx, pending); err != nil {
-		return err
+	storeCtx, cancel = execution.finalizationContext()
+	emitErr := execution.emitLockedWithContexts(storeCtx, execution.ctx, pending)
+	cancel()
+	if emitErr != nil {
+		return emitErr
 	}
 	if err := execution.stopCheckpointLeaseHeartbeat(); err != nil {
 		return err
 	}
-	return execution.compiled.finishCheckpoint(execution.finalizationContext(), status, execution.writeRequest(execution.step, nil))
+	finishCtx, cancel := execution.finalizationContext()
+	defer cancel()
+	return execution.compiled.finishCheckpoint(finishCtx, status, execution.writeRequest(execution.step, nil))
 }
 
 func (c *compiled[I, O]) scheduleNext(ctx context.Context, state *runState, source activation, output any, dispatch Dispatch) error {
@@ -2851,6 +2947,8 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 		}
 		payload.ResolvedInterrupts = resolved
 		payload.PendingInterrupts = nil
+	} else if err := validateResolvedInterruptReplay(payload.ResolvedInterrupts, req.Resolutions); err != nil {
+		return CheckpointRecord{}, err
 	}
 	payload.OwnerID = ownerID
 	payload.LeaseExpiresAt = now.Add(c.checkpointLeaseDuration)
@@ -2876,16 +2974,40 @@ func (c *compiled[I, O]) claimCheckpoint(ctx context.Context, rec CheckpointReco
 
 func resolvePendingInterrupts(pending []checkpointInterrupt, resolutions []InterruptResolution) ([]checkpointInterruptResolution, error) {
 	if len(pending) == 0 {
-		return nil, errors.New("workflow: interrupted checkpoint is missing interrupt state")
+		return nil, fmt.Errorf("%w: interrupted checkpoint is missing interrupt state", ErrInvalidCheckpoint)
 	}
-	resolved := make([]checkpointInterruptResolution, 0, len(pending))
+	pendingIDs := make(map[string]struct{}, len(pending))
 	for _, interrupt := range pending {
-		resolution, ok := findInterruptResolution(resolutions, interrupt.Request.ID)
-		if !ok {
-			return nil, fmt.Errorf("workflow: interrupt resolution %q is required", interrupt.Request.ID)
+		interruptID := interrupt.Request.ID
+		if interruptID == "" {
+			return nil, fmt.Errorf("%w: pending interrupt id is required", ErrInvalidCheckpoint)
+		}
+		if _, duplicate := pendingIDs[interruptID]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate pending interrupt id %q", ErrInvalidCheckpoint, interruptID)
+		}
+		pendingIDs[interruptID] = struct{}{}
+	}
+	resolutionsByID := make(map[string]InterruptResolution, len(resolutions))
+	for _, resolution := range resolutions {
+		if resolution.InterruptID == "" {
+			return nil, errors.New("workflow: interrupt resolution id is required")
+		}
+		if _, duplicate := resolutionsByID[resolution.InterruptID]; duplicate {
+			return nil, fmt.Errorf("workflow: duplicate interrupt resolution %q", resolution.InterruptID)
+		}
+		if _, expected := pendingIDs[resolution.InterruptID]; !expected {
+			return nil, fmt.Errorf("workflow: interrupt resolution %q is unexpected", resolution.InterruptID)
 		}
 		if resolution.PayloadRef == "" {
 			return nil, fmt.Errorf("workflow: interrupt resolution %q payload ref is required", resolution.InterruptID)
+		}
+		resolutionsByID[resolution.InterruptID] = resolution
+	}
+	resolved := make([]checkpointInterruptResolution, 0, len(pending))
+	for _, interrupt := range pending {
+		resolution, ok := resolutionsByID[interrupt.Request.ID]
+		if !ok {
+			return nil, fmt.Errorf("workflow: interrupt resolution %q is required", interrupt.Request.ID)
 		}
 		resolved = append(resolved, checkpointInterruptResolution{
 			InterruptID: resolution.InterruptID, PayloadRef: resolution.PayloadRef,
@@ -2898,13 +3020,57 @@ func resolvePendingInterrupts(pending []checkpointInterrupt, resolutions []Inter
 	return resolved, nil
 }
 
-func findInterruptResolution(resolutions []InterruptResolution, interruptID string) (InterruptResolution, bool) {
-	for _, resolution := range resolutions {
-		if resolution.InterruptID == interruptID {
-			return resolution, true
+func validateResolvedInterruptReplay(resolved []checkpointInterruptResolution, replay []InterruptResolution) error {
+	resolvedByID := make(map[string]string, len(resolved))
+	for _, resolution := range resolved {
+		if resolution.InterruptID == "" {
+			return fmt.Errorf("%w: resolved interrupt id is required", ErrInvalidCheckpoint)
+		}
+		if resolution.PayloadRef == "" {
+			return fmt.Errorf(
+				"%w: resolved interrupt %q payload ref is required",
+				ErrInvalidCheckpoint,
+				resolution.InterruptID,
+			)
+		}
+		if _, duplicate := resolvedByID[resolution.InterruptID]; duplicate {
+			return fmt.Errorf(
+				"%w: duplicate resolved interrupt id %q",
+				ErrInvalidCheckpoint,
+				resolution.InterruptID,
+			)
+		}
+		resolvedByID[resolution.InterruptID] = resolution.PayloadRef
+	}
+	if len(replay) == 0 {
+		return nil
+	}
+	replayedIDs := make(map[string]struct{}, len(replay))
+	for _, resolution := range replay {
+		if resolution.InterruptID == "" {
+			return errors.New("workflow: interrupt resolution id is required")
+		}
+		if _, duplicate := replayedIDs[resolution.InterruptID]; duplicate {
+			return fmt.Errorf("workflow: duplicate interrupt resolution %q", resolution.InterruptID)
+		}
+		durablePayloadRef, expected := resolvedByID[resolution.InterruptID]
+		if !expected {
+			return fmt.Errorf("workflow: interrupt resolution %q is unexpected", resolution.InterruptID)
+		}
+		if resolution.PayloadRef == "" {
+			return fmt.Errorf("workflow: interrupt resolution %q payload ref is required", resolution.InterruptID)
+		}
+		if resolution.PayloadRef != durablePayloadRef {
+			return fmt.Errorf("workflow: interrupt resolution %q payload ref does not match checkpoint", resolution.InterruptID)
+		}
+		replayedIDs[resolution.InterruptID] = struct{}{}
+	}
+	for _, resolution := range resolved {
+		if _, ok := replayedIDs[resolution.InterruptID]; !ok {
+			return fmt.Errorf("workflow: interrupt resolution %q is required", resolution.InterruptID)
 		}
 	}
-	return InterruptResolution{}, false
+	return nil
 }
 
 func (c *compiled[I, O]) saveCheckpoint(ctx context.Context, req checkpointWriteRequest[O]) (CheckpointRecord, error) {
@@ -3505,7 +3671,9 @@ func (n *Node[I, O]) joinAny(ctx context.Context, inputs Inputs) (any, error) {
 	if n.join == nil {
 		return inputs, nil
 	}
-	return n.join(ctx, inputs)
+	return invokeCallback("join callback", "", func() (I, error) {
+		return n.join(ctx, inputs)
+	})
 }
 
 func (n *Node[I, O]) routeAny(ctx context.Context, output any) (Dispatch, error) {
@@ -3516,7 +3684,9 @@ func (n *Node[I, O]) routeAny(ctx context.Context, output any) (Dispatch, error)
 	if !ok {
 		return Dispatch{}, fmt.Errorf("output type mismatch: got %T, want %s", output, typeOf[O]())
 	}
-	return n.route(ctx, typed)
+	return invokeCallback("route callback", "", func() (Dispatch, error) {
+		return n.route(ctx, typed)
+	})
 }
 
 func (n *Node[I, O]) hasRoute() bool {
@@ -3603,7 +3773,7 @@ type eventSinkContext struct{ context.Context }
 
 func (ctx eventSinkContext) Value(key any) any {
 	switch key.(type) {
-	case eventEmitterContextKey, componentEventEmitterContextKey:
+	case eventEmitterContextKey, runtimeEventEmitterContextKey, componentEventEmitterContextKey:
 		return nil
 	}
 	return ctx.Context.Value(key)

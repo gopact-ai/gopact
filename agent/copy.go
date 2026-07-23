@@ -14,17 +14,7 @@ func cloneMessages(values []gopact.Message) []gopact.Message {
 }
 
 func cloneMessage(value gopact.Message) gopact.Message {
-	if value.Parts == nil {
-		return value
-	}
-	value.Parts = append([]gopact.MessagePart(nil), value.Parts...)
-	for i := range value.Parts {
-		if value.Parts[i].Ref != nil {
-			ref := *value.Parts[i].Ref
-			value.Parts[i].Ref = &ref
-		}
-	}
-	return value
+	return value.Clone()
 }
 
 func cloneRefs(values []gopact.ArtifactRef) []gopact.ArtifactRef {

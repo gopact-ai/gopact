@@ -130,7 +130,9 @@ func eraseRouteMiddleware[I, O any](name string, mw RouteMiddleware[I, O]) erase
 			)
 		}
 		middlewareCtx := RouteContext[I, O]{ctx: ctx, NodeName: nodeName, Output: typedOutput, Dispatch: dispatch}
-		if err := mw(&middlewareCtx); err != nil {
+		if err := invokeCallbackError("route middleware", name, func() error {
+			return mw(&middlewareCtx)
+		}); err != nil {
 			return Dispatch{}, true, err
 		}
 		return middlewareCtx.Dispatch, true, nil
@@ -152,7 +154,9 @@ func eraseJoinMiddleware[I any](name string, mw JoinMiddleware[I]) erasedJoinMid
 			)
 		}
 		middlewareCtx := JoinContext[I]{ctx: ctx, NodeName: nodeName, Inputs: inputs, Input: typedInput}
-		if err := mw(&middlewareCtx); err != nil {
+		if err := invokeCallbackError("join middleware", name, func() error {
+			return mw(&middlewareCtx)
+		}); err != nil {
 			return nil, true, err
 		}
 		return middlewareCtx.Input, true, nil

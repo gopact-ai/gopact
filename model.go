@@ -80,6 +80,30 @@ func WithModelEventSink(sink ModelEventSink) ModelCallOption {
 type Message struct {
 	Role  string
 	Parts []MessagePart
+	// ToolCalls contains canonical calls requested by an assistant message.
+	ToolCalls []ToolCall
+	// ToolCallID associates a tool-role message with its originating call.
+	ToolCallID string
+}
+
+// Clone returns a deep copy of the message-owned slices and references.
+func (m Message) Clone() Message {
+	m.Parts = append([]MessagePart(nil), m.Parts...)
+	for index := range m.Parts {
+		if m.Parts[index].Ref != nil {
+			ref := *m.Parts[index].Ref
+			m.Parts[index].Ref = &ref
+		}
+	}
+	if m.ToolCalls != nil {
+		calls := make([]ToolCall, len(m.ToolCalls))
+		for index, call := range m.ToolCalls {
+			call.Arguments = append(json.RawMessage(nil), call.Arguments...)
+			calls[index] = call
+		}
+		m.ToolCalls = calls
+	}
+	return m
 }
 
 // Provider-neutral message roles. Role remains a string so providers and
@@ -431,10 +455,10 @@ type FinalIntent struct{}
 func (FinalIntent) IntentType() ModelIntentType { return ModelIntentFinal }
 func (FinalIntent) isModelIntent()              {}
 
-// ToolCallIntent requests tool execution.
-type ToolCallIntent struct {
-	Calls []ToolCall
-}
+// ToolCallIntent indicates that Message.ToolCalls request tool execution.
+// The calls live on Message so the model decision and durable transcript cannot
+// carry divergent copies of the same facts.
+type ToolCallIntent struct{}
 
 // IntentType returns ModelIntentToolCall.
 func (ToolCallIntent) IntentType() ModelIntentType { return ModelIntentToolCall }
