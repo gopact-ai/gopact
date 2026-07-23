@@ -35,6 +35,9 @@ type EventSinkWrapper func(gopact.EventSink) gopact.EventSink
 
 // RegisterEventType registers a custom workflow event type validator.
 func (r *Registry) RegisterEventType(name string, validator EventTypeValidator) error {
+	if r != nil && isRuntimeEventType(name) {
+		return fmt.Errorf("workflow: event type %q is reserved for the runtime", name)
+	}
 	if err := r.reserveName("event type", name); err != nil {
 		return err
 	}

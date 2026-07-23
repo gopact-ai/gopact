@@ -854,6 +854,63 @@ func TestWorkflowCustomEventPayloadBoundary(t *testing.T) {
 	}
 }
 
+func TestWorkflowCustomEventRejectsRuntimeEventTypes(t *testing.T) {
+	runtimeEventTypes := []string{
+		EventWorkflowStarted,
+		EventWorkflowResumed,
+		EventWorkflowRetryStarted,
+		EventWorkflowJumpStarted,
+		EventWorkflowCompleted,
+		EventWorkflowFailed,
+		EventWorkflowCanceled,
+		EventWorkflowTerminated,
+		EventWorkflowInterrupted,
+		EventNodeStarted,
+		EventNodeRetrying,
+		EventNodeCompleted,
+		EventNodeCanceled,
+		EventNodeSuperseded,
+		EventNodeOutputCommitted,
+		EventNodeSkipped,
+		EventNodeFailed,
+		EventGuardRejected,
+		EventGuardInterrupted,
+		EventCheckpointLoaded,
+		EventLifecycleHookStarted,
+		EventLifecycleHookCompleted,
+		EventLifecycleHookFailed,
+		EventIterItemPulled,
+		EventIterClosed,
+		EventIterFailed,
+	}
+	for _, eventType := range runtimeEventTypes {
+		t.Run(eventType, func(t *testing.T) {
+			err := validateCustomEvent(nil, gopact.Event{Type: eventType})
+			if err == nil || !strings.Contains(err.Error(), "is reserved") {
+				t.Fatalf("validateCustomEvent() error = %v, want reserved event type error", err)
+			}
+		})
+	}
+	for _, eventType := range []string{EventWorkflowCustomEvent, "audit.custom"} {
+		if err := validateCustomEvent(nil, gopact.Event{Type: eventType}); err != nil {
+			t.Fatalf("validateCustomEvent(%q) error = %v", eventType, err)
+		}
+	}
+}
+
+func TestWorkflowRejectsRuntimeEventFromNode(t *testing.T) {
+	wf := New[string, string]("example")
+	plan := testNode(wf, "plan", func(ctx context.Context, input string) (string, error) {
+		return input, Emit(ctx, gopact.Event{Type: EventWorkflowCompleted})
+	})
+	wf.Entry(plan)
+	wf.Exit(plan)
+	_, err := wf.Invoke(t.Context(), "abc")
+	if err == nil || !strings.Contains(err.Error(), "is reserved") {
+		t.Fatalf("Invoke() error = %v, want reserved event type error", err)
+	}
+}
+
 func TestWorkflowCheckpointPayloadBoundary(t *testing.T) {
 	oversized := strings.Repeat("x", maxWorkflowCheckpointPayloadBytes+1)
 	if _, err := encodeCheckpointPayloadWithMeta(runState{}, []string{oversized}, 1, checkpointPayloadMeta{}); err == nil || !strings.Contains(err.Error(), "payload is too large") {
@@ -2372,6 +2429,16 @@ func TestPluginDuplicateEventTypeIsBuildError(t *testing.T) {
 	_, err := wf.compile()
 	if err == nil {
 		t.Fatal("Compile() error = nil, want duplicate event type error")
+	}
+}
+
+func TestRegistryRejectsRuntimeEventTypeWithoutReservingName(t *testing.T) {
+	registry := &Registry{}
+	for range 2 {
+		err := registry.RegisterEventType(EventWorkflowCompleted, func(gopact.Event) error { return nil })
+		if err == nil || !strings.Contains(err.Error(), "is reserved") {
+			t.Fatalf("RegisterEventType() error = %v, want reserved event type error", err)
+		}
 	}
 }
 

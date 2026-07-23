@@ -63,6 +63,7 @@ const (
 type resumeOptionConflict struct{}
 type workflowRunOptionFunc func(*gopact.RunConfig)
 type eventEmitterContextKey struct{}
+type runtimeEventEmitterContextKey struct{}
 type eventEmitter func(context.Context, gopact.Event) error
 type childOptionsFactoryContextKey struct{}
 type childOptionsFactory func() []gopact.RunOption
@@ -72,7 +73,8 @@ func (f workflowRunOptionFunc) ApplyRunOption(cfg *gopact.RunConfig) {
 	f(cfg)
 }
 
-// Emit emits a workflow-scoped custom event on the current run.
+// Emit emits a workflow-scoped custom event on the current run. Runtime-owned
+// event types are reserved and rejected.
 func Emit(ctx context.Context, event gopact.Event) error {
 	if event.DefinitionID != "" || event.DefinitionVersion != "" || event.SessionID != "" ||
 		event.RunID != "" || event.NodeID != "" || event.ActivationID != "" || event.AttemptID != "" ||
@@ -89,9 +91,20 @@ func Emit(ctx context.Context, event gopact.Event) error {
 	return emit(ctx, event)
 }
 
+func emitRuntimeEvent(ctx context.Context, event gopact.Event) error {
+	emit, ok := ctx.Value(runtimeEventEmitterContextKey{}).(eventEmitter)
+	if !ok {
+		return errors.New("workflow: runtime event emitter is not available")
+	}
+	return emit(ctx, event)
+}
+
 func validateCustomEvent(types map[string]EventTypeValidator, event gopact.Event) error {
 	if event.Type == "" {
 		return errors.New("workflow: event type is required")
+	}
+	if isRuntimeEventType(event.Type) {
+		return fmt.Errorf("workflow: event type %q is reserved for the runtime", event.Type)
 	}
 	if len(event.Payload) > maxWorkflowEventPayloadBytes {
 		return errors.New("workflow: event payload is too large")
@@ -136,6 +149,40 @@ const (
 	EventLifecycleHookCompleted = "lifecycle.hook_completed"
 	EventLifecycleHookFailed    = "lifecycle.hook_failed"
 )
+
+func isRuntimeEventType(eventType string) bool {
+	switch eventType {
+	case EventWorkflowStarted,
+		EventWorkflowResumed,
+		EventWorkflowRetryStarted,
+		EventWorkflowJumpStarted,
+		EventWorkflowCompleted,
+		EventWorkflowFailed,
+		EventWorkflowCanceled,
+		EventWorkflowTerminated,
+		EventWorkflowInterrupted,
+		EventNodeStarted,
+		EventNodeRetrying,
+		EventNodeCompleted,
+		EventNodeCanceled,
+		EventNodeSuperseded,
+		EventNodeOutputCommitted,
+		EventNodeSkipped,
+		EventNodeFailed,
+		EventGuardRejected,
+		EventGuardInterrupted,
+		EventCheckpointLoaded,
+		EventLifecycleHookStarted,
+		EventLifecycleHookCompleted,
+		EventLifecycleHookFailed,
+		EventIterItemPulled,
+		EventIterClosed,
+		EventIterFailed:
+		return true
+	default:
+		return false
+	}
+}
 
 // Workflow is a typed workflow builder.
 type Workflow[I, O any] struct {
@@ -1361,6 +1408,7 @@ func (c *compiled[I, O]) invokeAll(ctx context.Context, input I, sink outputSink
 	}
 	defer execution.stopLiveIterators()
 	execution.ctx = context.WithValue(execution.ctx, eventEmitterContextKey{}, eventEmitter(execution.emitCustom))
+	execution.ctx = context.WithValue(execution.ctx, runtimeEventEmitterContextKey{}, eventEmitter(execution.emit))
 	execution.ctx = context.WithValue(execution.ctx, componentEventEmitterContextKey{}, componentEventEmitter{sinks: cfg.EventSinks})
 	if !resume && !controlled {
 		workflowCtx := WorkflowContext[I, O]{ctx: execution.ctx, Input: input}
@@ -3643,7 +3691,7 @@ type eventSinkContext struct{ context.Context }
 
 func (ctx eventSinkContext) Value(key any) any {
 	switch key.(type) {
-	case eventEmitterContextKey, componentEventEmitterContextKey:
+	case eventEmitterContextKey, runtimeEventEmitterContextKey, componentEventEmitterContextKey:
 		return nil
 	}
 	return ctx.Context.Value(key)
