@@ -115,7 +115,9 @@ func (hook LifecycleHook[C]) run(ctx *C) error {
 	if err := hook.emit(eventCtx, EventLifecycleHookStarted); err != nil {
 		return err
 	}
-	if err := hook.Fn(ctx); err != nil {
+	if err := invokeCallbackError("lifecycle hook", hook.Name, func() error {
+		return hook.Fn(ctx)
+	}); err != nil {
 		if emitErr := hook.emit(eventCtx, EventLifecycleHookFailed); emitErr != nil {
 			return emitErr
 		}
