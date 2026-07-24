@@ -41,8 +41,9 @@ type Fence struct {
 // FencedLog atomically validates workflow ownership and appends one record.
 // A combined workflow Store must serialize AppendFenced with Claim, RenewLease,
 // Save, Finish, and ownership release so none can change the checked claim
-// between validation and append. A rejected or expired fence must return the
-// workflow lease-lost sentinel expected by the caller.
+// between validation and append. A rejected or expired fence must not append or
+// alter a record and must return the workflow lease-lost sentinel expected by
+// the caller.
 type FencedLog interface {
 	Log
 	AppendFenced(context.Context, Record, Fence) error
