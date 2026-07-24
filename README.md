@@ -36,7 +36,7 @@ Use `gopacttest.RequireAgentConformance` for the shared direct/Workflow-backed A
 
 Go 1.27 or newer is required. This repository intentionally uses Go 1.27+ generic object methods in both Agent and workflow implementer APIs.
 
-Run local commands with your installed Go 1.27 toolchain, for example `go test ./...`. CI pins `setup-go` to the currently published Go 1.27 toolchain.
+Run local commands with your installed Go 1.27 toolchain, for example `go test ./...`. CI pins `setup-go` to a specific Go 1.27 toolchain version.
 
 ## Optional model capabilities
 
