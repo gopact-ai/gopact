@@ -6,7 +6,7 @@
 
 `gopact` 是 Agent-first、Workflow-native 的 Go ADK core。
 
-> **仅支持 Go 1.27+。** 在 Go 1.27.0 正式发布前，请使用 Go 1.27 RC 2 工具链。gopact 本身仍只发布正式版本。
+> **需要 Go 1.27 或更新版本。**
 
 ## 选择入口
 
@@ -36,7 +36,7 @@
 
 需要 Go 1.27 或更新版本。本仓库按 Go 1.27+ 设计，Agent 与 workflow 的实现者 API 都使用泛型对象方法。
 
-在 Go 1.27.0 正式发布前，本地命令使用 `go1.27rc2` 工具链，例如 `GOTOOLCHAIN=go1.27rc2 go test ./...`。CI 使用 `setup-go` 对应的版本写法 `1.27.0-rc.2` 固定同一工具链。
+本地命令使用你安装的 Go 1.27 工具链，例如 `go test ./...`。CI 使用 `setup-go` 固定到当前已发布的 Go 1.27 工具链。
 
 ## 可选模型能力
 
