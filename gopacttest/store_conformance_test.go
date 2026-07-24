@@ -12,7 +12,7 @@ func TestMemoryStoreConformance(t *testing.T) {
 		created++
 		return workflow.NewMemoryStore()
 	})
-	if created != 4 {
+	if created != 5 {
 		t.Fatalf("store factory calls = %d, want one per conformance subtest", created)
 	}
 }

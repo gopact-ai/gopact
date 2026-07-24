@@ -227,6 +227,92 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 			t.Fatalf("List() = %+v, %v, want one unchanged fenced record", records, err)
 		}
 	})
+
+	t.Run("writes honor caller cancellation and deadline", func(t *testing.T) {
+		store := requireConformanceStore(t, newStore)
+		seed := storeConformanceCheckpoint("store-conformance-cancel")
+		if err := store.Create(t.Context(), seed); err != nil {
+			t.Fatalf("Create() setup error = %v", err)
+		}
+		live, err := store.Load(t.Context(), seed.RunID)
+		if err != nil {
+			t.Fatalf("Load() setup error = %v", err)
+		}
+
+		created := storeConformanceCheckpoint("store-conformance-cancel-create")
+		claimed := live
+		claimed.OwnerID = "store-conformance-cancel-owner"
+		claimed.ClaimSequence = live.ClaimSequence + 1
+		claimed.LeaseExpiresAt = time.Now().UTC().Add(time.Hour)
+		saved := live
+		saved.Payload = []byte(`{"state":"cancelled-write"}`)
+		finished := live
+		finished.Status = workflow.CheckpointCompleted
+		finished.OwnerID = ""
+		finished.LeaseExpiresAt = time.Time{}
+		fence := runlog.Fence{OwnerID: live.OwnerID, ClaimSequence: live.ClaimSequence}
+		logRecord := storeConformanceRunLogRecord(live.RunID, 1)
+
+		writes := []struct {
+			name string
+			call func(context.Context) error
+		}{
+			{"Create", func(ctx context.Context) error { return store.Create(ctx, created) }},
+			{"Claim", func(ctx context.Context) error { return store.Claim(ctx, claimed, live.Version) }},
+			{"Save", func(ctx context.Context) error { return store.Save(ctx, saved, live.Version) }},
+			{"Finish", func(ctx context.Context) error { return store.Finish(ctx, finished, live.Version) }},
+			{"RenewLease", func(ctx context.Context) error {
+				return store.RenewLease(ctx, workflow.CheckpointLease{
+					RunID:         live.RunID,
+					OwnerID:       live.OwnerID,
+					ClaimSequence: live.ClaimSequence,
+					ExpiresAt:     live.LeaseExpiresAt.Add(time.Hour),
+				})
+			}},
+			{"Append", func(ctx context.Context) error { return store.Append(ctx, logRecord) }},
+			{"AppendFenced", func(ctx context.Context) error { return store.AppendFenced(ctx, logRecord, fence) }},
+		}
+
+		cancelled, cancel := context.WithCancel(t.Context())
+		cancel()
+		expired, cancelDeadline := context.WithDeadline(t.Context(), time.Now().Add(-time.Hour))
+		defer cancelDeadline()
+
+		for _, ctxCase := range []struct {
+			name string
+			ctx  context.Context
+			want error
+		}{
+			{"cancelled", cancelled, context.Canceled},
+			{"expired deadline", expired, context.DeadlineExceeded},
+		} {
+			for _, write := range writes {
+				if err := write.call(ctxCase.ctx); !errors.Is(err, ctxCase.want) {
+					t.Fatalf("%s(%s ctx) error = %v, want %v", write.name, ctxCase.name, err, ctxCase.want)
+				}
+			}
+		}
+
+		// A write that refused to run must not have mutated durable state.
+		after, err := store.Load(t.Context(), live.RunID)
+		if err != nil {
+			t.Fatalf("Load() after refused writes error = %v", err)
+		}
+		if after.Version != live.Version || after.Status != workflow.CheckpointRunning {
+			t.Fatalf("checkpoint after refused writes = version %d status %q, want version %d running",
+				after.Version, after.Status, live.Version)
+		}
+		if _, err := store.Load(t.Context(), created.RunID); !errors.Is(err, workflow.ErrCheckpointNotFound) {
+			t.Fatalf("Load(refused Create) error = %v, want ErrCheckpointNotFound", err)
+		}
+		records, err := store.List(t.Context(), runlog.Query{RunID: live.RunID})
+		if err != nil {
+			t.Fatalf("List() after refused writes error = %v", err)
+		}
+		if len(records) != 0 {
+			t.Fatalf("run log after refused writes = %+v, want empty", records)
+		}
+	})
 }
 
 func requireConformanceStore(t *testing.T, newStore func(*testing.T) workflow.Store) workflow.Store {
