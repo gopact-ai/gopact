@@ -6,7 +6,7 @@ Chinese documentation: [README_zh.md](README_zh.md)
 
 `gopact` is an Agent-first, Workflow-native Go ADK core.
 
-> **Go 1.27+ only.** Until Go 1.27.0 is released, use the Go 1.27 RC 2 toolchain. gopact itself still publishes stable versions only.
+> **Requires Go 1.27 or newer.**
 
 ## Choose your path
 
@@ -36,7 +36,7 @@ Use `gopacttest.RequireAgentConformance` for the shared direct/Workflow-backed A
 
 Go 1.27 or newer is required. This repository intentionally uses Go 1.27+ generic object methods in both Agent and workflow implementer APIs.
 
-Until Go 1.27.0 is released, run local commands with the `go1.27rc2` toolchain, for example `GOTOOLCHAIN=go1.27rc2 go test ./...`. CI pins the same toolchain using the `setup-go` version `1.27.0-rc.2`.
+Run local commands with your installed Go 1.27 toolchain, for example `go test ./...`. CI pins `setup-go` to a specific Go 1.27 toolchain version.
 
 ## Optional model capabilities
 
