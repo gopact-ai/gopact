@@ -222,7 +222,8 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 			t.Fatalf("AppendFenced(after Finish) error = %v, want ErrCheckpointLeaseLost", err)
 		}
 		records, err := store.List(t.Context(), runlog.Query{RunID: current.RunID})
-		if err != nil || len(records) != 1 || records[0].Summary != record.Summary {
+		if err != nil || len(records) != 1 ||
+			records[0].Sequence != record.Sequence || records[0].Summary != record.Summary {
 			t.Fatalf("List() = %+v, %v, want one unchanged fenced record", records, err)
 		}
 	})
