@@ -106,7 +106,7 @@ func TestAgentProcessE2E(t *testing.T) {
 
 func TestAgentProcess(t *testing.T) {
 	if os.Getenv("GOPACT_ACP_HELPER") != "1" {
-		t.Skip("helper process")
+		t.Skip("not running as helper process")
 	}
 	conn, err := NewAgent(os.Stdin, os.Stdout, processTarget{})
 	if err != nil {
