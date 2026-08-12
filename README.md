@@ -22,6 +22,7 @@ It contains only:
 - `agent` Identity/Request/Response, typed observations, tool contracts, and immutable directories;
 - `workflow` as the sole execution runtime, with typed nodes/routes/joins, hooks/middleware, guards, checkpoints, history, and same-Run control;
 - `runlog` append/query/sink contracts and an in-memory implementation;
+- `acp` adapter for exposing an `agent.Agent` over stable Agent Client Protocol v1;
 - `gopacttest` reusable protocol conformance helpers for models, minimal Agents, and Workflow-backed Agents.
 
 Official providers, concrete Agents, and the SQLite adapter live in `gopact-ext`; runnable examples live in `gopact-examples`.
@@ -31,6 +32,8 @@ The minimal `agent.Agent` interface remains directly implementable. Only Workflo
 Use `gopacttest.RequireAgentConformance` for the shared direct/Workflow-backed Agent protocol. Use `gopacttest.RequireWorkflowAgentConformance` when an implementation promises Workflow lifecycle, lineage, and run-extension semantics. Store implementations can use `gopacttest.RequireStoreConformance` for portable recovery and RunLog checks while keeping database-specific lifecycle and concurrency tests local. The response callback is a deterministic test assertion for the supplied fixture; task-quality evaluation and release acceptance remain application responsibilities, not runtime APIs.
 
 `SessionID` is runtime correlation metadata for relating multiple Runs, not a Session container or an authentication, authorization, or tenant-isolation credential. Applications must authorize before querying and isolate data with separate Stores, database namespaces, or an outer query wrapper. Agent Context is the final `gopact.ModelRequest` explicitly built by business or concrete-Agent Workflow logic; core does not inject implicit conversation or semantic-memory state.
+
+Expose an Agent over ACP with `acp.NewAgent(os.Stdin, os.Stdout, target)`. The baseline adapter supports text and resource-link prompts, session updates, and prompt cancellation; authentication, client filesystem/terminal access, session persistence, and other optional ACP capabilities remain application-owned.
 
 ## Requirements
 
