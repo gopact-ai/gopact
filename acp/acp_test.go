@@ -135,6 +135,15 @@ func TestPromptRejectsUnknownSessionAndUnsupportedContent(t *testing.T) {
 	}
 }
 
+func TestSendPartReturnsProtocolErrorForUnsupportedResponse(t *testing.T) {
+	h := &handler{}
+	err := h.sendPart(t.Context(), "session-1", gopact.MessagePart{Type: "image"})
+	var protocolErr *protocol.Error
+	if !errors.As(err, &protocolErr) || protocolErr.Code != protocol.ErrorCodeInternalError {
+		t.Fatalf("sendPart() error = %v", err)
+	}
+}
+
 type testAgent struct {
 	mu      sync.Mutex
 	request agent.Request

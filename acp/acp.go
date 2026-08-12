@@ -250,7 +250,7 @@ func (h *handler) sendPart(ctx context.Context, sessionID protocol.SessionID, pa
 	case part.Type == gopact.MessagePartTypeArtifact && part.Ref != nil:
 		return h.sendArtifact(ctx, sessionID, *part.Ref)
 	default:
-		return fmt.Errorf("gopact/acp: unsupported response message part %q", part.Type)
+		return &protocol.Error{Code: protocol.ErrorCodeInternalError, Message: fmt.Sprintf("Unsupported response message part %q", part.Type)}
 	}
 }
 
