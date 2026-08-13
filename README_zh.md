@@ -22,6 +22,7 @@
 - `agent`：Agent Identity/Request/Response、typed Observation、Tool contract 和 immutable Directory；
 - `workflow`：唯一执行 runtime，提供 typed node/route/join、hook/middleware、guard、checkpoint、history 与同 Run control；
 - `runlog`：append/query/sink contract 与内存实现；
+- `acp`：把 `agent.Agent` 暴露为 stable Agent Client Protocol v1 的 adapter；
 - `gopacttest`：跨仓可复用的 Model、minimal Agent 与 Workflow-backed Agent 协议 conformance helper。
 
 官方 provider、concrete Agent 和 SQLite adapter 位于 `gopact-ext`，可运行示例位于 `gopact-examples`。
@@ -31,6 +32,8 @@
 共享的 direct/Workflow-backed Agent 协议使用 `gopacttest.RequireAgentConformance`；实现承诺 Workflow lifecycle、lineage 与 run-extension 语义时，使用 `gopacttest.RequireWorkflowAgentConformance`。Store 实现可用 `gopacttest.RequireStoreConformance` 检查可移植的恢复与 RunLog 语义，数据库特有的生命周期和并发测试仍留在实现侧。response callback 只是针对给定 fixture 的确定性测试断言；任务质量评估与 release acceptance 仍由 application 负责，不是 runtime API。
 
 `SessionID` 是关联多个 Run 的 runtime metadata，不是 Session 容器，也不是认证、授权或租户隔离凭据。应用必须在查询前完成授权，并通过独立 Store、数据库 namespace 或外层 query wrapper 隔离数据。Agent Context 是由业务或具体 Agent 的 Workflow 逻辑显式构造的最终 `gopact.ModelRequest`；core 不隐式注入会话或 semantic Memory 状态。
+
+可通过 `acp.NewAgent(os.Stdin, os.Stdout, target)` 把 Agent 暴露为 ACP。基础 adapter 支持 text 与 resource-link prompt、session update 和 prompt cancel；认证、客户端文件系统/终端访问、session 持久化以及其他 ACP 可选能力仍由应用负责。
 
 ## 要求
 
