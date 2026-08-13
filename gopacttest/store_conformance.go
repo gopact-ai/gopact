@@ -287,9 +287,7 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 			{"expired deadline", expired, context.DeadlineExceeded},
 		} {
 			for _, write := range writes {
-				if err := write.call(ctxCase.ctx); !errors.Is(err, ctxCase.want) {
-					t.Fatalf("%s(%s ctx) error = %v, want %v", write.name, ctxCase.name, err, ctxCase.want)
-				}
+				requireWriteHonorsCtx(t, write.name+" "+ctxCase.name, write.call, ctxCase.ctx, ctxCase.want)
 			}
 		}
 
@@ -298,9 +296,10 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 		if err != nil {
 			t.Fatalf("Load() after refused writes error = %v", err)
 		}
-		if after.Version != live.Version || after.Status != workflow.CheckpointRunning {
-			t.Fatalf("checkpoint after refused writes = version %d status %q, want version %d running",
-				after.Version, after.Status, live.Version)
+		if after.Version != live.Version || after.Status != workflow.CheckpointRunning ||
+			after.OwnerID != live.OwnerID || after.ClaimSequence != live.ClaimSequence ||
+			!after.LeaseExpiresAt.Equal(live.LeaseExpiresAt) {
+			t.Fatalf("checkpoint after refused writes = %+v, want unchanged running %+v", after, live)
 		}
 		if _, err := store.Load(t.Context(), created.RunID); !errors.Is(err, workflow.ErrCheckpointNotFound) {
 			t.Fatalf("Load(refused Create) error = %v, want ErrCheckpointNotFound", err)
@@ -313,6 +312,13 @@ func RequireStoreConformance(t *testing.T, newStore func(*testing.T) workflow.St
 			t.Fatalf("run log after refused writes = %+v, want empty", records)
 		}
 	})
+}
+
+func requireWriteHonorsCtx(t *testing.T, name string, call func(context.Context) error, ctx context.Context, want error) {
+	t.Helper()
+	if err := call(ctx); !errors.Is(err, want) {
+		t.Fatalf("%s error = %v, want %v", name, err, want)
+	}
 }
 
 func requireConformanceStore(t *testing.T, newStore func(*testing.T) workflow.Store) workflow.Store {
