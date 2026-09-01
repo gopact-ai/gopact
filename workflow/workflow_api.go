@@ -42,6 +42,13 @@ func (wf *Workflow[I, O]) AddInvokable[NI, NO any](name string, inv gopact.Invok
 }
 
 // Merge registers a node whose input is built from upstream contributions.
+// Merge declares a node that joins several inbound branches. A node with more
+// than one inbound edge must be declared this way; an implicit join is
+// refused at compile time.
+//
+// Merge describes the shape of the graph, not how much of it runs at once:
+// the branches it joins overlap only under [WithMaxParallelism], which
+// defaults to 1.
 func (wf *Workflow[I, O]) Merge[NO any](name string, fn func(context.Context, Inputs) (NO, error)) *Node[Inputs, NO] {
 	if wf == nil {
 		return nil
@@ -78,6 +85,10 @@ func (n *Node[I, O]) Once[TI, TO any](target *Node[TI, TO], payload TI) Dispatch
 }
 
 // Each dispatches one custom payload per item to target.
+// Each dispatches one activation of target per payload.
+//
+// The activations are independent, but independence is not concurrency: how
+// many run at once is [WithMaxParallelism], which defaults to 1.
 func (n *Node[I, O]) Each[TI, TO any](target *Node[TI, TO], payloads ...TI) Dispatch {
 	d := n.newDispatch()
 	if target == nil {
@@ -91,6 +102,10 @@ func (n *Node[I, O]) Each[TI, TO any](target *Node[TI, TO], payloads ...TI) Disp
 }
 
 // EachIter dispatches one custom payload per yielded item.
+// EachIter dispatches one activation of target per item the sequence yields.
+//
+// As with [Node.Each], the activations are independent of each other but are
+// scheduled under [WithMaxParallelism], which defaults to 1.
 func (n *Node[I, O]) EachIter[TI, TO any](target *Node[TI, TO], iterFn func(context.Context) iter.Seq2[TI, error], opts ...IterOption[TI]) Dispatch {
 	d := n.newDispatch()
 	if target == nil {

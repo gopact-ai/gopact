@@ -530,6 +530,14 @@ func WithMaxSteps(n int) BuildOption {
 }
 
 // WithMaxParallelism records the workflow scheduler parallelism limit.
+//
+// The default is 1: a Workflow executes one node at a time even where the
+// topology allows more. A serial schedule has one deterministic ordering,
+// which is the ordering checkpoints and replay are written against, so
+// concurrency is opt-in rather than assumed.
+//
+// Raise it when nodes spend their time waiting rather than computing. Keep it
+// at 1 when reproducible ordering matters more than wall-clock time.
 func WithMaxParallelism(n int) BuildOption {
 	return buildOptionFunc(func(cfg *buildConfig) {
 		cfg.maxParallelism = n
