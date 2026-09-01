@@ -89,6 +89,18 @@ wf := workflow.New[Input, Output](
 )
 ```
 
+调度并行度默认为 `1`：即使拓扑允许，Workflow 也每次只执行一个节点。这个默认值是刻意的
+—— 串行调度给出唯一确定的执行顺序，而 checkpoint 与重放正是按这个顺序写入的。因此互不
+依赖的分支在你显式放开之前不会重叠：
+
+```go
+wf := workflow.New[Input, Output]("agent", workflow.WithMaxParallelism(8))
+```
+
+当节点的时间主要花在等待上（等模型、等网络、等另一台主机上的进程）时调高它；当可复现的
+执行顺序比墙钟时间更重要时保持 `1`。`Each`、`EachIter` 与 `Merge` 描述的是图的形状，不是
+同时执行多少。
+
 Workflow 默认使用 Go 标准库 UUID 生成 Session、Run 与租约 owner ID。服务可以在构建阶段按 identity kind 分别替换，单次调用还可以再次覆盖：
 
 ```go

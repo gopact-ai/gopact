@@ -89,6 +89,21 @@ wf := workflow.New[Input, Output](
 )
 ```
 
+Scheduler parallelism defaults to `1`, so a Workflow runs one node at a time
+even where the topology allows more. That default is deliberate: a serial
+schedule gives one deterministic ordering, which is the ordering checkpoints
+and replay are written against. Independent branches therefore do not overlap
+until you say so:
+
+```go
+wf := workflow.New[Input, Output]("agent", workflow.WithMaxParallelism(8))
+```
+
+Raise it when nodes spend their time waiting — on a model, a network call, a
+process on another host — and keep it at `1` when reproducible ordering
+matters more than wall-clock time. `Each`, `EachIter`, and `Merge` describe
+the shape of the graph, not how much of it runs at once.
+
 Workflow generates Session, Run, and lease-owner IDs with the Go standard-library UUID implementation. A service may replace each identity domain independently at build time, while one invocation may override it again:
 
 ```go
